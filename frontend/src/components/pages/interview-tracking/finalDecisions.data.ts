@@ -1,0 +1,40 @@
+import { FinalDecisionRowItem } from './types'
+
+export const DEFAULT_FINAL_DECISIONS: FinalDecisionRowItem[] = [
+  {
+    id: 'fd-1',
+    candidateName: 'Abhijit Narke',
+    requirementId: 'REQ-2026-08-12-001',
+    requirement: 'Senior React / Fullstack Architect for Accenture',
+    decision: 'Selected for Interview',
+    rejectionReason: '—',
+    offerLetter: '—',
+    client: 'Accenture',
+    teamLead: 'Harish Gadipally',
+    submittedBy: 'Marcus Chen',
+  },
+  {
+    id: 'fd-2',
+    candidateName: 'Kiran Shantaram More',
+    requirementId: 'REQ-2026-08-12-002',
+    requirement: 'Senior React Native Mobile Dev for Accenture',
+    decision: 'Selected for Interview',
+    rejectionReason: '—',
+    offerLetter: '—',
+    client: 'Accenture',
+    teamLead: 'Harish Gadipally',
+    submittedBy: 'Priya Sharma',
+  },
+  {
+    id: 'fd-3',
+    candidateName: 'Vidyasagar Gade',
+    requirementId: 'REQ-2026-08-12-003',
+    requirement: 'Cloud Solutions Architect for Accenture',
+    decision: 'Selected for Interview',
+    rejectionReason: '—',
+    offerLetter: '—',
+    client: 'Accenture',
+    teamLead: 'Harish Gadipally',
+    submittedBy: 'Harish Gadipally',
+  },
+]
