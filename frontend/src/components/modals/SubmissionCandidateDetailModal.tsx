@@ -20,6 +20,9 @@ export function SubmissionCandidateDetailModal({
   onBackToRequirement,
   rejectionReason,
   onSaveRejectionReason,
+  onUpdateStage,
+  onLeadApproval,
+  onForwardClient,
 }: SubmissionCandidateDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'interviews' | 'feedback' | 'activity' | 'communication' | 'offer'>('overview')
   const [reasonInput, setReasonInput] = useState(rejectionReason || submission?.rejectionReason || '')
@@ -49,10 +52,14 @@ export function SubmissionCandidateDetailModal({
   const submittedOn = submission.submittedOn || submission.date || '10 Aug 2026, 17:07'
   const submissionId = submission.id?.startsWith('SUB-') ? submission.id : `SUB-${submission.id || '571'}`
   const status = submission.status || submission.stage || 'Submitted to Client'
+  const targetId = submission.id
 
-  const handleSaveReason = () => {
+  const handleSaveReason = async () => {
     if (onSaveRejectionReason) {
       onSaveRejectionReason(submission.id, reasonInput)
+    }
+    if (onUpdateStage && reasonInput) {
+      await onUpdateStage(targetId, 'Rejected', reasonInput)
     }
     setSavedSuccessMsg(true)
     setTimeout(() => setSavedSuccessMsg(false), 2500)
@@ -85,6 +92,58 @@ export function SubmissionCandidateDetailModal({
               <span className="text-slate-400">·</span>
               <span className="text-slate-600 font-medium">{phone}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Workflow Actions Toolbar */}
+        <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-600">Stage:</span>
+            <select
+              value={status}
+              onChange={e => onUpdateStage && onUpdateStage(targetId, e.target.value)}
+              className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 shadow-2xs focus:outline-none focus:border-purple-600 cursor-pointer"
+            >
+              <option value="Submitted">Submitted</option>
+              <option value="Submitted to Lead">Submitted to Lead</option>
+              <option value="Submitted to Client">Submitted to Client</option>
+              <option value="Approved">Approved</option>
+              <option value="Interview Scheduled">Interview Scheduled</option>
+              <option value="Selected">Selected</option>
+              <option value="Placed">Placed</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onLeadApproval && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onLeadApproval(targetId, true, 'Approved')}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs"
+                >
+                  Lead Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLeadApproval(targetId, false, 'Rejected', 'Rejected by Lead')}
+                  className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg cursor-pointer transition-all text-xs"
+                >
+                  Lead Reject
+                </button>
+              </>
+            )}
+
+            {onForwardClient && (
+              <button
+                type="button"
+                onClick={() => onForwardClient(targetId, 'Forwarded via Candidate Modal')}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs"
+              >
+                Forward to Client
+              </button>
+            )}
           </div>
         </div>
 
@@ -136,3 +195,4 @@ export function SubmissionCandidateDetailModal({
     </div>
   )
 }
+

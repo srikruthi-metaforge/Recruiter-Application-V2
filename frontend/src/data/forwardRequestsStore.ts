@@ -41,17 +41,10 @@ const INITIAL_FORWARD_REQUESTS: ForwardRequest[] = [
   },
 ]
 
+let forwardMemory: ForwardRequest[] = []
+
 export function getForwardRequests(): ForwardRequest[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_FORWARD_REQUESTS))
-      return INITIAL_FORWARD_REQUESTS
-    }
-    return JSON.parse(raw)
-  } catch {
-    return INITIAL_FORWARD_REQUESTS
-  }
+  return forwardMemory
 }
 
 export function getForwardRequestByReq(reqId: string): ForwardRequest | undefined {
@@ -87,7 +80,7 @@ export function createOrUpdateForwardRequest(
           }
         : r
     )
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+    forwardMemory = updated
     window.dispatchEvent(new CustomEvent('forward_requests_updated'))
     return updated.find(r => r.reqId === reqId)!
   }
@@ -107,8 +100,7 @@ export function createOrUpdateForwardRequest(
     bccRecipients,
   }
 
-  const nextList = [newReq, ...requests]
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextList))
+  forwardMemory = nextList
   window.dispatchEvent(new CustomEvent('forward_requests_updated'))
   return newReq
 }
@@ -130,7 +122,7 @@ export function approveForwardRequest(requestId: string, reviewerName = 'Team Le
     return r
   })
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextList))
+  forwardMemory = nextList
   window.dispatchEvent(new CustomEvent('forward_requests_updated'))
   return updatedReq
 }
@@ -152,7 +144,7 @@ export function rejectForwardRequest(requestId: string, reviewerName = 'Team Lea
     return r
   })
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextList))
+  forwardMemory = nextList
   window.dispatchEvent(new CustomEvent('forward_requests_updated'))
   return updatedReq
 }

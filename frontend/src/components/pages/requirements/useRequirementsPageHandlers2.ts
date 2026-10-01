@@ -162,7 +162,21 @@ export function useRequirementsPageHandlers2(s: RequirementsVmState) {
     })
   }
 
+  const handleUpdateReqStatus = (reqId: string, newStatus: string) => {
+    const updated = localRequirements.map(r =>
+      r.id === reqId
+        ? {
+            ...r,
+            status: newStatus as any,
+          }
+        : r
+    )
+    setLocalRequirements(updated)
+    onUpdateRequirements?.(updated)
+    showToast(`Updated status for ${reqId} to "${newStatus}".`)
+  }
+
   return {
-    handleConfirmRevoke, handleGrantRevokeApproval, handleDeclineRevokeRequest
+    handleConfirmRevoke, handleGrantRevokeApproval, handleDeclineRevokeRequest, handleUpdateReqStatus
   }
 }

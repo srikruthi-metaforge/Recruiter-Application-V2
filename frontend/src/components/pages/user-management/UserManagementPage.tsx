@@ -14,20 +14,26 @@ interface UserManagementPageProps {
 
 export function UserManagementPage({ role = 'superadmin', initialTab = 'users' }: UserManagementPageProps) {
   const vm = useUserManagement(role, initialTab)
+  let view = <UserManagementList {...vm} />
   if (vm.viewMode === 'configure_permissions' && vm.editingRole) {
-    return <ConfigurePermissionsView {...vm} />
+    view = <ConfigurePermissionsView {...vm} />
+  } else if (vm.viewMode === 'create_role') {
+    view = <CreateRoleView {...vm} />
+  } else if (vm.viewMode === 'create_user') {
+    view = <CreateUserView {...vm} />
+  } else if (vm.viewMode === 'reset_password' && vm.selectedUser) {
+    view = <ResetPasswordView {...vm} />
+  } else if (vm.viewMode === 'assign_role' && vm.selectedUser) {
+    view = <AssignRoleView {...vm} />
   }
-  if (vm.viewMode === 'create_role') {
-    return <CreateRoleView {...vm} />
-  }
-  if (vm.viewMode === 'create_user') {
-    return <CreateUserView {...vm} />
-  }
-  if (vm.viewMode === 'reset_password' && vm.selectedUser) {
-    return <ResetPasswordView {...vm} />
-  }
-  if (vm.viewMode === 'assign_role' && vm.selectedUser) {
-    return <AssignRoleView {...vm} />
-  }
-  return <UserManagementList {...vm} />
+  return (
+    <>
+      {view}
+      {vm.toastMsg && !vm.undoToast && vm.viewMode !== 'list' && (
+        <div className="fixed bottom-12 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs font-medium">
+          {vm.toastMsg}
+        </div>
+      )}
+    </>
+  )
 }

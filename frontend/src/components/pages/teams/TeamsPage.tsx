@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Users, Search } from 'lucide-react'
 import { Role } from '../../../types'
 import { TeamLeadGroup } from './types'
-import { INITIAL_TEAMS_DATA } from './teams.data'
+import { teamsService } from '../../../services/workspace.service'
 import { TeamsKpiCards } from './TeamsKpiCards'
 import { TeamsHierarchyList } from './TeamsHierarchyList'
 
@@ -11,9 +11,47 @@ interface TeamsPageProps {
 }
 
 export function TeamsPage({ role = 'superadmin' }: TeamsPageProps) {
-  const [teamsData] = useState<TeamLeadGroup[]>(INITIAL_TEAMS_DATA)
+  const [teamsData, setTeamsData] = useState<TeamLeadGroup[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [clientFilter, setClientFilter] = useState('All Clients')
+
+  useEffect(() => {
+    let cancelled = false
+    teamsService
+      .list()
+      .then((rows: any) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || []
+        if (cancelled) return
+        setTeamsData(
+          list.map((t: any): TeamLeadGroup => ({
+            id: t.teamId || t.id,
+            leadName: t.leadName || t.leadId?.name || '',
+            leadRole: 'Team Lead',
+            leadEmail: t.leadEmail || t.leadId?.email || '',
+            leadAvatar: String(t.leadName || t.leadId?.name || 'L').charAt(0),
+            primaryClient: t.primaryClient || '',
+            teamName: t.teamName || '',
+            leadRequirementsCount: t.leadRequirementsCount || 0,
+            leadSubmissionsCount: t.leadSubmissionsCount || 0,
+            membersCount: t.membersCount || (t.members || []).length,
+            members: (t.members || t.recruiterIds || []).map((m: any) => ({
+              id: m.id || String(m._id || m),
+              name: m.name || '',
+              role: m.role || 'Recruiter',
+              email: m.email || '',
+              avatar: String(m.name || 'R').charAt(0),
+              requirementsCount: m.requirementsCount || 0,
+              submissionsCount: m.submissionsCount || 0,
+              primaryClient: m.primaryClient || '',
+            })),
+          })),
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Unique clients list
   const uniqueClients = useMemo(() => {

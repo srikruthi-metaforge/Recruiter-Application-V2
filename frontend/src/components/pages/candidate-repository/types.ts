@@ -6,6 +6,7 @@ export interface CandidateRepoItem {
   name: string
   email: string
   phone: string
+  linkedIn?: string
   technology: string
   totalExperience: string
   createdDate: string
@@ -33,6 +34,7 @@ export interface CandidateRepositoryPageProps {
   selectedReqId?: string | null
   role?: Role
   onOpenAddForm: () => void
+  onCandidateUpdated?: (candidate: Candidate) => void
   onSelectCandidate?: (candidate: Candidate) => void
   onSelectRequirement?: (reqId: string | null) => void
   onBackToDashboard?: () => void

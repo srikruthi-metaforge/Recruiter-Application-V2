@@ -89,9 +89,9 @@ export function TeamsRecruitersPage({ role = 'superadmin' }: TeamsRecruitersPage
     })
   }, [membersList, roleToggle, searchQuery, teamLeadFilter, performanceFilter])
 
-  // Pagination State (10 items per page limit)
+  // Pagination State (5 items per page default)
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
   const totalPages = Math.ceil(filteredMembers.length / pageSize) || 1
 
   const paginatedMembers = useMemo(() => {
@@ -159,6 +159,7 @@ export function TeamsRecruitersPage({ role = 'superadmin' }: TeamsRecruitersPage
         currentPage={currentPage}
         totalPages={totalPages}
         pageSize={pageSize}
+        setPageSize={setPageSize}
         setCurrentPage={setCurrentPage}
         setSelectedMemberDetail={setSelectedMemberDetail}
       />

@@ -8,19 +8,16 @@
 
 ## 1. Current Architecture
 
-The existing application is a **frontend-only SPA** generated as a Figma Make / Vite React app. There is **no NestJS backend, no MongoDB, no Redis, and no real authentication**. All business data lives in TypeScript constants, React `useState`, and `localStorage`.
+The application is a **Next.js 15 SPA shell** plus a **NestJS V2 API** on MongoDB. The UI still hydrates from mock data when the API is down. Auth prefers JWT login and falls back to demo accounts only if the backend is unreachable.
 
 | Layer | Current implementation |
 |---|---|
-| Runtime | Vite 8 + React 19 + TypeScript |
-| Styling | Tailwind CSS 4 (`src/index.css` + `@theme`) |
-| Routing | **No React Router.** `App.tsx` switches `AuthScreen` and `activeNav` in memory |
-| Auth | Client-side email/password check against `DEMO_ACCOUNTS` in `src/data/authService.ts` |
-| Session | `localStorage`: `metaforge_session_active`, `metaforge_user_role`, `metaforge_active_nav` |
-| State | Lifted React state in `App.tsx` + per-page `useState` + three localStorage stores |
-| API | None. Documented target contracts exist in `documents/MRAP_API_Integration_and_Endpoint_Documentation.md` |
-| AI | UI copy and match scores are mock. Resume parsing is client-side (mammoth/docx) where present |
-| Nested copy | `Recruiter-Application-V2/Recruiter-Application-Ver-3/` is a duplicate snapshot — **not migrated** |
+| Runtime | Next.js 15 + React 19 + TypeScript (SPA in `frontend/`) |
+| API | NestJS 10 on `http://localhost:3001/api/v1` |
+| Database | MongoDB (`metaforge_recruiter_v2`) — 23 Mongoose collections |
+| Cache / jobs | Optional Redis + `workers/` (in-process fallback if Redis is down) |
+| Auth | JWT (`/auth/login`) with demo seed users |
+| AI | Isolated `ai-service` gateway; backend falls back to heuristic parse |
 
 ### 1.1 Folder structure (source)
 
@@ -116,7 +113,7 @@ From `UserManagementPage.tsx` / `RolesPermissionsPage.tsx`:
 | rep_export_csv | ✓ | ✗ | ✗ | ✗ |
 | user_manage | ✓ | ✓ | ✗ | ✗ |
 | role_manage | ✓ | ✗ | ✗ | ✗ |
-| audit_logs | ✓ | ✗ | ✗ | ✗ |
+| activity_logs | ✓ | ✗ | ✗ | ✗ |
 
 UI extra rules that the backend must also honor (do not “fix” them):
 

@@ -8,7 +8,7 @@ export interface ScheduleRowItem {
   round: string // 'L1' | 'Final'
   dateTime: string
   mode: string // 'Online' | 'In-Person'
-  status: 'Upcoming' | 'In Progress' | 'Completed' | 'Scheduled'
+  status: 'Upcoming' | 'Completed' | 'Scheduled'
   requirementId?: string
   teamLead?: string
   submittedBy?: string
@@ -62,10 +62,10 @@ export interface OfferLetterRowItem {
   submittedBy?: string
 }
 
-export type InterviewStatusToggle = 'upcoming' | 'in_progress' | 'completed' | 'rejections' | 'all' | 'onboarding'
+export type InterviewStatusToggle = 'upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding'
 export type InterviewScopeTab = 'my_interviews' | 'team_members' | 'all'
 export type OfferOutcomeFilter = 'all' | 'joined' | 'not_joined' | 'pending'
-export type CalendarStateFilter = 'all' | 'Upcoming' | 'In Progress' | 'Completed'
+export type CalendarStateFilter = 'all' | 'Upcoming' | 'Completed'
 
 export interface InterviewTrackingPageProps {
   role?: Role

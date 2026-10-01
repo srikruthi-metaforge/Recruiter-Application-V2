@@ -158,7 +158,6 @@ export function ClientGapReqs({ vm }: { vm: ClientGapVm }) {
                   setGapPageSize(size)
                   setGapCurrentPage(1)
                 }}
-                pageSizeOptions={[10, 20, 50]}
                 itemLabel="requirement gap items"
               />
             </div>

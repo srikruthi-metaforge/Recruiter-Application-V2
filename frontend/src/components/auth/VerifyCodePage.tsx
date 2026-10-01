@@ -9,8 +9,8 @@ interface VerifyCodePageProps {
   email: string
   /** The code that was issued for this recovery attempt */
   expectedCode: string
-  onVerified: () => void
-  onResend: () => void
+  onVerified: (code: string) => void | Promise<void>
+  onResend: () => void | Promise<void>
   /** Back to the email entry step */
   onBack: () => void
 }
@@ -69,7 +69,7 @@ export function VerifyCodePage({ email, expectedCode, onVerified, onResend, onBa
     if (e.key === 'ArrowRight' && index < VERIFICATION_CODE_LENGTH - 1) inputs.current[index + 1]?.focus()
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (code.length < VERIFICATION_CODE_LENGTH) {
@@ -79,15 +79,13 @@ export function VerifyCodePage({ email, expectedCode, onVerified, onResend, onBa
 
     setError('')
     setLoading(true)
-
-    window.setTimeout(() => {
-      if (code === expectedCode) {
-        onVerified()
-        return
-      }
+    try {
+      await onVerified(code)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That verification code is incorrect or has expired. Request a new code and try again.')
+    } finally {
       setLoading(false)
-      setError('That verification code is incorrect or has expired. Request a new code and try again.')
-    }, 600)
+    }
   }
 
   const handleResend = () => {

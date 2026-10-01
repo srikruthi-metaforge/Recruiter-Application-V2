@@ -445,7 +445,7 @@ export function HistoryPage({ role, currentUserName, currentUserEmail }: History
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 8
+  const [pageSize, setPageSize] = useState(5)
 
   // Identify logged in recruiter item for Recruiter / Lead view
   const myRecruiterHistory = useMemo(() => {
@@ -704,19 +704,21 @@ export function HistoryPage({ role, currentUserName, currentUserEmail }: History
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleExportRecruiterCSV}
-              className="px-3 py-1.5 bg-[#6B3BF6] hover:bg-[#5833E0] text-white rounded-xl text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export History Report (CSV)</span>
-            </button>
-          </div>
+          {role !== 'recruiter' && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleExportRecruiterCSV}
+                className="px-3 py-1.5 bg-[#6B3BF6] hover:bg-[#5833E0] text-white rounded-xl text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export History Report (CSV)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 3. COMPACT INTERACTIVE RECRUITER PERSONAL KPI SUMMARY CARDS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* ASSIGNED REQS */}
           <button
             onClick={() => {
@@ -810,35 +812,10 @@ export function HistoryPage({ role, currentUserName, currentUserEmail }: History
               <div className="text-lg font-black text-slate-900 tracking-tight font-mono">
                 {myRecruiterHistory.workingProfilesCount} Working
               </div>
-              <span className="text-[9px] text-slate-600 font-bold block mt-0.5">Click to view pipeline →</span>
+              <span className="text-[9px] text-slate-600 font-bold block mt-0.5">Click to view current working requirements →</span>
             </div>
             <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
               <PlayCircle className="w-4 h-4" />
-            </div>
-          </button>
-
-          {/* ON HOLD PROFILES */}
-          <button
-            onClick={() => {
-              setRecruiterTab('sourced')
-              setStatusFilter('On Hold')
-              setSelectedReqFilter(null)
-            }}
-            className={`rounded-xl p-2.5 shadow-2xs flex items-center justify-between text-left transition-all duration-200 ease-in-out cursor-pointer active:scale-98 col-span-2 sm:col-span-1 ${
-              recruiterTab === 'sourced' && statusFilter === 'On Hold'
-                ? 'bg-slate-200/90 border-2 border-slate-600 ring-2 ring-slate-400/30'
-                : 'bg-slate-100/90 border border-slate-200 hover:border-slate-300 hover:shadow-xs'
-            }`}
-          >
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700 block">On-Hold Profiles</span>
-              <div className="text-lg font-black text-slate-900 tracking-tight font-mono">
-                {myRecruiterHistory.onHoldProfilesCount} On Hold
-              </div>
-              <span className="text-[9px] text-slate-600 font-bold block mt-0.5">Click to view on-hold →</span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
-              <PauseCircle className="w-4 h-4" />
             </div>
           </button>
         </div>
@@ -1457,6 +1434,7 @@ export function HistoryPage({ role, currentUserName, currentUserEmail }: History
           totalItems={filteredRecruiters.length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
 

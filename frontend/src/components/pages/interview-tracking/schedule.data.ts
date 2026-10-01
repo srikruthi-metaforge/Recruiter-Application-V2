@@ -11,7 +11,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'L1 Technical',
     dateTime: 'Today, 12:00 PM',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-12-001',
   },
   {
@@ -24,7 +24,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'L2 Technical',
     dateTime: '2026-08-18 18:00',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-12-002',
   },
   {
@@ -50,7 +50,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'L1 Technical',
     dateTime: '2026-08-19 10:00',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-12-004',
   },
   {
@@ -76,7 +76,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'Technical Round 2',
     dateTime: '2026-08-20 11:45',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-12-006',
   },
   {
@@ -89,7 +89,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'Manager Round',
     dateTime: 'Aug 06, 02:00 PM',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-06-005',
   },
   {
@@ -102,7 +102,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'Screening',
     dateTime: 'Aug 07, 11:00 AM',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-2026-08-07-006',
   },
   {
@@ -141,7 +141,7 @@ export const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     round: 'L2 Technical Evaluation',
     dateTime: 'Aug 21, 03:00 PM',
     mode: 'Online',
-    status: 'In Progress',
+    status: 'Upcoming',
     requirementId: 'REQ-005',
   },
 ]

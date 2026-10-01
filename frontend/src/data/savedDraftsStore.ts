@@ -61,18 +61,10 @@ const INITIAL_DRAFTS: SavedDraftItem[] = [
 ]
 
 const DRAFTS_STORAGE_KEY = 'metaforge_saved_drafts_v1'
+let draftsMemory: SavedDraftItem[] = []
 
 export function getSavedDrafts(): SavedDraftItem[] {
-  try {
-    const data = localStorage.getItem(DRAFTS_STORAGE_KEY)
-    if (data) {
-      return JSON.parse(data)
-    }
-  } catch (e) {
-    console.error('Error loading saved drafts:', e)
-  }
-  // Fallback to initial mock drafts
-  return INITIAL_DRAFTS
+  return draftsMemory
 }
 
 export function saveDraftItem(item: Omit<SavedDraftItem, 'id' | 'savedAt'>): SavedDraftItem {
@@ -88,22 +80,11 @@ export function saveDraftItem(item: Omit<SavedDraftItem, 'id' | 'savedAt'>): Sav
       minute: '2-digit',
     }),
   }
-  const updated = [newItem, ...current]
-  try {
-    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(updated))
-  } catch (e) {
-    console.error('Error saving draft:', e)
-  }
+  draftsMemory = [newItem, ...current]
   return newItem
 }
 
 export function removeSavedDraft(id: string): SavedDraftItem[] {
-  const current = getSavedDrafts()
-  const updated = current.filter(item => item.id !== id)
-  try {
-    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(updated))
-  } catch (e) {
-    console.error('Error removing draft:', e)
-  }
-  return updated
+  draftsMemory = getSavedDrafts().filter(item => item.id !== id)
+  return draftsMemory
 }

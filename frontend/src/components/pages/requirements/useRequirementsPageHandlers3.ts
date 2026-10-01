@@ -47,6 +47,8 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
           if ((r.rejections || 0) === 0) return false
         } else if (statusDropdown === 'Closed') {
           if (r.status !== 'Closed' && r.assignmentStatus !== 'Closed') return false
+        } else if (statusDropdown === 'Custom') {
+          if (r.status === 'Closed' || r.assignmentStatus === 'Closed') return false
         }
       }
 
@@ -71,7 +73,7 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
   }, [localRequirements, globalSearch, statusDropdown, clientDropdown, activeCardFilter])
 
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(5)
 
   const paginatedRequirements = useMemo(() => {
     const start = (currentPage - 1) * pageSize

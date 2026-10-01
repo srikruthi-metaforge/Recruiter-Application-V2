@@ -14,10 +14,11 @@ interface Props {
   totalPages: number
   pageSize: number
   setCurrentPage: (n: number) => void
+  setPageSize?: (n: number) => void
   onAdjustClient: (r: RecruiterOverviewItem) => void
 }
 export function RecruitersTable(p: Props) {
-  const { paginatedRecruiters, filteredRecruiters, role, currentPage, totalPages, pageSize, setCurrentPage, onAdjustClient } = p
+  const { paginatedRecruiters, filteredRecruiters, role, currentPage, totalPages, pageSize, setCurrentPage, setPageSize, onAdjustClient } = p
   const getStatusBadge = (status: RecruiterOverviewItem['performanceStatus']) => <RecruiterStatusBadge status={status} />
   return (
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
@@ -182,6 +183,7 @@ export function RecruitersTable(p: Props) {
           totalItems={filteredRecruiters.length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
   )

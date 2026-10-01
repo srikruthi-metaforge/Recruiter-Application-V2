@@ -31,8 +31,9 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
 
   // Search and Filter states
   const [globalSearch, setGlobalSearch] = useState('')
-  const [statusDropdown, setStatusDropdown] = useState<string>('All')
+  const [statusDropdown, setStatusDropdown] = useState<string>('Unassigned')
   const [clientDropdown, setClientDropdown] = useState<string>('All')
+
 
   // Selected card filter
   const [activeCardFilter, setActiveCardFilter] = useState<CardFilterType>('ALL')

@@ -1,13 +1,15 @@
+import { usersService } from '../../../services/workspace.service'
+import { apiErrorMessage, capabilityPayload } from './userApi'
 import type { UserAccountData, RecruiterUserPermissionData } from './types'
 import type { UserManagementState } from './useUserManagementState'
 
 export function useUserAccessActions(s: UserManagementState) {
   const {
-    canModifyUsers, roles, recruiterUsers, setRecruiterUsers,
+    canModifyUsers, recruiterUsers,
     setViewMode, setSelectedUser, setResetNewPass, setResetConfirmPass,
     setTargetRole, setTargetClient, setReassignReason, setAdjustClientUser,
     selectedUserForManage, setSelectedUserForManage, tempUserPermissions, setTempUserPermissions,
-    tempUserRoleName, setTempUserRoleName, showToast
+    tempUserRoleName, setTempUserRoleName, showToast, isSaving, setIsSaving, reloadUsers,
   } = s
 
   const openAdjustClientModal = (user: UserAccountData) => {
@@ -56,50 +58,47 @@ export function useUserAccessActions(s: UserManagementState) {
       setTempUserPermissions({ ...existing.permissions })
       setTempUserRoleName(existing.roleName)
     } else {
-      const dummy: RecruiterUserPermissionData = {
+      const blank: RecruiterUserPermissionData = {
         id: user.id,
         name: user.name,
         email: user.email,
         roleName: (user as UserAccountData).role || 'Recruiter',
         roleCode: (user as UserAccountData).roleCode || 'recruiter',
-        team: (user as UserAccountData).team || 'Engineering Pod',
+        team: (user as UserAccountData).team || '',
         avatar: user.name.charAt(0),
         status: 'Active',
         permissions: {
-          addCandidates: true,
-          submitToClients: true,
-          scheduleInterviews: true,
+          addCandidates: false,
+          submitToClients: false,
+          scheduleInterviews: false,
           exportReportsCsv: false,
           viewTeamAnalytics: false,
           deleteRecords: false,
           reassignRequirements: false,
         },
       }
-      setSelectedUserForManage(dummy)
-      setTempUserPermissions(dummy.permissions)
-      setTempUserRoleName(dummy.roleName)
+      setSelectedUserForManage(blank)
+      setTempUserPermissions(blank.permissions)
+      setTempUserRoleName(blank.roleName)
     }
   }
 
   // Save Recruiter Individual Permissions
-  const handleSaveUserPermissions = () => {
-    if (!selectedUserForManage) return
-    const updated = recruiterUsers.map(u =>
-      u.id === selectedUserForManage.id
-        ? {
-            ...u,
-            roleName: tempUserRoleName,
-            permissions: { ...tempUserPermissions },
-          }
-        : u
-    )
-    if (!recruiterUsers.some(u => u.id === selectedUserForManage.id)) {
-      setRecruiterUsers([...recruiterUsers, { ...selectedUserForManage, roleName: tempUserRoleName, permissions: tempUserPermissions }])
-    } else {
-      setRecruiterUsers(updated)
+  const handleSaveUserPermissions = async () => {
+    if (isSaving || !selectedUserForManage) return
+    setIsSaving(true)
+    try {
+      await usersService.update(selectedUserForManage.id, {
+        capabilities: capabilityPayload(tempUserPermissions),
+      })
+      await reloadUsers()
+      showToast(`Permissions updated for ${selectedUserForManage.name}`)
+      setSelectedUserForManage(null)
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
     }
-    showToast(`Permissions updated successfully for ${selectedUserForManage.name}!`)
-    setSelectedUserForManage(null)
   }
 
   return {

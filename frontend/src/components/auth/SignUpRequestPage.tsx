@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Role } from '../../types'
-import { findAccountByEmail, isStrongPassword, isValidEmail } from '../../data/authService'
+import { findAccountByEmail, isStrongPassword, isValidEmail, requestAccess } from '../../data/authService'
 import { AuthCard, AuthShell } from './AuthShell'
 import { SignUpRequestStep1 } from './SignUpRequestPage.step1'
 import { SignUpRequestStep2, SignUpRequestSubmitted } from './SignUpRequestPage.step2'
@@ -65,15 +65,26 @@ export function SignUpPage({ onBack, onSubmitted }: SignUpPageProps) {
     if (validateStep1()) setStep(2)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validateStep2()) return
 
     setSubmitting(true)
-    window.setTimeout(() => {
-      setSubmitting(false)
+    try {
+      await requestAccess({
+        email: form.email.trim(),
+        password: form.password,
+        name: `${form.firstName.trim()} ${form.lastName.trim()}`.trim(),
+        role: form.role,
+        phone: form.phone.trim() || undefined,
+      })
       setSubmitted(true)
-    }, 900)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to submit access request. Try again.'
+      setErrors(prev => ({ ...prev, general: message }))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const shell = (children: React.ReactNode) => (

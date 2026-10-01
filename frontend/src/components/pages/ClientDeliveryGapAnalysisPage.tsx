@@ -376,9 +376,9 @@ export function ClientDeliveryGapAnalysisPage({
     selectedInterviewStatus,
   ])
 
-  // Requirement Gap Analysis Pagination State (10 items limit)
+  // Requirement Gap Analysis Pagination State (5 items limit)
   const [gapCurrentPage, setGapCurrentPage] = useState(1)
-  const [gapPageSize, setGapPageSize] = useState(10)
+  const [gapPageSize, setGapPageSize] = useState(5)
 
   const gapTotalPages = Math.ceil(filteredRequirements.length / gapPageSize) || 1
 
@@ -1398,7 +1398,6 @@ export function ClientDeliveryGapAnalysisPage({
                   setGapPageSize(size)
                   setGapCurrentPage(1)
                 }}
-                pageSizeOptions={[10, 20, 50]}
                 itemLabel="requirement gap items"
               />
             </div>

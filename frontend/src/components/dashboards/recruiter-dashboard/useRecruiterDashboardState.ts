@@ -94,8 +94,8 @@ export function useRecruiterDashboardState(props: Props) {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
-  // Inline View state for KPI cards (Total Submissions, Interviews Handled, etc.)
-  const [inlineView, setInlineView] = useState<'submissions' | 'interviews' | null>(null)
+  // Inline View state for KPI cards (Assigned Requirements, Total Submissions, Interviews Handled, Onboarding)
+  const [inlineView, setInlineView] = useState<'requirements' | 'submissions' | 'interviews' | 'onboarding' | null>(null)
 
   // Inline Candidate Repository & Submission workflow state (kept strictly inside My Work page)
   const [inlineReqId, setInlineReqId] = useState<string | null>(null)

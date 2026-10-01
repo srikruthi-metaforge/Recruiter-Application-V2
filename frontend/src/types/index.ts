@@ -11,7 +11,7 @@ export type AuthScreen =
   | 'app'
 
 export type Priority = 'High' | 'Medium' | 'Low'
-export type ReqStatus = 'Active' | 'On Hold' | 'Closed'
+export type ReqStatus = 'Open' | 'Reopen' | 'Hold' | 'Custom' | 'Active' | 'On Hold' | 'Closed'
 
 export interface Requirement {
   id: string

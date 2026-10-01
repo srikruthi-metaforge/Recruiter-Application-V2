@@ -32,24 +32,116 @@ import {
   Laptop,
   Play,
   Send,
+  Mail,
+  Phone,
 } from 'lucide-react'
 import { Interview, Role, Requirement } from '../../types'
 import { ScheduleInterviewModal } from '../modals/ScheduleInterviewModal'
 import { RequirementDetailOverview } from './RequirementDetailOverview'
 import { PaginationFooter } from '../ui/PaginationFooter'
+import { interviewsService, offersService, submissionsService } from '../../services/workspace.service'
+import { apiErrorMessage } from './submissions/preamble'
+
+export function mapBackendOfferToOfferRow(item: any): OfferLetterRowItem {
+  const candidateName = item.candidateName || item.candidate || 'Unknown Candidate'
+  const position = item.requirementTitle || item.position || 'Position'
+  const client = item.clientName || item.client || 'Client'
+  const requirementId = typeof item.requirementId === 'string' ? item.requirementId : item.requirementId?.reqCode || item.requirementId?._id || 'REQ-001'
+  const offerDate = item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today'
+  const offeredCTC = typeof item.offeredCtc === 'number' ? `₹${item.offeredCtc.toLocaleString('en-IN')} PA` : (item.offeredCTC || '₹18,00,000 PA')
+  const joiningDate = item.joiningDate ? new Date(item.joiningDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined
+  const status = item.status || 'Offer Released'
+  const notJoinedNote = item.notJoinedNote || item.declinedReason || undefined
+  const declineReason = item.declinedReason || undefined
+
+  return {
+    id: item.id || item._id || item.offerId,
+    candidateName,
+    position,
+    client,
+    requirementId,
+    offerDate,
+    offeredCTC,
+    joiningDate,
+    status,
+    declineReason,
+    notJoinedReason: notJoinedNote ? notJoinedNote.split(':')[0] : undefined,
+    notJoinedNote,
+    submittedBy: item.recruiter || 'Recruiter',
+    raw: item,
+  }
+}
+
+export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
+  const candidateName = item.candidateName || item.candidate || 'Unknown Candidate'
+  const position = item.requirementTitle || item.position || 'Software Engineer'
+  const company = item.clientName || item.client || 'Client'
+  const round = item.round || item.stage || 'L1 Technical'
+  const dateTimeStr = item.dateTime
+    ? new Date(item.dateTime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : (item.date || 'Today')
+  const mode = item.mode || 'Online'
+  const rawStatus = item.status || 'Scheduled'
+
+  let status: 'Upcoming' | 'In Progress' | 'Completed' | 'Scheduled' | 'Rejected' = 'Scheduled'
+  if (rawStatus === 'Confirmed' || rawStatus === 'Passed' || rawStatus === 'Completed') {
+    status = 'Completed'
+  } else if (rawStatus === 'Rejected' || rawStatus === 'Cancelled') {
+    status = 'Rejected'
+  } else if (rawStatus === 'In Progress' || rawStatus === 'Pending') {
+    status = 'In Progress'
+  } else if (rawStatus === 'Upcoming' || rawStatus === 'Scheduled' || rawStatus === 'Rescheduled') {
+    status = 'Upcoming'
+  }
+
+  return {
+    id: item.id || item._id || item.interviewId,
+    interviewId: item.interviewId || item.id || item._id,
+    candidateName,
+    position,
+    company,
+    round,
+    dateTime: dateTimeStr,
+    mode,
+    status,
+    requirementId: typeof item.requirementId === 'string' ? item.requirementId : item.requirementId?.reqCode || item.requirementId?._id || 'REQ-001',
+    submissionId: typeof item.submissionId === 'string' ? item.submissionId : item.submissionId?._id || item.submissionId?.submissionId,
+    candidateId: typeof item.candidateId === 'string' ? item.candidateId : item.candidateId?._id,
+    submittedBy: item.recruiter || item.interviewerName || 'Recruiter',
+    candidateEmail: item.candidateId?.email || item.candidateEmail || 'candidate@example.com',
+    candidatePhone: item.candidateId?.phone || item.candidatePhone || '+91 98765 43210',
+    meetingUrl: item.meetingUrl,
+    interviewerName: item.interviewerName,
+    rejectionReason: item.status === 'Cancelled' ? 'Interview Cancelled' : item.rejectionReason,
+    raw: item,
+  }
+}
 
 export interface ScheduleRowItem {
+
   id: string
+  interviewId?: string
+  submissionId?: string
+  candidateId?: string
   candidateName: string
   position: string
   company: string
   round: string // 'L1' | 'Final'
   dateTime: string
   mode: string // 'Online' | 'In-Person'
-  status: 'Upcoming' | 'In Progress' | 'Completed' | 'Scheduled'
+  status: 'Upcoming' | 'In Progress' | 'Completed' | 'Scheduled' | 'Rejected'
   requirementId?: string
   teamLead?: string
   submittedBy?: string
+  rejectionReason?: string
+  remark?: string
+  candidateEmail?: string
+  candidatePhone?: string
+  meetingUrl?: string
+  interviewerName?: string
+  experience?: string
+  skills?: string[]
+  raw?: any
 }
 
 export interface FinalDecisionRowItem {
@@ -308,6 +400,11 @@ const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     mode: 'Online',
     status: 'Completed',
     requirementId: 'REQ-003',
+    remark: 'Cleared L3 technical evaluation with distinction. Client approved offer release.',
+    candidateEmail: 'pritish.m@ltts-candidate.com',
+    candidatePhone: '+91 98765 43210',
+    experience: '6 Years',
+    skills: ['C#', 'Automation Testing', 'Embedded Systems', 'Selenium'],
   },
   {
     id: '9',
@@ -321,6 +418,11 @@ const DEFAULT_SCHEDULE_ROWS: ScheduleRowItem[] = [
     mode: 'Online',
     status: 'Completed',
     requirementId: 'REQ-004',
+    remark: 'Excellent system design & Python ML expertise. Final HR round completed.',
+    candidateEmail: 'ananya.d@data-talent.com',
+    candidatePhone: '+91 98123 45678',
+    experience: '8 Years',
+    skills: ['Python', 'Machine Learning', 'PyTorch', 'System Architecture'],
   },
   {
     id: '10',
@@ -352,6 +454,7 @@ export interface OfferLetterRowItem {
   notJoinedNote?: string
   notJoinedDate?: string
   submittedBy?: string
+  raw?: any
 }
 
 const DEFAULT_OFFER_LETTERS: OfferLetterRowItem[] = [
@@ -476,12 +579,14 @@ interface InterviewTrackingPageProps {
   role?: Role
   interviews?: Interview[]
   onOpenFeedbackModal?: (iv: Interview) => void
+  initialStatusToggle?: 'upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding'
 }
 
 export function InterviewTrackingPage({
   role = 'recruiter',
   interviews,
   onOpenFeedbackModal,
+  initialStatusToggle,
 }: InterviewTrackingPageProps) {
   const normalizedRole = (role || '').toLowerCase()
   const isLead = normalizedRole === 'lead'
@@ -490,8 +595,8 @@ export function InterviewTrackingPage({
   // Scope filter for Team Lead: 'my_interviews' (lead only), 'team_members' (members only), 'all' (members + lead)
   const [scopeTab, setScopeTab] = useState<'my_interviews' | 'team_members' | 'all'>('my_interviews')
 
-  // Toggle Switcher ('upcoming' | 'in_progress' | 'completed' | 'rejections' | 'all' | 'onboarding')
-  const [statusToggle, setStatusToggle] = useState<'upcoming' | 'in_progress' | 'completed' | 'rejections' | 'all' | 'onboarding'>('all')
+  // Toggle Switcher ('upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding')
+  const [statusToggle, setStatusToggle] = useState<'upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding'>(initialStatusToggle || 'all')
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('')
@@ -519,6 +624,62 @@ export function InterviewTrackingPage({
   const [selectedReqDetail, setSelectedReqDetail] = useState<Requirement | null>(null)
   const [selectedRejectedCandidateModal, setSelectedRejectedCandidateModal] = useState<RejectedCandidateRowItem | null>(null)
 
+  // Candidate Detail & Remark Modal State
+  const [selectedCandidateDetailModal, setSelectedCandidateDetailModal] = useState<ScheduleRowItem | null>(null)
+  const [modalRemarkText, setModalRemarkText] = useState('')
+  const [modalStatusChoice, setModalStatusChoice] = useState<'Remark' | 'Rejected'>('Remark')
+
+  const handleOpenCandidateDetailModal = (item: ScheduleRowItem) => {
+    setSelectedCandidateDetailModal(item)
+    setModalRemarkText(item.remark || item.rejectionReason || '')
+    setModalStatusChoice(item.status === 'Rejected' || !!item.rejectionReason ? 'Rejected' : 'Remark')
+  }
+
+  const handleSaveCandidateRemark = () => {
+    if (!selectedCandidateDetailModal) return
+    const targetId = selectedCandidateDetailModal.id
+    const updatedText = modalRemarkText.trim()
+    const isRejected = modalStatusChoice === 'Rejected'
+
+    setScheduleList(prev =>
+      prev.map(row => {
+        if (row.id === targetId) {
+          return {
+            ...row,
+            status: isRejected ? ('Rejected' as const) : row.status,
+            rejectionReason: isRejected ? updatedText || 'Candidate rejected during evaluation' : undefined,
+            remark: !isRejected ? updatedText : undefined,
+          }
+        }
+        return row
+      })
+    )
+
+    if (isRejected) {
+      setRejectedList(prev => [
+        {
+          id: `rej-${Date.now()}`,
+          candidateName: selectedCandidateDetailModal.candidateName,
+          candidateId: `CAND-${selectedCandidateDetailModal.id}`,
+          position: selectedCandidateDetailModal.position,
+          company: selectedCandidateDetailModal.company,
+          rejectedStage: selectedCandidateDetailModal.round === 'L1' ? 'L1 Technical' : 'L2 Technical',
+          rejectionReason: updatedText || 'Candidate rejected during evaluation',
+          evaluatorNotes: updatedText || 'Candidate evaluation notes updated by recruiter.',
+          evaluatedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
+          submittedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
+          teamLead: selectedCandidateDetailModal.teamLead || 'Team Lead',
+          rejectionDate: 'Today',
+          requirementId: selectedCandidateDetailModal.requirementId || 'REQ-001',
+        },
+        ...prev,
+      ])
+    }
+
+    showToast(`Saved remark & details for candidate ${selectedCandidateDetailModal.candidateName}!`)
+    setSelectedCandidateDetailModal(null)
+  }
+
   // Onboarding & Offer Outcome State
   const [offerOutcomeFilter, setOfferOutcomeFilter] = useState<'all' | 'joined' | 'not_joined' | 'pending'>('all')
   const [notJoinedModalCandidate, setNotJoinedModalCandidate] = useState<OfferLetterRowItem | null>(null)
@@ -531,6 +692,87 @@ export function InterviewTrackingPage({
     setToastMsg(msg)
     setTimeout(() => setToastMsg(null), 3500)
   }
+
+  const reloadInterviews = React.useCallback(async () => {
+    try {
+      const data = await interviewsService.list()
+      if (Array.isArray(data) && data.length > 0) {
+        setScheduleList(data.map(mapBackendInterviewToScheduleRow))
+      }
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }, [])
+
+  const reloadOffers = React.useCallback(async () => {
+    try {
+      const data = await offersService.list()
+      if (Array.isArray(data) && data.length > 0) {
+        setOfferLetters(data.map(mapBackendOfferToOfferRow))
+      }
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }, [])
+
+  React.useEffect(() => {
+    let active = true
+    const fetchInit = async () => {
+      try {
+        const [intData, offerData] = await Promise.all([
+          interviewsService.list().catch(() => []),
+          offersService.list().catch(() => []),
+        ])
+        if (active && Array.isArray(intData) && intData.length > 0) {
+          setScheduleList(intData.map(mapBackendInterviewToScheduleRow))
+        }
+        if (active && Array.isArray(offerData) && offerData.length > 0) {
+          setOfferLetters(offerData.map(mapBackendOfferToOfferRow))
+        }
+      } catch (err) {
+        if (active) showToast(apiErrorMessage(err))
+      }
+    }
+    fetchInit()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const handleRescheduleInterview = async (id: string, dateTimeIso: string, reason?: string) => {
+    try {
+      await interviewsService.reschedule(id, { dateTime: dateTimeIso, reason })
+      showToast('Interview rescheduled successfully!')
+      await reloadInterviews()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
+
+  const handleCancelInterview = async (id: string, reason?: string) => {
+    try {
+      await interviewsService.cancel(id, { reason: reason || 'Cancelled by recruiter' })
+      showToast('Interview cancelled successfully!')
+      await reloadInterviews()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
+
+  const handleSubmitInterviewFeedback = async (id: string, recommendation: string, notes: string, rating?: number) => {
+    try {
+      await interviewsService.submitFeedback(id, {
+        recommendation,
+        feedbackNotes: notes,
+        technicalScore: rating || 4,
+      })
+      showToast('Interview feedback submitted successfully!')
+      await reloadInterviews()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
+
 
   const handleOpenReqOverview = (reqId: string, position: string, company: string) => {
     setSelectedReqDetail({
@@ -779,9 +1021,6 @@ export function InterviewTrackingPage({
       if (statusToggle === 'upcoming') {
         return (row.status as string) === 'Upcoming' || (row.status as string) === 'Scheduled'
       }
-      if (statusToggle === 'in_progress') {
-        return row.status === 'In Progress'
-      }
       if (statusToggle === 'completed') {
         return row.status === 'Completed'
       }
@@ -791,7 +1030,7 @@ export function InterviewTrackingPage({
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
 
   const totalPages = Math.ceil(filteredScheduleList.length / pageSize) || 1
 
@@ -1006,26 +1245,72 @@ export function InterviewTrackingPage({
     setNotJoinedCustomNote(candidate.notJoinedNote || '')
   }
 
-  const handleSaveNotJoinedRecord = () => {
+  const handleSaveNotJoinedRecord = async () => {
     if (!notJoinedModalCandidate) return
+    try {
+      const note = notJoinedCustomNote.trim() || `Candidate backed out / did not join: ${selectedNotJoinedReason}`
+      await offersService.updateStatus(notJoinedModalCandidate.id, {
+        status: 'Not Joined',
+        declinedReason: selectedNotJoinedReason,
+        notJoinedNote: note,
+      })
+      showToast(`Non-joining record and note saved for candidate ${notJoinedModalCandidate.candidateName}!`)
+      setNotJoinedModalCandidate(null)
+      setNotJoinedCustomNote('')
+      await reloadOffers()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
 
-    setOfferLetters(prev =>
-      prev.map(item =>
-        item.id === notJoinedModalCandidate.id
-          ? {
-              ...item,
-              status: 'Not Joined',
-              notJoinedReason: selectedNotJoinedReason,
-              notJoinedNote: notJoinedCustomNote.trim() || `Candidate backed out / did not join: ${selectedNotJoinedReason}`,
-              notJoinedDate: 'Today',
-            }
-          : item
-      )
-    )
+  const handleMarkOfferJoined = async (item: OfferLetterRowItem) => {
+    try {
+      await offersService.updateStatus(item.id, { status: 'Joined' })
+      showToast(`Candidate ${item.candidateName} marked as Joined / On-boarded! 🎉`)
+      await reloadOffers()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
 
-    showToast(`Non-joining record and note saved for candidate ${notJoinedModalCandidate.candidateName}!`)
-    setNotJoinedModalCandidate(null)
-    setNotJoinedCustomNote('')
+  const handleUpdateOffer = async (id: string, offeredCtc?: number, joiningDate?: string, status?: string) => {
+    try {
+      await offersService.update(id, { offeredCtc, joiningDate, status })
+      showToast('Offer updated successfully!')
+      await reloadOffers()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+  }
+
+  const handleCreateOfferPrompt = async () => {
+    try {
+      const subs = await submissionsService.list()
+      if (!Array.isArray(subs) || subs.length === 0) {
+        showToast('No active submissions found to create an offer.')
+        return
+      }
+      const optionsText = subs.slice(0, 10).map((s: any, idx: number) => `[${idx}] ${s.candidateName || s.candidate} — ${s.requirementTitle || s.requirement}`).join('\n')
+      const subChoice = prompt(`Select candidate submission index (0 to ${Math.min(subs.length - 1, 9)}):\n` + optionsText, '0')
+      if (subChoice === null) return
+      const selectedSub = subs[Number(subChoice)] || subs[0]
+      const subId = selectedSub.id || selectedSub._id
+
+      const ctcStr = prompt('Enter Offered CTC in INR (e.g. 2500000):', '2500000')
+      if (!ctcStr) return
+      const joiningDateStr = prompt('Enter Joining Date (YYYY-MM-DD):', '2026-11-01') || '2026-11-01'
+
+      await offersService.create({
+        submissionId: subId,
+        offeredCtc: Number(ctcStr) || 2500000,
+        joiningDate: new Date(joiningDateStr).toISOString(),
+        status: 'Offer Released',
+      })
+      showToast('Offer created successfully and saved to MongoDB!')
+      await reloadOffers()
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
   }
 
   if (selectedReqDetail) {
@@ -1045,20 +1330,11 @@ export function InterviewTrackingPage({
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Interview Schedule</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Track upcoming interviews, in-progress sessions, final decisions, and offer letters
+            Track upcoming interviews, final decisions, and offer letters
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsCalendarModalOpen(true)}
-            className="px-4 py-2.5 bg-[#6B3BF6] hover:bg-[#5B2DF0] text-white rounded-2xl text-xs font-extrabold shadow-md transition-all cursor-pointer flex items-center gap-2 active:scale-98"
-          >
-            <CalendarIcon className="w-4 h-4 text-white" />
-            <span>Open Interview Calendar View</span>
-          </button>
-        </div>
+
       </div>
 
       {/* 2. TEAM LEAD INTERVIEW SCOPE TOGGLE (Only shown for Team Lead role) */}
@@ -1155,21 +1431,6 @@ export function InterviewTrackingPage({
             >
               <Clock className="w-4 h-4" />
               <span>Upcoming</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setStatusToggle('in_progress')
-                setCurrentPage(1)
-              }}
-              className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
-                statusToggle === 'in_progress'
-                  ? 'bg-[#6B3BF6] text-white shadow-md font-extrabold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <Activity className="w-4 h-4" />
-              <span>In Progress</span>
             </button>
 
             <button
@@ -1283,18 +1544,7 @@ export function InterviewTrackingPage({
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-[#6B3BF6]" />
             <span>
-              <strong>Upcoming Interviews:</strong> All scheduled interviews reflect here. When the interview date/time completes, it shifts to <strong>In Progress</strong> waiting for the evaluation result.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {statusToggle === 'in_progress' && (
-        <div className="p-3.5 bg-purple-50/70 border border-purple-200/80 rounded-xl flex items-center justify-between text-xs text-purple-950 font-medium">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#6B3BF6]" />
-            <span>
-              <strong>In Progress (Awaiting Result):</strong> Interview sessions completed waiting for result. Perform actions here to record <strong>Selected in Interview</strong> or <strong>Rejected in Interview</strong>.
+              <strong>Upcoming Interviews:</strong> All scheduled interviews reflect here.
             </span>
           </div>
         </div>
@@ -1510,6 +1760,7 @@ export function InterviewTrackingPage({
             totalItems={filteredRejectedList.length}
             pageSize={pageSize}
             onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
           />
         </div>
       ) : statusToggle === 'onboarding' ? null : (
@@ -1518,8 +1769,6 @@ export function InterviewTrackingPage({
             <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
               {statusToggle === 'upcoming'
                 ? 'Upcoming Interviews'
-                : statusToggle === 'in_progress'
-                ? 'In Progress Interviews'
                 : statusToggle === 'completed'
                 ? 'Completed Interviews'
                 : 'All Scheduled & Conducted Interviews'}
@@ -1553,6 +1802,9 @@ export function InterviewTrackingPage({
                       <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
                         STATUS
                       </th>
+                      <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                        REMARKS / REJECTION REASON
+                      </th>
                     </>
                   ) : statusToggle === 'upcoming' ? (
                     <>
@@ -1574,6 +1826,9 @@ export function InterviewTrackingPage({
                       <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
                         SCHEDULE ACTIONS
                       </th>
+                      <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                        REMARKS / REJECTION REASON
+                      </th>
                     </>
                   ) : (
                     <>
@@ -1592,6 +1847,9 @@ export function InterviewTrackingPage({
                       <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
                         MODE
                       </th>
+                      <th className="px-4 py-3.5 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                        REMARKS / REJECTION REASON
+                      </th>
                     </>
                   )}
                 </tr>
@@ -1599,7 +1857,7 @@ export function InterviewTrackingPage({
               <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
                 {paginatedScheduleList.length === 0 ? (
                   <tr>
-                    <td colSpan={statusToggle === 'in_progress' || statusToggle === 'completed' ? 5 : 6} className="py-10 text-center text-slate-400">
+                    <td colSpan={statusToggle === 'completed' ? 6 : 7} className="py-10 text-center text-slate-400">
                       No interviews in this section.
                     </td>
                   </tr>
@@ -1609,9 +1867,15 @@ export function InterviewTrackingPage({
                       {statusToggle === 'all' ? (
                         <>
                           {/* 1. CANDIDATE NAME */}
-                          <td className="px-4 py-4 font-extrabold text-slate-900 flex items-center gap-2">
-                            <User className="w-4 h-4 text-slate-400" />
-                            <span>{row.candidateName}</span>
+                          <td className="px-4 py-4 font-extrabold text-slate-900">
+                            <button
+                              onClick={() => handleOpenCandidateDetailModal(row)}
+                              className="flex items-center gap-2 text-[#6B3BF6] hover:underline cursor-pointer text-left font-extrabold group"
+                              title="Click to view candidate details & evaluation"
+                            >
+                              <User className="w-4 h-4 text-[#6B3BF6] shrink-0" />
+                              <span className="group-hover:text-[#5b2fd8]">{row.candidateName}</span>
+                            </button>
                           </td>
 
                           {/* 2. REQUIREMENT ID + ROLE */}
@@ -1659,21 +1923,52 @@ export function InterviewTrackingPage({
                           <td className="px-4 py-4 whitespace-nowrap">
                             <span
                               className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
-                                row.status === 'Completed'
+                                (row.status as string) === 'Completed'
                                   ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                  : (row.status as string) === 'Rejected'
+                                  ? 'bg-rose-100 text-rose-800 border-rose-200'
                                   : 'bg-purple-100 text-purple-800 border-purple-200'
                               }`}
                             >
                               {row.status}
                             </span>
                           </td>
+
+                          {/* 7. REMARKS / REJECTION REASON */}
+                          <td className="px-4 py-4 max-w-xs">
+                            {row.rejectionReason ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 border border-rose-200 text-rose-700">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>{row.rejectionReason}</span>
+                              </div>
+                            ) : row.remark ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 border border-purple-200 text-purple-700">
+                                <FileText className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                                <span>{row.remark}</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenCandidateDetailModal(row)}
+                                className="text-xs text-slate-400 hover:text-[#6B3BF6] font-medium underline cursor-pointer flex items-center gap-1"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>+ Add remark / reason</span>
+                              </button>
+                            )}
+                          </td>
                         </>
                       ) : statusToggle === 'upcoming' ? (
                         <>
                           {/* 1. NAME */}
-                          <td className="px-4 py-4 font-extrabold text-slate-900 flex items-center gap-2">
-                            <User className="w-4 h-4 text-slate-400" />
-                            <span>{row.candidateName}</span>
+                          <td className="px-4 py-4 font-extrabold text-slate-900">
+                            <button
+                              onClick={() => handleOpenCandidateDetailModal(row)}
+                              className="flex items-center gap-2 text-[#6B3BF6] hover:underline cursor-pointer text-left font-extrabold group"
+                              title="Click to view candidate details & evaluation"
+                            >
+                              <User className="w-4 h-4 text-[#6B3BF6] shrink-0" />
+                              <span className="group-hover:text-[#5b2fd8]">{row.candidateName}</span>
+                            </button>
                           </td>
 
                           {/* 2. REQUIREMENT ID + ROLE */}
@@ -1738,13 +2033,42 @@ export function InterviewTrackingPage({
                               </button>
                             </div>
                           </td>
+
+                          {/* 7. REMARKS / REJECTION REASON */}
+                          <td className="px-4 py-4 max-w-xs">
+                            {row.rejectionReason ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 border border-rose-200 text-rose-700">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>{row.rejectionReason}</span>
+                              </div>
+                            ) : row.remark ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 border border-purple-200 text-purple-700">
+                                <FileText className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                                <span>{row.remark}</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenCandidateDetailModal(row)}
+                                className="text-xs text-slate-400 hover:text-[#6B3BF6] font-medium underline cursor-pointer flex items-center gap-1"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>+ Add remark / reason</span>
+                              </button>
+                            )}
+                          </td>
                         </>
                       ) : (
                         <>
                           {/* 1. NAME */}
-                          <td className="px-4 py-4 font-extrabold text-slate-900 flex items-center gap-2">
-                            <User className="w-4 h-4 text-slate-400" />
-                            <span>{row.candidateName}</span>
+                          <td className="px-4 py-4 font-extrabold text-slate-900">
+                            <button
+                              onClick={() => handleOpenCandidateDetailModal(row)}
+                              className="flex items-center gap-2 text-[#6B3BF6] hover:underline cursor-pointer text-left font-extrabold group"
+                              title="Click to view candidate details & evaluation"
+                            >
+                              <User className="w-4 h-4 text-[#6B3BF6] shrink-0" />
+                              <span className="group-hover:text-[#5b2fd8]">{row.candidateName}</span>
+                            </button>
                           </td>
 
                           {/* 2. REQUIREMENT ID + ROLE */}
@@ -1789,6 +2113,29 @@ export function InterviewTrackingPage({
                               <span>{row.mode} ({row.dateTime})</span>
                             </div>
                           </td>
+
+                          {/* 6. REMARKS / REJECTION REASON */}
+                          <td className="px-4 py-4 max-w-xs">
+                            {row.rejectionReason ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 border border-rose-200 text-rose-700">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>{row.rejectionReason}</span>
+                              </div>
+                            ) : row.remark ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 border border-purple-200 text-purple-700">
+                                <FileText className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                                <span>{row.remark}</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleOpenCandidateDetailModal(row)}
+                                className="text-xs text-slate-400 hover:text-[#6B3BF6] font-medium underline cursor-pointer flex items-center gap-1"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>+ Add remark / reason</span>
+                              </button>
+                            )}
+                          </td>
                         </>
                       )}
                     </tr>
@@ -1805,6 +2152,7 @@ export function InterviewTrackingPage({
             totalItems={filteredScheduleList.length}
             pageSize={pageSize}
             onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
           />
         </div>
       )}
@@ -1826,8 +2174,18 @@ export function InterviewTrackingPage({
               </p>
             </div>
 
-            {/* Sub-Pill Filters */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+            {/* Sub-Pill Filters & Create Offer Button */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCreateOfferPrompt}
+                className="px-3 py-1.5 bg-[#2563EB] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Create Offer</span>
+              </button>
+
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
               <button
                 type="button"
                 onClick={() => setOfferOutcomeFilter('all')}
@@ -1879,6 +2237,7 @@ export function InterviewTrackingPage({
               </button>
             </div>
           </div>
+        </div>
 
           {/* Quick Summary Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-medium">
@@ -2007,12 +2366,7 @@ export function InterviewTrackingPage({
                             <>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setOfferLetters(prev =>
-                                    prev.map(o => (o.id === item.id ? { ...o, status: 'Joined', joiningDate: o.joiningDate || 'Aug 25, 2026' } : o))
-                                  )
-                                  showToast(`Candidate ${item.candidateName} marked as Joined / On-boarded! 🎉`)
-                                }}
+                                onClick={() => handleMarkOfferJoined(item)}
                                 className="px-2.5 py-1.5 bg-[#6B3BF6] hover:bg-[#5b30d9] text-white text-[11px] font-extrabold rounded-xl cursor-pointer transition-all shadow-2xs flex items-center gap-1"
                               >
                                 <UserCheck className="w-3.5 h-3.5" />
@@ -2057,17 +2411,98 @@ export function InterviewTrackingPage({
         </div>
       )}
 
+      {/* INTERVIEW MANAGE MODAL (RESCHEDULE, FEEDBACK, CANCEL) */}
+      {selectedSchedule && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-150 font-sans text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Manage Interview — {selectedSchedule.candidateName}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {selectedSchedule.position} · {selectedSchedule.company} ({selectedSchedule.round})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSchedule(null)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const newDt = prompt('Enter new Date & Time (YYYY-MM-DD THH:MM):', selectedSchedule.dateTime)
+                  if (newDt) {
+                    const reason = prompt('Reason for rescheduling:') || 'Rescheduled via UI'
+                    handleRescheduleInterview(selectedSchedule.id, new Date(newDt).toISOString(), reason)
+                    setSelectedSchedule(null)
+                  }
+                }}
+                className="flex-1 py-2.5 px-3 bg-[#6B3BF6] hover:bg-[#5b30d9] text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all shadow-2xs text-center"
+              >
+                📅 Reschedule
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const rec = prompt('Enter Recommendation (Passed / Rejected / Hold):', 'Passed')
+                  if (rec) {
+                    const notes = prompt('Enter Feedback Notes:') || 'Interview feedback submitted'
+                    handleSubmitInterviewFeedback(selectedSchedule.id, rec, notes)
+                    setSelectedSchedule(null)
+                  }
+                }}
+                className="flex-1 py-2.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all shadow-2xs text-center"
+              >
+                💬 Submit Feedback
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const reason = prompt('Enter cancellation reason:') || 'Cancelled by recruiter'
+                  handleCancelInterview(selectedSchedule.id, reason)
+                  setSelectedSchedule(null)
+                }}
+                className="flex-1 py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all shadow-2xs text-center"
+              >
+                ❌ Cancel
+              </button>
+            </div>
+
+            <div className="pt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setSelectedSchedule(null)}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SCHEDULE INTERVIEW MODAL */}
       {isScheduleModalOpen && (
         <ScheduleInterviewModal
           isOpen={isScheduleModalOpen}
           onClose={() => setIsScheduleModalOpen(false)}
-          onScheduleSuccess={() => {
+          onScheduleSuccess={async () => {
             showToast('Interview scheduled successfully!')
+            await reloadInterviews()
             setIsScheduleModalOpen(false)
           }}
         />
       )}
+
 
       {/* REMIND CANDIDATE MODAL */}
       {remindModalCandidate && (
@@ -2763,6 +3198,182 @@ export function InterviewTrackingPage({
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANDIDATE DETAILS & REMARKS / EVALUATION POPUP MODAL */}
+      {selectedCandidateDetailModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-[#6B3BF6] font-black text-base shrink-0">
+                  {selectedCandidateDetailModal.candidateName.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
+                    {selectedCandidateDetailModal.candidateName}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Candidate Evaluation & Profile Summary
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCandidateDetailModal(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="space-y-4">
+              {/* Candidate Info Grid */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Contact Email</span>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5 truncate">
+                    <Mail className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                    <span className="truncate">{selectedCandidateDetailModal.candidateEmail || 'candidate@example.com'}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Phone Number</span>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                    <span>{selectedCandidateDetailModal.candidatePhone || '+91 98765 43210'}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Total Experience</span>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                    <span>{selectedCandidateDetailModal.experience || '5+ Years'}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Client Company</span>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
+                    <span>{selectedCandidateDetailModal.company || 'Accenture'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement & Round summary */}
+              <div className="bg-purple-50/50 p-3.5 rounded-xl border border-purple-100 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider block">Requirement & Position</span>
+                  <span className="font-extrabold text-slate-900 text-xs">
+                    {selectedCandidateDetailModal.position} ({selectedCandidateDetailModal.requirementId || 'REQ-2026-08-12-001'})
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider block">Round</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${getRoundBadgeStyle(selectedCandidateDetailModal.round)}`}>
+                    {selectedCandidateDetailModal.round}
+                  </span>
+                </div>
+              </div>
+
+              {/* Key Skills */}
+              {selectedCandidateDetailModal.skills && (
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Key Skills & Tech Stack</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Array.isArray(selectedCandidateDetailModal.skills)
+                      ? selectedCandidateDetailModal.skills
+                      : String(selectedCandidateDetailModal.skills).split(',')
+                    ).map((skill: string, idx: number) => (
+                      <span key={idx} className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {skill.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Evaluation Outcome Status Selection */}
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <label className="text-xs font-extrabold text-slate-800 block">
+                  Evaluation Outcome & Remark Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalStatusChoice('Remark')}
+                    className={`p-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      modalStatusChoice === 'Remark'
+                        ? 'bg-purple-50 border-[#6B3BF6] text-[#6B3BF6] ring-2 ring-purple-500/20'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>General Remark / Note</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setModalStatusChoice('Rejected')}
+                    className={`p-2.5 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      modalStatusChoice === 'Rejected'
+                        ? 'bg-rose-50 border-rose-500 text-rose-600 ring-2 ring-rose-500/20'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Candidate Rejected</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Remark / Rejection Reason Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-extrabold text-slate-800 flex items-center justify-between">
+                  <span>
+                    {modalStatusChoice === 'Rejected' ? 'Rejection Reason & Remarks' : 'Candidate Evaluation Remark'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Displayed directly in table</span>
+                </label>
+                <textarea
+                  value={modalRemarkText}
+                  onChange={(e) => setModalRemarkText(e.target.value)}
+                  placeholder={
+                    modalStatusChoice === 'Rejected'
+                      ? 'Type the reason for rejection (e.g., Technical gap in React & System Design, High salary expectation)...'
+                      : 'Type remark or evaluation feedback about the candidate...'
+                  }
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] font-medium resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedCandidateDetailModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCandidateRemark}
+                className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5b2fd8] text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Save & Display in Table</span>
               </button>
             </div>
           </div>

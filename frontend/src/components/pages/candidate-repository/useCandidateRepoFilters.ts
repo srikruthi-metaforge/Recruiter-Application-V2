@@ -9,7 +9,7 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
   const [submissionCountFilter, setSubmissionCountFilter] = useState('All Submissions')
   const [submittedClientFilter, setSubmittedClientFilter] = useState('All Clients')
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(5)
 
   const uniqueSubmittedClients = useMemo(() => {
     const set = new Set<string>()

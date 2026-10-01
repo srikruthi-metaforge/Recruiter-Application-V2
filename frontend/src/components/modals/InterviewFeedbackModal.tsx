@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
-import { X, Calendar, Star, CheckCircle2, MessageSquare, Award } from 'lucide-react'
+import { X, Calendar, Star, CheckCircle2 } from 'lucide-react'
 import { Interview, InterviewStatus } from '../../types'
+import { interviewsService } from '../../services/workspace.service'
+import { apiErrorMessage } from '../pages/submissions/preamble'
 
 interface InterviewFeedbackModalProps {
   isOpen: boolean
@@ -19,13 +21,44 @@ export function InterviewFeedbackModal({
   const [status, setStatus] = useState<InterviewStatus>('Confirmed')
   const [notes, setNotes] = useState(interview?.notes || '')
   const [recommendation, setRecommendation] = useState<'Strong Hire' | 'Hire' | 'Hold' | 'Reject'>('Hire')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   if (!isOpen || !interview) return null
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSaveFeedback(interview.id, status, `[Recommendation: ${recommendation} | Rating: ${rating}/5 Stars] ${notes}`)
-    onClose()
+    setIsSubmitting(true)
+    setErrorMsg(null)
+    try {
+      const rec =
+        (status as string) === 'Cancelled'
+          ? 'Rejected'
+          : recommendation === 'Strong Hire' || recommendation === 'Hire'
+          ? 'Passed'
+          : recommendation === 'Reject'
+          ? 'Rejected'
+          : 'Hold'
+
+      if ((status as string) === 'Cancelled') {
+
+        await interviewsService.cancel(interview.id, { reason: notes || 'Interview cancelled' })
+      } else {
+        await interviewsService.submitFeedback(interview.id, {
+          recommendation: rec,
+          technicalScore: rating,
+          feedbackNotes: `[Recommendation: ${recommendation} | Rating: ${rating}/5 Stars] ${notes}`,
+          notes,
+        })
+      }
+
+      onSaveFeedback(interview.id, status, `[Recommendation: ${recommendation} | Rating: ${rating}/5 Stars] ${notes}`)
+      onClose()
+    } catch (err) {
+      setErrorMsg(apiErrorMessage(err))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -49,6 +82,12 @@ export function InterviewFeedbackModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold">
+            {errorMsg}
+          </div>
+        )}
 
         {/* Content */}
         <form onSubmit={handleSave} className="p-6 space-y-4">
@@ -139,9 +178,10 @@ export function InterviewFeedbackModal({
             </button>
             <button
               type="submit"
-              className="px-5 h-10 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 font-sans"
+              disabled={isSubmitting}
+              className="px-5 h-10 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-sm transition-all flex items-center gap-2 font-sans"
             >
-              <CheckCircle2 className="w-4 h-4" /> Save Evaluation
+              <CheckCircle2 className="w-4 h-4" /> {isSubmitting ? 'Saving...' : 'Save Evaluation'}
             </button>
           </div>
         </form>
@@ -149,3 +189,4 @@ export function InterviewFeedbackModal({
     </div>
   )
 }
+

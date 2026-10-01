@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Role } from '../../../types'
 import { RecruiterOverviewItem } from './types'
-import { INITIAL_RECRUITERS_DATA } from './recruiters.data'
+import { usersService } from '../../../services/workspace.service'
 import { RecruitersHeader } from './RecruitersHeader'
 import { RecruitersKpis } from './RecruitersKpis'
 import { RecruitersFilters } from './RecruitersFilters'
@@ -15,7 +15,7 @@ interface RecruitersPageProps {
 }
 
 export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
-  const [recruitersList, setRecruitersList] = useState<RecruiterOverviewItem[]>(INITIAL_RECRUITERS_DATA)
+  const [recruitersList, setRecruitersList] = useState<RecruiterOverviewItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [clientFilter, setClientFilter] = useState('All Clients')
   const [teamLeadFilter, setTeamLeadFilter] = useState('All Team Leads')
@@ -30,6 +30,36 @@ export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
   const [newAssignedClient, setNewAssignedClient] = useState('Accenture')
   const [newTatTarget, setNewTatTarget] = useState('2.0')
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    usersService
+      .list('?role=recruiter')
+      .then((rows: any) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || []
+        if (cancelled) return
+        setRecruitersList(
+          list.map((u: any): RecruiterOverviewItem => ({
+            id: u.userId || u.id,
+            name: u.name,
+            email: u.email,
+            avatar: String(u.name || 'R').charAt(0),
+            role: 'Recruiter',
+            teamLead: u.supervisor || '',
+            clientNames: u.assignedClient ? [u.assignedClient] : [],
+            totalRequirements: 0,
+            totalSubmissions: 0,
+            tatDays: 2,
+            totalInterviews: 0,
+            performanceStatus: 'On Track',
+          })),
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const showToast = (msg: string) => {
     setToastMsg(msg)
@@ -63,7 +93,7 @@ export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
   }
 
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
 
   // Adjust Client Modal State
   const [adjustClientRecruiter, setAdjustClientRecruiter] = useState<RecruiterOverviewItem | null>(null)
@@ -118,6 +148,7 @@ export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
         totalPages={totalPages}
         pageSize={pageSize}
         setCurrentPage={setCurrentPage}
+        setPageSize={setPageSize}
         onAdjustClient={(r) => {
           setAdjustClientRecruiter(r)
           setSelectedClientForAdjust(r.clientNames[0] || 'Accenture')

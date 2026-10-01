@@ -51,7 +51,7 @@ export const DEFAULT_MODULE_PERMISSIONS: PermissionGroup[] = [
     permissions: [
       { key: 'user_manage', label: 'Manage User Accounts & Roles', enabled: false },
       { key: 'role_manage', label: 'Modify System Roles & Access Matrix', enabled: false },
-      { key: 'audit_logs', label: 'Access Security Audit Trail', enabled: false },
+      { key: 'activity_logs', label: 'Access Security Audit Trail', enabled: false },
     ],
   },
 ]
@@ -71,7 +71,7 @@ export const INITIAL_ROLES: EnterpriseRoleData[] = [
       sub_create: true, sub_view_all: true, sub_reassign: true, sub_move_stage: true,
       int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: true,
       rep_view_exec: true, rep_view_recruiter: true, rep_export_csv: true,
-      user_manage: true, role_manage: true, audit_logs: true,
+      user_manage: true, role_manage: true, activity_logs: true,
     },
   },
   {
@@ -88,7 +88,7 @@ export const INITIAL_ROLES: EnterpriseRoleData[] = [
       sub_create: true, sub_view_all: true, sub_reassign: true, sub_move_stage: true,
       int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: true,
       rep_view_exec: true, rep_view_recruiter: true, rep_export_csv: false,
-      user_manage: true, role_manage: false, audit_logs: false,
+      user_manage: true, role_manage: false, activity_logs: false,
     },
   },
   {
@@ -105,7 +105,7 @@ export const INITIAL_ROLES: EnterpriseRoleData[] = [
       sub_create: true, sub_view_all: true, sub_reassign: true, sub_move_stage: true,
       int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: true,
       rep_view_exec: false, rep_view_recruiter: true, rep_export_csv: false,
-      user_manage: false, role_manage: false, audit_logs: false,
+      user_manage: false, role_manage: false, activity_logs: false,
     },
   },
   {
@@ -122,7 +122,7 @@ export const INITIAL_ROLES: EnterpriseRoleData[] = [
       sub_create: true, sub_view_all: false, sub_reassign: false, sub_move_stage: true,
       int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: false,
       rep_view_exec: false, rep_view_recruiter: false, rep_export_csv: false,
-      user_manage: false, role_manage: false, audit_logs: false,
+      user_manage: false, role_manage: false, activity_logs: false,
     },
   },
 ]

@@ -1,21 +1,21 @@
-# MetaForge Recruiter Application Platform (MRAP)
+# MetaForge Recruiter Application Platform (MRAP) V2
 
 Architecture-aligned layout. **UI, roles, permissions, and workflows are unchanged.**
 
 ## Layout
 
 ```
-frontend/           React UI (components, features, hooks, services, store, types, utils, public)
-backend/            NestJS API (existing; not expanded in this structure pass)
-ai-service/         Isolated AI gateway (interfaces/placeholders)
-workers/            Reserved for extracted background workers
-infrastructure/     Notes for Docker/Caddy/CI locations
-documents/          API and BRD references
+frontend/           Next.js 15 UI (SPA shell, mock-first with API hydration)
+backend/            NestJS API on /api/v1 (JWT, Mongo, optional Redis)
+ai-service/         Isolated AI gateway (heuristic parser; LLM keys optional)
+workers/            Redis list worker (idles if REDIS_URL is unset)
+infrastructure/     Notes for Docker/Caddy
+documents/          Pointers to product + database docs
+docs/database/      Mongo architecture pack
 docker-compose.yml
 Caddyfile
 .env.example
 README.md
-MIGRATION_PLAN.md
 ```
 
 ## Local development
@@ -23,17 +23,25 @@ MIGRATION_PLAN.md
 ```bash
 # Frontend (http://localhost:3000)
 cd frontend
+copy .env.example .env
 npm install
 npm run dev
 
-# Optional backend  (http://localhost:3001/api/v1) — needs Mongo
+# Backend (http://localhost:3001/api/v1) — needs Mongo
 cd backend
-copy .env.example .env
+copy ..\.env.example .env
 npm install
+npm run build
 npm run start:dev
+
+# Optional AI gateway (http://localhost:3002)
+cd ai-service
+npm start
 ```
 
-Demo logins (unchanged):
+Set `SEED_ON_START=true` so demo users, MetaForge org, Accenture client, and sample requirements are created on boot.
+
+Demo logins:
 
 | Role | Email | Password |
 |---|---|---|
@@ -41,3 +49,5 @@ Demo logins (unchanged):
 | Admin | d.park@talentflow.io | Admin@2026 |
 | Team Lead | harish.g@metaforgeit.com | Lead@2026 |
 | Recruiter | m.chen@talentflow.io | Rec@2026 |
+| Dev Team | dev.team@talentflow.io | Dev@2026 |
+| Client | client@accenture.com | Client@2026 |

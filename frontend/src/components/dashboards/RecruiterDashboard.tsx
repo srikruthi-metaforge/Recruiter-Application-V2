@@ -4,6 +4,7 @@ import { RequirementDetailOverview } from '../pages/RequirementDetailOverview'
 import { CandidateRepositoryPage } from '../pages/CandidateRepositoryPage'
 import { SubmissionsPage } from '../pages/SubmissionsPage'
 import { InterviewTrackingPage } from '../pages/InterviewTrackingPage'
+import { RequirementsPage } from '../pages/RequirementsPage'
 import {
   Send,
   MessageSquare,
@@ -162,8 +163,8 @@ export function RecruiterDashboard({
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
-  // Inline View state for KPI cards (Total Submissions, Interviews Handled, etc.)
-  const [inlineView, setInlineView] = useState<'submissions' | 'interviews' | null>(null)
+  // Inline View state for KPI cards (Assigned Requirements, Total Submissions, Interviews Handled, Onboarding)
+  const [inlineView, setInlineView] = useState<'requirements' | 'submissions' | 'interviews' | 'onboarding' | null>(null)
 
   // Inline Candidate Repository & Submission workflow state (kept strictly inside My Work page)
   const [inlineReqId, setInlineReqId] = useState<string | null>(null)
@@ -433,6 +434,41 @@ export function RecruiterDashboard({
     return sub.stage.toLowerCase() === recentSubmissionsFilter.toLowerCase()
   })
 
+  if (inlineView === 'requirements') {
+    return (
+      <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
+        <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setInlineView(null)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4 text-slate-500" />
+              <span>Back to My Workspace</span>
+            </button>
+            <span className="text-xs font-bold text-slate-300">|</span>
+            <span className="text-xs font-bold text-slate-700">Assigned Requirements Overview</span>
+          </div>
+        </div>
+
+        <RequirementsPage
+          role="recruiter"
+          requirements={requirements}
+          submissions={submissions}
+          interviews={interviews}
+          onOpenSubmit={onOpenSubmitCandidate}
+          onNavigateToDashboard={() => {
+            setInlineView(null)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
+      </div>
+    )
+  }
+
   if (inlineView === 'submissions') {
     return (
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
@@ -492,6 +528,36 @@ export function RecruiterDashboard({
     )
   }
 
+  if (inlineView === 'onboarding') {
+    return (
+      <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
+        <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setInlineView(null)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4 text-slate-500" />
+              <span>Back to My Workspace</span>
+            </button>
+            <span className="text-xs font-bold text-slate-300">|</span>
+            <span className="text-xs font-bold text-slate-700">Onboarding Overview</span>
+          </div>
+        </div>
+
+        <InterviewTrackingPage
+          role="recruiter"
+          interviews={interviews}
+          onOpenFeedbackModal={onOpenFeedbackModal}
+          initialStatusToggle="onboarding"
+        />
+      </div>
+    )
+  }
+
   if (inlineReqId) {
     return (
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200">
@@ -523,7 +589,28 @@ export function RecruiterDashboard({
       <section>
         <h2 className="text-base font-semibold text-slate-800 mb-3">Performance Summary</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Total Submissions */}
+          {/* Card 1: Assigned Requirements */}
+          <div
+            onClick={() => setInlineView('requirements')}
+            className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer hover:scale-[1.01] group"
+            title="Click to view Assigned Requirements"
+          >
+            <div>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs sm:text-sm font-semibold text-slate-700">Assigned Requirements</p>
+                <ExternalLink className="w-3.5 h-3.5 text-blue-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
+                {filteredReqs.length > 0 ? filteredReqs.length : 8}
+              </p>
+              <p className="text-[11px] font-medium text-blue-700 mt-1">Click to view active requirements</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-[#2F80ED] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* Card 2: Total Submissions */}
           <div
             onClick={() => setInlineView('submissions')}
             className="bg-[#E6F8F0] border border-[#A7F3D0] rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer hover:scale-[1.01] group"
@@ -544,7 +631,7 @@ export function RecruiterDashboard({
             </div>
           </div>
 
-          {/* Card 2: Interviews Handled */}
+          {/* Card 3: Interviews Handled */}
           <div
             onClick={() => setInlineView('interviews')}
             className="bg-[#EEF2FF] border border-[#C7D2FE] rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer hover:scale-[1.01] group"
@@ -565,48 +652,22 @@ export function RecruiterDashboard({
             </div>
           </div>
 
-          {/* Card 3: Selections Achieved */}
+          {/* Card 4: Onboarding */}
           <div
-            onClick={() => setInlineView('submissions')}
+            onClick={() => setInlineView('onboarding')}
             className="bg-[#F4EFFE] border border-[#E9D8FD] rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer hover:scale-[1.01] group"
-            title="Click to view Selections details"
+            title="Click to view Onboarding details"
           >
             <div>
               <div className="flex items-center gap-1.5">
-                <p className="text-xs sm:text-sm font-semibold text-slate-700">Selections Achieved</p>
+                <p className="text-xs sm:text-sm font-semibold text-slate-700">Onboarding</p>
                 <ExternalLink className="w-3.5 h-3.5 text-purple-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
               </div>
               <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">0</p>
-              <p className="text-[11px] font-medium text-purple-700 mt-1">Click to view candidate selections</p>
+              <p className="text-[11px] font-medium text-purple-700 mt-1">Click to view candidate selections & onboarding</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-[#8B5CF6] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
               <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-
-          {/* Card 4: Assigned Requirements */}
-          <div
-            onClick={() => {
-              setInlineView(null)
-              setStatusFilter('Assigned')
-              const el = document.getElementById('active-requirements-section')
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }}
-            className="bg-[#EBF3FF] border border-[#BFDBFE] rounded-2xl p-5 flex items-center justify-between shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer hover:scale-[1.01] group"
-            title="Click to view Assigned Requirements"
-          >
-            <div>
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs sm:text-sm font-semibold text-slate-700">Assigned Requirements</p>
-                <ExternalLink className="w-3.5 h-3.5 text-blue-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-              </div>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
-                {filteredReqs.length > 0 ? filteredReqs.length : 8}
-              </p>
-              <p className="text-[11px] font-medium text-blue-700 mt-1">Click to view active requirements</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-[#2F80ED] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
-              <ClipboardList className="w-5 h-5" />
             </div>
           </div>
         </div>
@@ -618,11 +679,8 @@ export function RecruiterDashboard({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
-              Active Requirements + Submitted Candidates
+              Assigned Requirements
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Your open workload across currently active job demands.
-            </p>
           </div>
         </div>
 
@@ -637,18 +695,6 @@ export function RecruiterDashboard({
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200/90 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] transition-all placeholder:text-slate-400 shadow-2xs"
             />
-          </div>
-
-          <div className="w-full md:w-auto">
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="w-full md:w-auto px-4 py-2.5 rounded-xl border border-slate-200/90 bg-white text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] cursor-pointer shadow-2xs"
-            >
-              <option value="Assigned">Status: Assigned</option>
-              <option value="Submitted">Status: Submitted</option>
-              <option value="Selected for interview">Status: Selected for interview</option>
-            </select>
           </div>
         </div>
 
@@ -741,80 +787,6 @@ export function RecruiterDashboard({
             onPageSizeChange={setPageSize}
             itemLabel="requirements"
           />
-        </div>
-      </section>
-
-      {/* My Recent Submissions Section (Kept at bottom of My Work page) */}
-      <section className="space-y-4 pt-4 border-t border-slate-200/60">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">My Recent Submissions</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Your latest candidate activity across requirements.
-          </p>
-        </div>
-
-        {/* Submissions Table */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/80 bg-slate-50/50">
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    CANDIDATE NAME
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    RECRUITER
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    ROLE
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    CLIENT
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    STATUS
-                  </th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    SUBMITTED ON
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
-                {filteredSubmissions.length > 0 ? (
-                  filteredSubmissions.map(sub => (
-                    <tr
-                      key={sub.id}
-                      onClick={() => onOpenCandidateDetail?.(sub)}
-                      className="hover:bg-slate-50/60 cursor-pointer transition-colors"
-                    >
-                      <td className="px-4 py-3.5 font-semibold text-slate-900">{sub.candidate}</td>
-                      <td className="px-4 py-3.5 text-slate-600">{sub.recruiter}</td>
-                      <td className="px-4 py-3.5 text-slate-600">{sub.req}</td>
-                      <td className="px-4 py-3.5 text-slate-600">{sub.client}</td>
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={`px-3 py-1 rounded-full text-[11px] font-semibold border ${
-                            sub.stage.toLowerCase().includes('reject')
-                              ? 'bg-red-50 text-red-600 border-red-200/80'
-                              : 'bg-blue-50 text-blue-700 border-blue-200/60'
-                          }`}
-                        >
-                          {sub.stage}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-500">{sub.date}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400 text-xs font-medium">
-                      No submissions found for your user.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
       </section>
 

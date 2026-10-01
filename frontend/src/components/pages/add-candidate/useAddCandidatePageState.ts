@@ -18,6 +18,7 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
   const [showSuccessToast, setShowSuccessToast] = useState(false)
   const [showSaveDraftToast, setShowSaveDraftToast] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   // Saved Drafts state
   const [draftsList, setDraftsList] = useState<SavedDraftItem[]>(() => getSavedDrafts())
@@ -85,6 +86,8 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
     setShowSaveDraftToast,
     toastMsg,
     setToastMsg,
+    isSaving,
+    setIsSaving,
     draftsList,
     setDraftsList,
     candidateId,

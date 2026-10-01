@@ -21,6 +21,9 @@ export function SubmissionsModals({ vm }: { vm: SubmissionsVm }) {
     reasons,
     setReasons,
     handleScheduleSuccess,
+    handleUpdateStage,
+    handleLeadApproval,
+    handleForwardClient,
   } = vm
   return (
     <>
@@ -31,13 +34,14 @@ export function SubmissionsModals({ vm }: { vm: SubmissionsVm }) {
           submission={{
             id: selectedSub.id,
             candidate: selectedSub.candidateName,
-            reqId: 'REQ-2026-05',
+            reqId: selectedSub.reqId || 'REQ-2026-05',
             req: selectedSub.requirement,
-            client: selectedSub.currentCompany,
+            client: selectedSub.currentCompany || selectedSub.clientName,
             experience: selectedSub.experience,
             recruiter: selectedSub.submittedBy,
             date: selectedSub.submittedOn,
             stage: selectedSub.status,
+            rejectionReason: selectedSub.rejectionReason,
             email: 'candidate@email.com',
             phone: '+91 98765 43210',
             location: 'Bangalore, India',
@@ -50,9 +54,13 @@ export function SubmissionsModals({ vm }: { vm: SubmissionsVm }) {
           onSaveRejectionReason={(id, newReason) => {
             setReasons(prev => ({ ...prev, [id]: newReason }))
           }}
+          onUpdateStage={handleUpdateStage}
+          onLeadApproval={handleLeadApproval}
+          onForwardClient={handleForwardClient}
           onClose={() => setSelectedSub(null)}
         />
       )}
+
 
       {/* Schedule Interview Modal */}
       <ScheduleInterviewModal

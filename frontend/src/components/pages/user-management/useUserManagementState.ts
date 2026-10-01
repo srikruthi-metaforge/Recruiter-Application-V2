@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Role } from '../../../types'
 import type {
   UserAccountData,
@@ -6,10 +6,8 @@ import type {
   RecruiterUserPermissionData,
   EnterpriseRoleData,
 } from './types'
-import { INITIAL_DELETED_USERS } from './deletedUsers.data'
-import { INITIAL_ROLES } from './permissions.data'
-import { INITIAL_RECRUITERS_PERMISSIONS } from './recruiters.data'
-import { INITIAL_USERS } from './users.data'
+import { usersService, rolesService } from '../../../services/workspace.service'
+import { apiErrorMessage, mapApiRoles, mapApiUsers } from './userApi'
 
 export function useUserManagementState(
   role: Role = 'superadmin',
@@ -18,9 +16,10 @@ export function useUserManagementState(
   const canModifyUsers = role === 'superadmin' || role === 'devteam'
   const [activeTab, setActiveTab] = useState<'users' | 'permissions' | 'role_definitions'>(initialTab)
 
-  const [users, setUsers] = useState<UserAccountData[]>(INITIAL_USERS)
-  const [roles, setRoles] = useState<EnterpriseRoleData[]>(INITIAL_ROLES)
-  const [recruiterUsers, setRecruiterUsers] = useState<RecruiterUserPermissionData[]>(INITIAL_RECRUITERS_PERMISSIONS)
+  const [users, setUsers] = useState<UserAccountData[]>([])
+  const [roles, setRoles] = useState<EnterpriseRoleData[]>([])
+  const [isSaving, setIsSaving] = useState(false)
+  const [recruiterUsers, setRecruiterUsers] = useState<RecruiterUserPermissionData[]>([])
 
   const [viewMode, setViewMode] = useState<'list' | 'create_user' | 'reset_password' | 'assign_role' | 'create_role' | 'configure_permissions'>('list')
   const [selectedUser, setSelectedUser] = useState<UserAccountData | null>(null)
@@ -70,19 +69,27 @@ export function useUserManagementState(
   const [newRoleDescription, setNewRoleDescription] = useState('')
   const [newRoleTemplate, setNewRoleTemplate] = useState('recruiter')
   const [newPermissions, setNewPermissions] = useState<Record<string, boolean>>({
-    req_view_all: false, req_create: true, req_edit: true, req_assign: false, req_delete: false,
-    cand_search: true, cand_add: true, cand_export: true, cand_delete: false,
-    sub_create: true, sub_view_all: false, sub_reassign: false, sub_move_stage: true,
-    int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: false,
-    rep_view_exec: false, rep_view_recruiter: false, rep_export_csv: false,
-    user_manage: false, role_manage: false, audit_logs: false,
+    cand_search: true, cand_add: true, sub_create: true, sub_move_stage: true,
+    int_schedule: true, int_join_links: true, int_feedback: true,
   })
+
+  useEffect(() => {
+    const templates: Record<string, string[]> = {
+      recruiter: ['cand_search', 'cand_add', 'sub_create', 'sub_move_stage', 'int_schedule', 'int_join_links', 'int_feedback'],
+      lead: ['req_view_all', 'req_assign', 'cand_search', 'cand_add', 'cand_export', 'sub_create', 'sub_view_all', 'sub_reassign', 'sub_move_stage', 'int_schedule', 'int_join_links', 'int_feedback', 'rep_view_recruiter'],
+      admin: ['req_view_all', 'req_create', 'req_edit', 'req_assign', 'cand_search', 'cand_add', 'cand_export', 'sub_create', 'sub_view_all', 'sub_reassign', 'sub_move_stage', 'int_schedule', 'int_join_links', 'int_feedback', 'int_cancel', 'rep_view_exec', 'rep_view_recruiter', 'user_manage'],
+    }
+    const keys = templates[newRoleTemplate] || templates.recruiter
+    const nextPerms: Record<string, boolean> = {}
+    keys.forEach(k => { nextPerms[k] = true })
+    setNewPermissions(nextPerms)
+  }, [newRoleTemplate])
 
   // Full-Page Configure Role Permissions State
   const [editingRole, setEditingRole] = useState<EnterpriseRoleData | null>(null)
   const [tempRolePermissions, setTempRolePermissions] = useState<Record<string, boolean>>({})
 
-  const [deletedUsers, setDeletedUsers] = useState<DeletedUserData[]>(INITIAL_DELETED_USERS)
+  const [deletedUsers, setDeletedUsers] = useState<DeletedUserData[]>([])
   const [userSubTab, setUserSubTab] = useState<'active' | 'deleted'>('active')
 
   // Two-Step Delete Verification State
@@ -97,8 +104,37 @@ export function useUserManagementState(
   const showToast = (msg: string) => {
     setToastMsg(msg)
     setUndoToast(null)
-    setTimeout(() => setToastMsg(null), 3500)
+    setTimeout(() => setToastMsg(null), 5000)
   }
+
+  const reloadUsers = async () => {
+    const rows = await usersService.list()
+    const mapped = mapApiUsers(rows)
+    setUsers(mapped.users)
+    setRecruiterUsers(mapped.recruiters)
+  }
+
+  const reloadRoles = async () => {
+    const payload = await rolesService.permissions()
+    setRoles(mapApiRoles(payload))
+  }
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
+
+  useEffect(() => {
+    let cancelled = false
+    reloadUsers().catch(err => {
+      if (!cancelled) showToast(apiErrorMessage(err))
+    })
+    reloadRoles().catch(err => {
+      if (!cancelled) showToast(apiErrorMessage(err))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const showToastWithUndo = (msg: string, userToRestore: UserAccountData) => {
     setUndoToast({ msg, userToRestore })
@@ -109,7 +145,7 @@ export function useUserManagementState(
   // Filtered Users for Tab 1
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
-      if (roleFilter !== 'All Roles' && u.role !== roleFilter) {
+      if (roleFilter !== 'All Roles' && u.role !== roleFilter && u.roleCode !== roleFilter.toLowerCase()) {
         return false
       }
       if (searchQuery.trim()) {
@@ -131,7 +167,7 @@ export function useUserManagementState(
       if (searchQuery.trim() && !u.name.toLowerCase().includes(searchQuery.toLowerCase()) && !u.email.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false
       }
-      if (roleFilter !== 'All Roles' && u.roleName !== roleFilter) {
+      if (roleFilter !== 'All Roles' && u.roleName !== roleFilter && u.roleCode !== roleFilter.toLowerCase()) {
         return false
       }
       return true
@@ -141,7 +177,8 @@ export function useUserManagementState(
   return {
     role, canModifyUsers,
     activeTab, setActiveTab,
-    users, setUsers, roles, setRoles, recruiterUsers, setRecruiterUsers,
+    users, setUsers, roles, setRoles, recruiterUsers, setRecruiterUsers, isSaving, setIsSaving,
+    reloadUsers, reloadRoles,
     viewMode, setViewMode, selectedUser, setSelectedUser,
     searchQuery, setSearchQuery, roleFilter, setRoleFilter,
     newUserName, setNewUserName, newUserEmail, setNewUserEmail, newUserPhone, setNewUserPhone,

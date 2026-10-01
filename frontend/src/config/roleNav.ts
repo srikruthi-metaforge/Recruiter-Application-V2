@@ -8,7 +8,6 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       items: [
         { key: 'Requirements', label: 'Requirements' },
         { key: 'Candidates', label: 'Add Candidates' },
-        { key: 'Submissions', label: 'Submissions' },
       ],
     },
     {
@@ -21,7 +20,6 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       title: 'Operations',
       items: [
         { key: 'Clients', label: 'Clients' },
-        { key: 'Interviews', label: 'Interview Scheduler' },
       ],
     },
     {
@@ -37,14 +35,18 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       items: [
         { key: 'Requirements', label: 'Requirements' },
         { key: 'Candidates', label: 'Add Candidates' },
-        { key: 'Submissions', label: 'Submissions' },
+      ],
+    },
+    {
+      title: 'Organization',
+      items: [
+        { key: 'Users', label: 'User Management' },
       ],
     },
     {
       title: 'Operations',
       items: [
         { key: 'Clients', label: 'Clients' },
-        { key: 'Interviews', label: 'Interview Scheduler' },
       ],
     },
     {
@@ -61,9 +63,7 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
         { key: 'Requirements', label: 'Requirements' },
         { key: 'Dashboard', label: 'My Workspace' },
         { key: 'Candidates', label: 'Add Candidates' },
-        { key: 'Submissions', label: 'Total Submissions' },
-        { key: 'Interviews', label: 'Interview Tracker' },
-        { key: 'Reports', label: 'Daily Reports' },
+        { key: 'Reports', label: 'Reports' },
       ],
     },
   ],
@@ -74,8 +74,6 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
         { key: 'Dashboard', label: 'My Workspace' },
         { key: 'Requirements', label: 'Requirements' },
         { key: 'Candidates', label: 'Add Candidates' },
-        { key: 'Submissions', label: 'Total Submissions' },
-        { key: 'Interviews', label: 'Interview Tracking' },
         { key: 'Reports', label: 'Reports' },
       ],
     },
@@ -86,7 +84,6 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       items: [
         { key: 'Requirements', label: 'Requirements' },
         { key: 'Candidates', label: 'Add Candidates' },
-        { key: 'Submissions', label: 'Submissions' },
       ],
     },
     {
@@ -95,11 +92,11 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
         { key: 'Users', label: 'User Management' },
       ],
     },
+
     {
       title: 'Operations',
       items: [
         { key: 'Clients', label: 'Clients' },
-        { key: 'Interviews', label: 'Interview Scheduler' },
       ],
     },
     {
@@ -121,8 +118,7 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       title: 'Overview',
       items: [
         { key: 'Requirements', label: 'My Requirements' },
-        { key: 'Submissions', label: 'Candidate Submissions' },
-        { key: 'Interviews', label: 'Interview Feedback' },
+        { key: 'Reports', label: 'Reports' },
       ],
     },
   ],
