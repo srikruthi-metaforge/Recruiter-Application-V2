@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, ArrowRight, ShieldCheck, Sparkles, CheckCircle2, KeyRound } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { authenticate } from '../../data/authService'
 import { brand, roleTheme, authTheme } from '../../theme'
 import { MetaforgeLogo } from '../common/MetaforgeLogo'
@@ -15,7 +15,7 @@ interface RoleLoginPageProps {
 
 export function RoleLoginPage({ role, onLogin, onBack, onForgot }: RoleLoginPageProps) {
   const theme = roleTheme[role]
-  const account = DEMO_ACCOUNTS[role]
+  const account = SEED_ACCOUNTS[role]
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

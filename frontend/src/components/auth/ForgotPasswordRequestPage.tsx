@@ -1,13 +1,13 @@
 import React, { useState } from 'react'
 import { KeyRound, Mail } from 'lucide-react'
-import { findAccountByEmail, isValidEmail } from '../../data/authService'
+import { isValidEmail } from '../../data/authService'
 import { AuthCard, AuthIconTile, AuthShell } from './AuthShell'
 import { AuthAlert, SubmitButton, TextField } from './AuthFormControls'
 
 interface ForgotPasswordRequestPageProps {
   initialEmail?: string
   /** Fired with the verified work email once a reset code has been issued */
-  onCodeSent: (email: string) => void
+  onCodeSent: (email: string) => void | Promise<void>
   /** Return to sign in */
   onBack: () => void
 }
@@ -35,19 +35,9 @@ export function ForgotPasswordRequestPage({ initialEmail = '', onCodeSent, onBac
     setError('')
     setLoading(true)
 
-    window.setTimeout(() => {
+    void Promise.resolve(onCodeSent(trimmed)).finally(() => {
       setLoading(false)
-
-      // Never disclose whether an account exists — the flow continues either way.
-      if (!findAccountByEmail(trimmed)) {
-        setNotice(
-          'If an MRAP account exists for this address, a recovery code is on its way. Check your inbox, then contact your administrator if nothing arrives.'
-        )
-        return
-      }
-
-      onCodeSent(trimmed)
-    }, 800)
+    })
   }
 
   return (

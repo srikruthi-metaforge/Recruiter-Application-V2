@@ -40,7 +40,7 @@ export function ClientsAddA({ vm }: { vm: ClientsVm }) {
             <div>
               <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-[#6B3BF6]" />
-                <span>Empanel New Client Partner</span>
+                <span>{vm.editingClient ? `Edit Client: ${vm.editingClient.name}` : 'Empanel New Client Partner'}</span>
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
                 Fill in the organization details, primary contact POC, commercial SLA terms, and upload the signed Master Services Agreement (MSA).
@@ -62,7 +62,7 @@ export function ClientsAddA({ vm }: { vm: ClientsVm }) {
               className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98"
             >
               <Save className="w-4 h-4" />
-              <span>Save & Empanel Client</span>
+              <span>{vm.editingClient ? 'Save & Update Client' : 'Save & Empanel Client'}</span>
             </button>
           </div>
         </div>

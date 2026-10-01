@@ -1,57 +1,80 @@
 import React from 'react'
 import type { ClientsVmState } from './useClientsPageState'
-import { ClientRecord } from './preamble'
+import { clientsService } from '../../../services/workspace.service'
+import { apiErrorMessage } from './useClientsPageState'
 
 export function useClientsPageHandlers(s: ClientsVmState) {
   const {
-    clients, setClients, setViewMode, newClientName,
+    setViewMode, newClientName,
     setNewClientName, newClientDomain, newPocName, setNewPocName,
     newPocDesignation, newPocEmail, setNewPocEmail, newPocPhone,
-    setNewPocPhone, newLocation, newCommercialFee, newPaymentTerms,
-    newSlaTAT, newAgreementStartDate, newAgreementEndDate, newAgreementDoc,
-    showToast
+    setNewPocPhone, newSlaTAT, newAgreementDoc,
+    showToast, editingClient, setEditingClient, isSaving, setIsSaving, reloadClients
   } = s
-  const handleAddClientSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newClientName.trim() || !newPocName.trim()) return
 
-    const newRecord: ClientRecord = {
-      id: `CLI-${Math.floor(100 + Math.random() * 900)}`,
-      name: newClientName.trim(),
-      domain: newClientDomain,
-      pocName: newPocName.trim(),
-      pocEmail: newPocEmail.trim() || 'poc@client.com',
-      pocPhone: newPocPhone.trim() || '+91 98765 00000',
-      location: newLocation.trim(),
-      teamLead: 'Harish Gadipally',
-      teamMemberCount: 2,
-      teamMembers: ['Marcus Chen', 'Priya Sharma'],
-      activeReqs: 0,
-      totalSubmissions: 0,
-      totalPlacements: 0,
-      commercialFee: newCommercialFee,
-      paymentTerms: newPaymentTerms,
-      slaTAT: newSlaTAT,
-      agreementStatus: 'Active - Executed',
-      agreementStartDate: newAgreementStartDate,
-      agreementEndDate: newAgreementEndDate,
-      agreementDocName: newAgreementDoc ? newAgreementDoc.name : `${newClientName.replace(/\s+/g, '_')}_MSA_Agreement.pdf`,
-      signedBy: `${newPocName.trim()} (${newPocDesignation})`,
-      signedDate: '11 Aug 2026',
+  const handleAddClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newClientName.trim() || !newPocName.trim()) {
+      showToast('Client organization name and primary POC name are required.')
+      return
     }
 
-    setClients([newRecord, ...clients])
-    setViewMode('list')
-    showToast(`Successfully empaneled new client: ${newClientName}`)
+    if (isSaving) return
+    setIsSaving(true)
 
-    // Reset Form
-    setNewClientName('')
-    setNewPocName('')
-    setNewPocEmail('')
-    setNewPocPhone('')
+    try {
+      const slaDaysNum = parseFloat(newSlaTAT) || 3
+
+      if (editingClient) {
+        await clientsService.update(editingClient.id, {
+          clientName: newClientName.trim(),
+          domain: newClientDomain,
+          slaDays: slaDaysNum,
+          pocContacts: [
+            {
+              name: newPocName.trim(),
+              email: newPocEmail.trim() || 'poc@client.com',
+              phone: newPocPhone.trim() || '+91 98765 00000',
+              designation: newPocDesignation.trim() || 'Primary Contact',
+            },
+          ],
+          agreementsUrl: newAgreementDoc ? newAgreementDoc.name : undefined,
+        })
+        showToast(`Successfully updated client: ${newClientName.trim()}`)
+      } else {
+        await clientsService.create({
+          clientName: newClientName.trim(),
+          domain: newClientDomain,
+          tier: 'Tier-1',
+          status: 'Active',
+          slaDays: slaDaysNum,
+          pocContacts: [
+            {
+              name: newPocName.trim(),
+              email: newPocEmail.trim() || 'poc@client.com',
+              phone: newPocPhone.trim() || '+91 98765 00000',
+              designation: newPocDesignation.trim() || 'Primary Contact',
+            },
+          ],
+          agreementsUrl: newAgreementDoc ? newAgreementDoc.name : undefined,
+        })
+        showToast(`Successfully empaneled new client: ${newClientName.trim()}`)
+      }
+
+      await reloadClients()
+      setEditingClient(null)
+      setNewClientName('')
+      setNewPocName('')
+      setNewPocEmail('')
+      setNewPocPhone('')
+      setViewMode('list')
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  // Render Client Delivery Gap Analysis Page when client is clicked
   return {
     handleAddClientSubmit
   }

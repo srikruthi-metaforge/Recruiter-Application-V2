@@ -15,16 +15,11 @@ export function mapInterviewsToScheduleRows(interviews?: Interview[]): ScheduleR
   if (interviews && interviews.length > 0) {
     return interviews.map((iv, idx) => {
       const sStr = (iv.status as string) || ''
-      const isUpcoming = sStr === 'Confirmed' || sStr === 'Scheduled'
+      const isUpcoming = sStr === 'Confirmed' || sStr === 'Scheduled' || sStr === 'In Progress' || sStr === 'Pending'
       const isCompleted = sStr === 'Passed' || sStr === 'Completed' || sStr === 'Rejected'
-      const isInProgress = sStr === 'In Progress' || sStr === 'Pending'
 
-      const mappedStatus: 'Upcoming' | 'In Progress' | 'Completed' = isUpcoming
-        ? 'Upcoming'
-        : isCompleted
+      const mappedStatus: 'Upcoming' | 'Completed' = isCompleted
         ? 'Completed'
-        : isInProgress
-        ? 'In Progress'
         : 'Upcoming'
 
       return {
@@ -74,8 +69,6 @@ export function scopeByRole<T extends { submittedBy?: string }>(
 }
 
 export function evaluateScheduleList(scopeScheduleList: ScheduleRowItem[]): ScheduleRowItem[] {
-  const now = new Date()
-
   return scopeScheduleList.map(row => {
     const roundLower = (row.round || '').toLowerCase()
 
@@ -85,53 +78,8 @@ export function evaluateScheduleList(scopeScheduleList: ScheduleRowItem[]): Sche
       roundLower.includes('offer released') ||
       roundLower.includes('completed all')
 
-    const isIntermediateRound =
-      roundLower.includes('l1') ||
-      roundLower.includes('l2') ||
-      roundLower.includes('screening') ||
-      roundLower.includes('technical round 1') ||
-      roundLower.includes('technical round 2') ||
-      roundLower.includes('evaluation')
-
-    if (isCompletedAllRounds || (row.status === 'Completed' && !isIntermediateRound)) {
+    if (isCompletedAllRounds || row.status === 'Completed') {
       return { ...row, status: 'Completed' as const }
-    }
-
-    if (isIntermediateRound) {
-      if (row.status === 'Upcoming') {
-        const timeStr = row.dateTime || ''
-        if (timeStr.toLowerCase().includes('today')) {
-          const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-          if (match) {
-            let hour = parseInt(match[1], 10)
-            const min = parseInt(match[2], 10)
-            const ampm = match[3].toUpperCase()
-            if (ampm === 'PM' && hour < 12) hour += 12
-            if (ampm === 'AM' && hour === 12) hour = 0
-
-            const schedTime = new Date()
-            schedTime.setHours(hour, min, 0, 0)
-
-            if (now >= schedTime) {
-              return { ...row, status: 'In Progress' as const }
-            }
-          }
-        }
-        return { ...row, status: 'Upcoming' as const }
-      }
-      return { ...row, status: 'In Progress' as const }
-    }
-
-    if (
-      row.status === 'Completed' ||
-      (row.status as string) === 'Selected' ||
-      (row.status as string) === 'Rejected'
-    ) {
-      return { ...row, status: 'Completed' as const }
-    }
-
-    if (row.status === 'In Progress') {
-      return { ...row, status: 'In Progress' as const }
     }
 
     return { ...row, status: 'Upcoming' as const }
@@ -165,9 +113,6 @@ export function filterScheduleList(
 
     if (statusToggle === 'upcoming') {
       return (row.status as string) === 'Upcoming' || (row.status as string) === 'Scheduled'
-    }
-    if (statusToggle === 'in_progress') {
-      return row.status === 'In Progress'
     }
     if (statusToggle === 'completed') {
       return row.status === 'Completed'

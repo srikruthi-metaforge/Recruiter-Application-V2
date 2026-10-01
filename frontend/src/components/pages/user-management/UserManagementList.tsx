@@ -3,6 +3,8 @@ import {
   Shield,
   Lock,
   RotateCcw,
+  Users,
+  Sliders,
 } from 'lucide-react'
 import type { UserManagementVM } from './useUserManagement'
 import { UsersTab } from './UsersTab'
@@ -14,7 +16,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal'
 import { PermanentDeleteModal } from './PermanentDeleteModal'
 
 export function UserManagementList(vm: UserManagementVM) {
-  const { canModifyUsers, activeTab, undoToast, toastMsg, handleRestoreUser } = vm
+  const { canModifyUsers, activeTab, setActiveTab, undoToast, toastMsg, handleRestoreUser } = vm
   return (
     <div className="space-y-6 w-full pb-16 font-sans text-slate-800">
       {!canModifyUsers && (
@@ -50,6 +52,46 @@ export function UserManagementList(vm: UserManagementVM) {
             Provision accounts, manage security credentials, define enterprise roles, and configure granular permission matrices.
           </p>
         </div>
+      </div>
+
+      {/* TAB NAVIGATION BAR */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'users'
+              ? 'bg-[#6B3BF6] text-white shadow-md'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>User Accounts</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('role_definitions')}
+          className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'role_definitions'
+              ? 'bg-[#6B3BF6] text-white shadow-md'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          <span>Roles & Permissions</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('permissions')}
+          className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'permissions'
+              ? 'bg-[#6B3BF6] text-white shadow-md'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>User Permission Overrides</span>
+        </button>
       </div>
       {activeTab === 'users' && (
         <UsersTab {...vm} />

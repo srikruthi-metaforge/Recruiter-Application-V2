@@ -1,26 +1,34 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Requirement } from '../../../types'
 import { INITIAL_REQUIREMENTS } from '../../../data/mockData'
 import { checkDuplicateSubmission } from '../../../data/submissionsStore'
-import { DEFAULT_REPO_CANDIDATES } from './candidates.data'
+import { uiCandidateToRepo, UiCandidate } from '../../../services/candidatePayload'
 import { CandidateRepoItem, CandidateRepositoryPageProps } from './types'
 import { useCandidateRepoEdit } from './useCandidateRepoEdit'
 import { useCandidateRepoFilters } from './useCandidateRepoFilters'
 import { useCandidateRepoMasking } from './useCandidateRepoMasking'
+import { getSessionUser } from '../../../store/session'
 
 export function useCandidateRepository({
+  candidates = [],
   requirements = INITIAL_REQUIREMENTS,
   selectedReqId = null,
   role = 'recruiter',
   onOpenAddForm,
+  onCandidateUpdated,
   onSelectRequirement,
   onBackToDashboard,
 }: CandidateRepositoryPageProps) {
-  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('metaforge_user_role') : null
+  const storedRole = getSessionUser()?.role || null
   const activeRoleStr = (role || storedRole || '').toLowerCase()
   const isLeadRole = activeRoleStr === 'lead' || activeRoleStr.includes('lead') || activeRoleStr === 'team lead' || activeRoleStr === 'team_lead'
 
-  const [repoList, setRepoList] = useState<CandidateRepoItem[]>(DEFAULT_REPO_CANDIDATES)
+  const [repoList, setRepoList] = useState<CandidateRepoItem[]>(() =>
+    candidates.map(candidate => uiCandidateToRepo(candidate as UiCandidate)),
+  )
+  useEffect(() => {
+    setRepoList(candidates.map(candidate => uiCandidateToRepo(candidate as UiCandidate)))
+  }, [candidates])
   const [viewMode, setViewMode] = useState<string>('list')
   const filters = useCandidateRepoFilters(repoList)
   const masking = useCandidateRepoMasking()
@@ -85,7 +93,7 @@ export function useCandidateRepository({
     setTimeout(() => setToastMsg(null), 3500)
   }
 
-  const edit = useCandidateRepoEdit(repoList, setRepoList, showToast)
+  const edit = useCandidateRepoEdit(setRepoList, showToast, onCandidateUpdated)
   const handleOpenEdit = (item: CandidateRepoItem, e?: React.MouseEvent) => {
     setViewingCandidateDetail(null)
     edit.handleOpenEdit(item, e)

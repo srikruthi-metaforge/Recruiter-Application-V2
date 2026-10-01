@@ -34,7 +34,7 @@ export function useRolesPermissions() {
     sub_create: true, sub_view_all: false, sub_reassign: false, sub_move_stage: true,
     int_schedule: true, int_join_links: true, int_feedback: true, int_cancel: false,
     rep_view_exec: false, rep_view_recruiter: false, rep_export_csv: false,
-    user_manage: false, role_manage: false, audit_logs: false,
+    user_manage: false, role_manage: false, activity_logs: false,
   })
 
   // Full-Page Configure Permissions State

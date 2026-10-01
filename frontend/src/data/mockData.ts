@@ -1,5 +1,11 @@
-export { INITIAL_ACTIVITY_LOGS } from './mockData.activityLogs'
-export { INITIAL_REQUIREMENTS } from './mockData.requirements'
-export { INITIAL_RECRUITERS } from './mockData.recruiters'
-export { INITIAL_LEADS, INITIAL_ADMINS, INITIAL_INTERVIEWS, INITIAL_SUBMISSIONS, DEMO_ACCOUNTS, ROLE_META } from './mockData.people'
-export { INITIAL_CANDIDATES } from './mockData.candidates'
+export { ROLE_META } from './roleMeta'
+export { SEED_ACCOUNTS, SEED_ACCOUNTS as DEMO_ACCOUNTS } from './seedCredentials'
+
+export const INITIAL_ACTIVITY_LOGS = []
+export const INITIAL_REQUIREMENTS = []
+export const INITIAL_RECRUITERS = []
+export const INITIAL_LEADS = []
+export const INITIAL_ADMINS = []
+export const INITIAL_INTERVIEWS = []
+export const INITIAL_SUBMISSIONS = []
+export const INITIAL_CANDIDATES = []

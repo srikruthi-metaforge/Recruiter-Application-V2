@@ -27,9 +27,6 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleReload = () => {
-    try {
-      localStorage.clear()
-    } catch {}
     window.location.reload()
   }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { KeyRound, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { authenticate } from '../../data/authService'
 import { roleTheme } from '../../theme'
 import { AuthCard, AuthShell } from './AuthShell'
@@ -21,21 +21,9 @@ interface SignInPageProps {
 const REMEMBER_KEY = 'metaforge_remembered_email'
 
 export function SignInPage({ onLogin, onForgot, onSignup, onBack, onRolePortals }: SignInPageProps) {
-  const [email, setEmail] = useState(() => {
-    try {
-      return localStorage.getItem(REMEMBER_KEY) || ''
-    } catch {
-      return ''
-    }
-  })
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [remember, setRemember] = useState(() => {
-    try {
-      return !!localStorage.getItem(REMEMBER_KEY)
-    } catch {
-      return false
-    }
-  })
+  const [remember, setRemember] = useState(false)
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({})
   const [loading, setLoading] = useState(false)
 
@@ -53,12 +41,6 @@ export function SignInPage({ onLogin, onForgot, onSignup, onBack, onRolePortals 
 
     const role = result.account.role
     window.setTimeout(() => {
-      try {
-        if (remember) localStorage.setItem(REMEMBER_KEY, result.account.email)
-        else localStorage.removeItem(REMEMBER_KEY)
-      } catch {
-        // storage unavailable — sign-in still proceeds
-      }
       onLogin(role)
     }, 600)
   }
@@ -194,7 +176,7 @@ function DemoCredentialsPanel({ onPick }: { onPick: (email: string, password: st
 
       <div className="grid grid-cols-2 gap-2">
         {roles.map(r => {
-          const acc = DEMO_ACCOUNTS[r]
+          const acc = SEED_ACCOUNTS[r]
           return (
             <button
               key={r}

@@ -267,7 +267,7 @@ export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
   }
 
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
 
   // Adjust Client Modal State
   const [adjustClientRecruiter, setAdjustClientRecruiter] = useState<RecruiterOverviewItem | null>(null)
@@ -672,6 +672,7 @@ export function RecruitersPage({ role = 'superadmin' }: RecruitersPageProps) {
           totalItems={filteredRecruiters.length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
 

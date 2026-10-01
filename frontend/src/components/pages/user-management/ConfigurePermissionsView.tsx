@@ -119,7 +119,7 @@ export function ConfigurePermissionsView({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {group.permissions.map(p => {
-                  const isChecked = tempRolePermissions[p.key] ?? p.enabled
+                  const isChecked = !!tempRolePermissions[p.key]
                   return (
                     <label
                       key={p.key}

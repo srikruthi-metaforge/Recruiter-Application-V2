@@ -19,6 +19,7 @@ export function SubmissionsTable({ vm }: { vm: SubmissionsVm }) {
     handleOpenReqOverview,
     filteredData,
     pageSize,
+    setPageSize,
     totalPages,
     paginatedSubmissions,
     getStatusBadgeStyle,
@@ -125,7 +126,7 @@ export function SubmissionsTable({ vm }: { vm: SubmissionsVm }) {
                     {/* 6. STATUS */}
                     <td className="py-4 px-4 whitespace-nowrap">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-extrabold border inline-block ${getStatusBadgeStyle(
+                        className={`px-3 py-0.5 rounded-full text-xs font-extrabold border inline-block ${getStatusBadgeStyle(
                           sub.status
                         )}`}
                       >
@@ -144,6 +145,7 @@ export function SubmissionsTable({ vm }: { vm: SubmissionsVm }) {
                       )}
                     </td>
                   </tr>
+
                 ))
               )}
             </tbody>
@@ -156,6 +158,7 @@ export function SubmissionsTable({ vm }: { vm: SubmissionsVm }) {
           totalItems={filteredData.length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
 

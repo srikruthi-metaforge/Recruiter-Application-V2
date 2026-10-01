@@ -1,7 +1,7 @@
 import React from 'react'
 import { ArrowLeft, Sparkles, CheckCircle2, KeyRound } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { roleTheme } from '../../theme'
 import { MetaforgeLogo } from '../common/MetaforgeLogo'
 
@@ -15,7 +15,7 @@ export function RoleLoginLeftPanel({
   fillDemo: () => void
 }) {
   const theme = roleTheme[role]
-  const account = DEMO_ACCOUNTS[role]
+  const account = SEED_ACCOUNTS[role]
 
   return (
     <div className="hidden lg:flex lg:w-[460px] xl:w-[500px] 2xl:w-[540px] flex-shrink-0 bg-[#0B1021] flex-col relative overflow-hidden text-white border-r border-slate-800/80">

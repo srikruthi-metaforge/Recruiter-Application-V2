@@ -1,13 +1,7 @@
 import { Role } from '../types'
-import { DEMO_ACCOUNTS } from './mockData'
 import { api, ApiError } from '../lib/api'
-import { setAccessToken, setSessionUser } from '../store/session'
-
-/**
- * Auth helper. Prefers NestJS JWT login so authorization lives on the server.
- * Falls back to the existing DEMO_ACCOUNTS check only when the API is unreachable,
- * so the current sign-in UX and demo credentials remain unchanged.
- */
+import { setAccessToken, setSessionUser, SessionUser } from '../store/session'
+import { SEED_ACCOUNTS, seedAccountByEmail, titleForRole } from './seedCredentials'
 
 export interface ResolvedAccount {
   role: Role
@@ -17,87 +11,75 @@ export interface ResolvedAccount {
   title: string
 }
 
-const ACCOUNTS = Object.entries(DEMO_ACCOUNTS) as [Role, (typeof DEMO_ACCOUNTS)[Role]][]
-
-/** Roles that may sign in through the unified (non role-scoped) sign-in page. */
 export const SIGN_IN_ROLES: Role[] = ['superadmin', 'admin', 'lead', 'recruiter', 'devteam', 'client']
 
 export function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 }
 
-/** Look up a registered account by work email (case-insensitive). */
 export function findAccountByEmail(email: string): ResolvedAccount | null {
-  const needle = email.trim().toLowerCase()
-  if (!needle) return null
-
-  const match = ACCOUNTS.find(([, acc]) => acc.email.toLowerCase() === needle)
-  if (!match) return null
-
-  const [role, acc] = match
-  return { role, ...acc }
+  return seedAccountByEmail(email)
 }
 
 export type AuthResult =
   | { ok: true; account: ResolvedAccount }
   | { ok: false; field: 'email' | 'password' | 'general'; message: string }
 
-function localAuthenticate(email: string, password: string, expectedRole?: Role): AuthResult {
+export async function authenticate(email: string, password: string, expectedRole?: Role): Promise<AuthResult> {
   const trimmed = email.trim()
-
   if (!trimmed) return { ok: false, field: 'email', message: 'Work email address is required' }
   if (!isValidEmail(trimmed)) return { ok: false, field: 'email', message: 'Enter a valid work email address' }
   if (!password) return { ok: false, field: 'password', message: 'Password is required' }
 
-  const account = findAccountByEmail(trimmed)
-  if (!account || account.password !== password) {
-    return {
-      ok: false,
-      field: 'general',
-      message: expectedRole
-        ? 'Invalid email or password. Use the demo credentials below.'
-        : 'Invalid email or password. Check your credentials and try again.',
-    }
-  }
-  if (expectedRole && account.role !== expectedRole) {
-    return {
-      ok: false,
-      field: 'general',
-      message: 'Invalid email or password. Use the demo credentials below.',
-    }
-  }
-  return { ok: true, account }
-}
-
-/** Validate credentials against NestJS, falling back to the existing account store. */
-export async function authenticate(email: string, password: string, expectedRole?: Role): Promise<AuthResult> {
-  const local = localAuthenticate(email, password, expectedRole)
-  if (!local.ok) return local
-
   try {
-    const payload: { email: string; password: string; role?: Role } = { email: email.trim(), password }
+    const payload: { email: string; password: string; role?: Role } = { email: trimmed, password }
     if (expectedRole) payload.role = expectedRole
     const res = await api.post<{
       accessToken: string
-      user: { id: string; email: string; name: string; role: Role; title?: string; permissions?: Record<string, boolean> }
+      user: SessionUser & { role: Role }
     }>('/auth/login', payload)
     setAccessToken(res.accessToken)
-    setSessionUser(res.user)
-    const account = findAccountByEmail(res.user.email) || local.account
-    return { ok: true, account: { ...account, role: res.user.role, name: res.user.name, email: res.user.email } }
+    const role = res.user.role
+    const hint = seedAccountByEmail(res.user.email)
+    const account: ResolvedAccount = {
+      role,
+      email: res.user.email,
+      name: res.user.name,
+      password: '',
+      title: res.user.title || hint?.title || titleForRole(role),
+    }
+    setSessionUser({ ...res.user, title: account.title })
+    if (expectedRole && role !== expectedRole) {
+      return { ok: false, field: 'general', message: 'This account does not match the selected portal.' }
+    }
+    return { ok: true, account }
   } catch (err) {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       return {
         ok: false,
         field: 'general',
-        message:
-          expectedRole
-            ? 'Invalid email or password. Use the demo credentials below.'
-            : 'Invalid email or password. Check your credentials and try again.',
+        message: expectedRole
+          ? 'Invalid email or password. Use the seeded credentials below.'
+          : 'Invalid email or password. Check your credentials and try again.',
       }
     }
-    // API unreachable — preserve existing demo login so the UI workflow is not blocked.
-    return local
+    return {
+      ok: false,
+      field: 'general',
+      message: 'Unable to reach the API. Confirm the backend is running on /api/v1.',
+    }
+  }
+}
+
+export async function restoreSession(): Promise<SessionUser | null> {
+  try {
+    const user = await api.get<SessionUser>('/auth/me')
+    const hint = seedAccountByEmail(user.email)
+    const hydrated = { ...user, title: user.title || hint?.title || titleForRole(user.role as Role) }
+    setSessionUser(hydrated)
+    return hydrated
+  } catch {
+    return null
   }
 }
 
@@ -113,8 +95,8 @@ export async function requestAccess(body: Record<string, unknown>): Promise<void
   await api.post('/auth/register-request', body)
 }
 
-export async function requestPasswordReset(email: string): Promise<void> {
-  await api.post('/auth/forgot-password', { email })
+export async function requestPasswordReset(email: string): Promise<{ otpCode?: string; message?: string }> {
+  return api.post('/auth/forgot-password', { email })
 }
 
 export async function verifyOtp(email: string, otpCode: string): Promise<{ resetToken: string }> {
@@ -124,10 +106,6 @@ export async function verifyOtp(email: string, otpCode: string): Promise<{ reset
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
   await api.post('/auth/reset-password', { token, newPassword })
 }
-
-/* ---------------------------------------------------------------------- */
-/* Password policy                                                         */
-/* ---------------------------------------------------------------------- */
 
 export interface PasswordRule {
   id: string
@@ -160,13 +138,10 @@ export function passwordStrength(value: string): { score: number; label: string;
   return { score, label: 'Strong', color: '#059669' }
 }
 
-/* ---------------------------------------------------------------------- */
-/* Verification codes (password recovery)                                  */
-/* ---------------------------------------------------------------------- */
-
-/** Six-digit recovery code. Surfaced in the UI the same way DEMO_ACCOUNTS are. */
 export function generateVerificationCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
 export const VERIFICATION_CODE_LENGTH = 6
+
+export { SEED_ACCOUNTS }

@@ -13,7 +13,7 @@ export function useSubmissionsPageHandlers2(s: SubmissionsVmState & Record<strin
     setCurrentPage(1)
   }, [searchQuery, dateFilter, customStartDate, customEndDate, clientFilter, statusFilter, scopeTab])
 
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
 
   const totalPages = Math.ceil((filteredData?.length || 0) / pageSize) || 1
 
@@ -43,6 +43,6 @@ export function useSubmissionsPageHandlers2(s: SubmissionsVmState & Record<strin
   }
 
   return {
-    currentPage, setCurrentPage, pageSize, totalPages, paginatedSubmissions, getStatusBadgeStyle
+    currentPage, setCurrentPage, pageSize, setPageSize, totalPages, paginatedSubmissions, getStatusBadgeStyle
   }
 }

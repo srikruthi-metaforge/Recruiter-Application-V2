@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { X } from 'lucide-react'
 import { ScheduleInterviewFormFields } from './ScheduleInterviewModal.fields'
+import { interviewsService, submissionsService } from '../../services/workspace.service'
+import { apiErrorMessage } from '../pages/submissions/preamble'
 
 interface ScheduleInterviewModalProps {
   isOpen: boolean
@@ -8,6 +10,7 @@ interface ScheduleInterviewModalProps {
   initialSubmission?: string
   submissionsOptions?: Array<{ id: string; candidateName: string; requirement: string }>
   onScheduleSuccess?: (data: any) => void
+  submissionId?: string
 }
 
 export function ScheduleInterviewModal({
@@ -16,6 +19,7 @@ export function ScheduleInterviewModal({
   initialSubmission = '',
   submissionsOptions = [],
   onScheduleSuccess,
+  submissionId,
 }: ScheduleInterviewModalProps) {
   const getTodayDateString = () => {
     const today = new Date()
@@ -37,37 +41,107 @@ export function ScheduleInterviewModal({
   const [sendEmail, setSendEmail] = useState(false)
   const [sendWhatsApp, setSendWhatsApp] = useState(false)
   const [notes, setNotes] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [dynamicSubmissionsList, setDynamicSubmissionsList] = useState<Array<{ id: string; label: string }>>([])
 
   React.useEffect(() => {
     if (isOpen) {
       if (initialSubmission) setSubmission(initialSubmission)
       setDate(getTodayDateString())
+      setErrorMsg(null)
+
+      submissionsService.list()
+        .then(subs => {
+          if (Array.isArray(subs) && subs.length > 0) {
+            const mapped = subs.map((s: any) => ({
+              id: s.id || s._id,
+              label: `${s.candidateName || s.candidate || 'Candidate'} — ${s.requirementTitle || s.requirement || 'Requirement'}`,
+            }))
+            setDynamicSubmissionsList(mapped)
+            if (!submission && mapped.length > 0) {
+              setSubmission(mapped[0].id)
+            }
+          }
+        })
+        .catch(() => undefined)
     }
   }, [isOpen, initialSubmission])
 
   if (!isOpen) return null
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const scheduleData = {
-      submission: submission || 'Select submission',
-      interviewRound,
-      date,
-      time,
-      interviewMode,
-      status,
-      meetingLink,
-      candidateEmail,
-      candidatePhone,
-      sendEmail,
-      sendWhatsApp,
-      notes,
-    }
+    setIsSubmitting(true)
+    setErrorMsg(null)
+    try {
+      let targetSubId = submissionId
 
-    if (onScheduleSuccess) {
-      onScheduleSuccess(scheduleData)
+      if (!targetSubId && submission) {
+        if (submission.match(/^[0-9a-fA-F]{24}$/)) {
+          targetSubId = submission
+        } else {
+          const matchedOpt = submissionsOptions?.find(
+            s => s.id === submission || `${s.candidateName} — ${s.requirement}` === submission
+          )
+          if (matchedOpt) {
+            targetSubId = matchedOpt.id
+          } else {
+            const matchedDyn = dynamicSubmissionsList.find(s => s.id === submission || s.label === submission)
+            if (matchedDyn) {
+              targetSubId = matchedDyn.id
+            }
+          }
+        }
+      }
+
+      if (!targetSubId) {
+        const subs = await submissionsService.list()
+        if (Array.isArray(subs) && subs.length > 0) {
+          targetSubId = subs[0].id || subs[0]._id
+        }
+      }
+
+      if (!targetSubId) {
+        throw new Error('Please select a candidate submission to schedule an interview.')
+      }
+
+      const dateTimeIso = new Date(`${date}T${time || '10:00'}`).toISOString()
+
+      const created = await interviewsService.create({
+        submissionId: targetSubId,
+        round: interviewRound,
+        dateTime: dateTimeIso,
+        mode: interviewMode,
+        meetingUrl: meetingLink || undefined,
+        interviewerEmail: candidateEmail || undefined,
+      })
+
+      const scheduleData = {
+        ...created,
+        submission: submission || 'Select submission',
+        interviewRound,
+        date,
+        time,
+        interviewMode,
+        status: created.status || status,
+        meetingLink,
+        candidateEmail,
+        candidatePhone,
+        sendEmail,
+        sendWhatsApp,
+        notes,
+      }
+
+      if (onScheduleSuccess) {
+        onScheduleSuccess(scheduleData)
+      }
+      onClose()
+    } catch (err) {
+      setErrorMsg(apiErrorMessage(err))
+    } finally {
+      setIsSubmitting(false)
     }
-    onClose()
   }
 
   return (
@@ -86,6 +160,12 @@ export function ScheduleInterviewModal({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold">
+            {errorMsg}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <ScheduleInterviewFormFields
@@ -107,6 +187,7 @@ export function ScheduleInterviewModal({
             setCandidateEmail={setCandidateEmail}
             candidatePhone={candidatePhone}
             setCandidatePhone={setCandidatePhone}
+            dynamicSubmissions={dynamicSubmissionsList}
           />
 
           <div className="pt-2 space-y-2">
@@ -155,9 +236,10 @@ export function ScheduleInterviewModal({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl shadow-sm transition-all cursor-pointer active:scale-98"
+              disabled={isSubmitting}
+              className="px-5 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition-all cursor-pointer active:scale-98"
             >
-              Schedule Interview
+              {isSubmitting ? 'Scheduling...' : 'Schedule Interview'}
             </button>
           </div>
         </form>
@@ -165,3 +247,4 @@ export function ScheduleInterviewModal({
     </div>
   )
 }
+

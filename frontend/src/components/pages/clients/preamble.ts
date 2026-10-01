@@ -213,3 +213,44 @@ export const INITIAL_CLIENTS: ClientRecord[] = [
     signedDate: '05 Feb 2025',
   },
 ]
+
+export function mapApiClient(c: any): ClientRecord {
+  const pocList = Array.isArray(c.pocContacts) && c.pocContacts.length > 0
+    ? c.pocContacts
+    : (Array.isArray(c.contactPersons) ? c.contactPersons : [])
+  const poc = pocList[0] || {}
+
+  const pocName = poc.name || c.pocName || 'N/A'
+  const pocEmail = poc.email || c.pocEmail || 'N/A'
+  const pocPhone = poc.phone || c.pocPhone || 'N/A'
+  const pocDesignation = poc.designation || c.pocDesignation || 'Primary Contact'
+
+  const clientName = c.clientName || c.name || 'Unnamed Client'
+  const domain = c.domain || c.industry || 'Software & Cloud Services'
+  const slaDaysVal = typeof c.slaDays === 'number' ? c.slaDays : 3.0
+
+  return {
+    id: c.id || (c._id ? c._id.toString() : c.clientId) || `CLI-${Math.floor(100 + Math.random() * 900)}`,
+    name: clientName,
+    domain,
+    pocName,
+    pocEmail,
+    pocPhone,
+    location: c.location || 'Bangalore / Remote',
+    teamLead: c.accountLeadName || c.teamLead || 'Harish Gadipally',
+    teamMemberCount: c.teamMemberCount ?? 2,
+    teamMembers: Array.isArray(c.teamMembers) ? c.teamMembers : ['Marcus Chen', 'Priya Sharma'],
+    activeReqs: c.activeReqs ?? c.requirementsCount ?? 0,
+    totalSubmissions: c.totalSubmissions ?? 0,
+    totalPlacements: c.totalPlacements ?? 0,
+    commercialFee: c.commercialFee || '8.33% Annual CTC',
+    paymentTerms: c.paymentTerms || '30 Days Net',
+    slaTAT: c.slaTAT || `${slaDaysVal.toFixed(1)} Days`,
+    agreementStatus: c.agreementStatus || (c.status === 'Active' ? 'Active - Executed' : 'Under Legal Review'),
+    agreementStartDate: c.agreementStartDate || (c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '10 Jan 2025'),
+    agreementEndDate: c.agreementEndDate || '09 Jan 2028',
+    agreementDocName: c.agreementsUrl || c.agreementDocName || `${clientName.replace(/\s+/g, '_')}_MSA_Agreement.pdf`,
+    signedBy: c.signedBy || `${pocName} (${pocDesignation})`,
+    signedDate: c.signedDate || '10 Jan 2025',
+  }
+}

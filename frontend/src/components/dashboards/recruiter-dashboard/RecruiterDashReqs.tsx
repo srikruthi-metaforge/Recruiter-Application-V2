@@ -33,11 +33,8 @@ export function RecruiterDashReqs({ vm }: { vm: RecruiterDashboardVm }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
-              Active Requirements + Submitted Candidates
+              Assigned Requirements
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Your open workload across currently active job demands.
-            </p>
           </div>
         </div>
 
@@ -52,18 +49,6 @@ export function RecruiterDashReqs({ vm }: { vm: RecruiterDashboardVm }) {
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200/90 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] transition-all placeholder:text-slate-400 shadow-2xs"
             />
-          </div>
-
-          <div className="w-full md:w-auto">
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="w-full md:w-auto px-4 py-2.5 rounded-xl border border-slate-200/90 bg-white text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] cursor-pointer shadow-2xs"
-            >
-              <option value="Assigned">Status: Assigned</option>
-              <option value="Submitted">Status: Submitted</option>
-              <option value="Selected for interview">Status: Selected for interview</option>
-            </select>
           </div>
         </div>
 

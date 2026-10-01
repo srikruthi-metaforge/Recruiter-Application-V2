@@ -1,62 +1,36 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem } from '../../types'
-import {
-  INITIAL_ADMINS,
-  INITIAL_INTERVIEWS,
-  INITIAL_LEADS,
-  INITIAL_RECRUITERS,
-  INITIAL_REQUIREMENTS,
-  INITIAL_SUBMISSIONS,
-  INITIAL_ACTIVITY_LOGS,
-  DEMO_ACCOUNTS,
-} from '../../data/mockData'
+import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from '../../types'
 import { workspaceService } from '../../services/workspace.service'
+import { restoreSession } from '../../data/authService'
+import { getSessionUser } from '../../store/session'
+import { titleForRole } from '../../data/seedCredentials'
 import { createSaveInterviewFeedbackHandler, createSubmitCandidateHandler } from './appHandlers'
 import { createAuthenticatedHandler, createLogoutHandler, createNavSelectHandler } from './appSessionHandlers'
+import { saveSubmissionsStore } from '../../data/submissionsStore'
+
+const emptyUser = { email: '', name: '', password: '', title: '' }
 
 export function useAppController() {
-  const [role, setRole] = useState<Role>(() => {
-    try {
-      const savedRole = localStorage.getItem('metaforge_user_role') as Role
-      return savedRole || 'recruiter'
-    } catch {
-      return 'recruiter'
-    }
-  })
-
-  const [screen, setScreen] = useState<AuthScreen>(() => {
-    try {
-      const savedSession = localStorage.getItem('metaforge_session_active')
-      return savedSession === 'true' ? 'app' : 'landing'
-    } catch {
-      return 'landing'
-    }
-  })
-
-  const [loginRole, setLoginRole] = useState<Role>(role)
+  const [role, setRole] = useState<Role>('recruiter')
+  const [screen, setScreen] = useState<AuthScreen>('landing')
+  const [loginRole, setLoginRole] = useState<Role>('recruiter')
   const [recoveryEmail, setRecoveryEmail] = useState('')
-  const [activeNav, setActiveNav] = useState<string>(() => {
-    try {
-      const savedNav = localStorage.getItem('metaforge_active_nav')
-      if (savedNav && savedNav !== 'Dashboard') return savedNav
-      if (savedNav === 'Dashboard' && (role === 'lead' || role === 'superadmin' || role === 'admin' || role === 'devteam')) {
-        return 'Requirements'
-      }
-      if (savedNav) return savedNav
-    } catch {}
-    return (role === 'superadmin' || role === 'devteam' || role === 'admin' || role === 'lead') ? 'Requirements' : 'Dashboard'
-  })
+  const [activeNav, setActiveNav] = useState<string>('Dashboard')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
 
-  const [requirements, setRequirements] = useState<Requirement[]>(INITIAL_REQUIREMENTS)
-  const [submissions, setSubmissions] = useState<Submission[]>(INITIAL_SUBMISSIONS)
-  const [interviews, setInterviews] = useState<Interview[]>(INITIAL_INTERVIEWS)
-  const [recruiters, setRecruiters] = useState<Recruiter[]>(INITIAL_RECRUITERS)
-  const [leads] = useState(INITIAL_LEADS)
-  const [admins] = useState(INITIAL_ADMINS)
-  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>(INITIAL_ACTIVITY_LOGS)
+  const [requirements, setRequirements] = useState<Requirement[]>([])
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [interviews, setInterviews] = useState<Interview[]>([])
+  const [recruiters, setRecruiters] = useState<Recruiter[]>([])
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [admins, setAdmins] = useState<Admin[]>([])
+  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [currentUser, setCurrentUser] = useState(emptyUser)
 
   const handleAddActivityLog = (newLog: ActivityLogItem) => {
     setActivityLogs(prev => [newLog, ...prev])
@@ -76,23 +50,43 @@ export function useAppController() {
   const [isCandidateDetailOpen, setIsCandidateDetailOpen] = useState(false)
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
 
-  const currentUser = DEMO_ACCOUNTS[role]
+  const applyWorkspace = async () => {
+    const payload = await workspaceService.load()
+    setRequirements(payload.requirements || [])
+    setSubmissions(payload.submissions || [])
+    saveSubmissionsStore(payload.submissions || [])
+    setInterviews(payload.interviews || [])
+    setRecruiters(payload.recruiters || [])
+    setLeads(payload.leads || [])
+    setAdmins(payload.admins || [])
+    setActivityLogs(payload.activityLogs || [])
+    setCandidates(payload.candidates || [])
+  }
 
   useEffect(() => {
     let cancelled = false
-    workspaceService
-      .load()
-      .then(payload => {
-        if (cancelled || !payload) return
-        if (payload.requirements?.length) setRequirements(payload.requirements)
-        if (payload.submissions?.length) setSubmissions(payload.submissions)
-        if (payload.interviews?.length) setInterviews(payload.interviews)
-        if (payload.recruiters?.length) setRecruiters(payload.recruiters)
-        if (payload.activityLogs?.length) setActivityLogs(payload.activityLogs)
+    restoreSession()
+      .then(async user => {
+        if (cancelled || !user) return
+        const r = user.role as Role
+        setRole(r)
+        setCurrentUser({
+          email: user.email,
+          name: user.name,
+          password: '',
+          title: user.title || titleForRole(r),
+        })
+        const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
+        setActiveNav(defaultNav)
+        setScreen('app')
+        try {
+          await applyWorkspace()
+          if (!cancelled) setWorkspaceReady(true)
+        } catch {
+          if (!cancelled) setWorkspaceError('Workspace API unavailable')
+        }
       })
-      .catch(() => {
-        // Keep existing mock seed so the current workflow still renders if API is down.
-      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -100,7 +94,20 @@ export function useAppController() {
 
   const handleLogout = createLogoutHandler(setScreen, setActiveNav)
 
-  const handleAuthenticated = createAuthenticatedHandler(setRole, setActiveNav, setScreen)
+  const handleAuthenticated = (r: Role) => {
+    const session = getSessionUser()
+    setCurrentUser({
+      email: session?.email || '',
+      name: session?.name || '',
+      password: '',
+      title: session?.title || titleForRole(r),
+    })
+    createAuthenticatedHandler(setRole, setActiveNav, setScreen)(r)
+    setWorkspaceReady(false)
+    applyWorkspace()
+      .then(() => setWorkspaceReady(true))
+      .catch(() => setWorkspaceError('Workspace API unavailable'))
+  }
 
   const handleNavSelect = createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)
 
@@ -168,6 +175,10 @@ export function useAppController() {
     leads,
     admins,
     activityLogs,
+    candidates,
+    setCandidates,
+    workspaceReady,
+    workspaceError,
     isNewReqOpen,
     setIsNewReqOpen,
     isSubmitCandidateOpen,

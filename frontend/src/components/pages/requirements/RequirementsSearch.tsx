@@ -65,20 +65,17 @@ export function RequirementsSearch({ vm }: { vm: RequirementsVm }) {
           </div>
 
           {/* Status Filter Dropdown */}
-          <div className="relative shrink-0 w-full sm:w-44">
+          <div className="relative shrink-0 w-full sm:w-48">
             <select
               value={statusDropdown}
               onChange={e => setStatusDropdown(e.target.value)}
               className="w-full appearance-none pl-3.5 pr-8 py-2.5 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-700 bg-gray-50/50 font-semibold cursor-pointer"
             >
-              <option value="All">All Requirements</option>
               <option value="Unassigned">Unassigned</option>
               <option value="Assigned">Assigned</option>
-              <option value="Submitted">Submitted</option>
-              <option value="Interview">Interview</option>
-              <option value="Selected">Selected</option>
-              <option value="Rejected">Rejected</option>
+              <option value="All">All Requirements</option>
               <option value="Closed">Closed</option>
+              <option value="Custom">Custom</option>
             </select>
             <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>

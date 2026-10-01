@@ -30,7 +30,8 @@ services:
       - ai-service
     environment:
       PORT: 3001
-      MONGODB_URI: mongodb://mongo:27017/mrap
+      MONGODB_URI: mongodb://mongo:27017/metaforge_recruiter_v2
+      MONGODB_DB_NAME: metaforge_recruiter_v2
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRES_IN: 8h
@@ -43,6 +44,14 @@ services:
       - app_storage:/data/storage
     ports:
       - "3001:3001"
+
+  workers:
+    build: ./workers
+    depends_on:
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379
+      WORKER_QUEUE: mrap:jobs
 
   frontend:
     build: ./frontend

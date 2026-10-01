@@ -1,14 +1,28 @@
 import type { ClientsPageProps } from './preamble'
-import { ClientRecord, INITIAL_CLIENTS } from './preamble'
+import { ClientRecord, INITIAL_CLIENTS, mapApiClient } from './preamble'
 import { getRequirementsForClient } from './preamble2'
-import { useState, useMemo } from 'react'
+import { clientsService } from '../../../services/workspace.service'
+import { ApiError } from '../../../lib/api'
+import { useState, useMemo, useEffect } from 'react'
 import React from 'react'
+
+export function apiErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return 'Your session expired. Sign in again.'
+    return err.message || 'Could not save changes'
+  }
+  if (err instanceof Error && err.message) return err.message
+  return 'Unable to reach the API. Confirm you are signed in and the backend is running.'
+}
 
 export function useClientsPageState(props: ClientsPageProps) {
   const { role = 'superadmin' }: ClientsPageProps = props as ClientsPageProps & Record<string, never>
   const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS)
   const canAddClient = role !== 'admin'
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'view_agreement'>('list')
+  const [editingClient, setEditingClient] = useState<ClientRecord | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [selectedClientForAgreement, setSelectedClientForAgreement] = useState<ClientRecord | null>(null)
   const [selectedClientForGapAnalysis, setSelectedClientForGapAnalysis] = useState<ClientRecord | null>(null)
   const [selectedClientForReqsModal, setSelectedClientForReqsModal] = useState<ClientRecord | null>(null)
@@ -41,6 +55,30 @@ export function useClientsPageState(props: ClientsPageProps) {
     setToastMsg(msg)
     setTimeout(() => setToastMsg(null), 3500)
   }
+
+  const reloadClients = async () => {
+    setIsLoading(true)
+    try {
+      const data = await clientsService.list()
+      if (Array.isArray(data) && data.length > 0) {
+        setClients(data.map(mapApiClient))
+      }
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    reloadClients().catch(err => {
+      if (!cancelled) showToast(apiErrorMessage(err))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Filtered Clients
   const filteredClients = useMemo(() => {
@@ -98,13 +136,53 @@ export function useClientsPageState(props: ClientsPageProps) {
     setViewMode('view_agreement')
   }
 
-  // Handle Add Client Form Submit (Full Page Submission)
+  const openEditClient = (client: ClientRecord) => {
+    setEditingClient(client)
+    setNewClientName(client.name)
+    setNewClientDomain(client.domain || 'Software & Cloud Services')
+    setNewPocName(client.pocName)
+    const desigMatch = client.signedBy ? client.signedBy.match(/\((.*)\)/) : null
+    setNewPocDesignation(desigMatch ? desigMatch[1] : 'Primary Contact')
+    setNewPocEmail(client.pocEmail)
+    setNewPocPhone(client.pocPhone)
+    setNewLocation(client.location || 'Bangalore / Remote')
+    setNewCommercialFee(client.commercialFee || '8.33% Annual CTC')
+    setNewPaymentTerms(client.paymentTerms || '30 Days Net')
+    setNewSlaTAT(client.slaTAT || '3.0 Days')
+    setNewAgreementStartDate(client.agreementStartDate || '2026-08-11')
+    setNewAgreementEndDate(client.agreementEndDate || '2029-08-10')
+    setViewMode('add')
+  }
+
+  const openAddClient = () => {
+    setEditingClient(null)
+    setNewClientName('')
+    setNewClientDomain('Software & Cloud Services')
+    setNewPocName('')
+    setNewPocDesignation('Procurement Manager')
+    setNewPocEmail('')
+    setNewPocPhone('')
+    setNewLocation('Bangalore / Remote')
+    setNewCommercialFee('8.33% Annual CTC')
+    setNewPaymentTerms('30 Days Net')
+    setNewSlaTAT('3.0 Days')
+    setViewMode('add')
+  }
+
   return {
     role,
     clients,
     setClients,
     viewMode,
     setViewMode,
+    editingClient,
+    setEditingClient,
+    isSaving,
+    setIsSaving,
+    isLoading,
+    reloadClients,
+    openEditClient,
+    openAddClient,
     selectedClientForAgreement,
     setSelectedClientForAgreement,
     selectedClientForGapAnalysis,

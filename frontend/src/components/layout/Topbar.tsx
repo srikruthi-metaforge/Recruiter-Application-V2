@@ -2,7 +2,8 @@ import React, { useState } from 'react'
 import { Search, Bell, ChevronDown } from 'lucide-react'
 import { Role } from '../../types'
 import { brand, appTheme, roleTheme } from '../../theme'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { getSessionUser } from '../../store/session'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { NotificationPopover } from '../ui/NotificationPopover'
 import { ScreenTimeWidget } from '../ui/ScreenTimeWidget'
 
@@ -30,7 +31,10 @@ export function Topbar({
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const accent = appTheme.accent
   const roleLabel = roleTheme[role].label
-  const user = DEMO_ACCOUNTS[role]
+  const session = getSessionUser()
+  const user = session
+    ? { name: session.name, email: session.email }
+    : SEED_ACCOUNTS[role]
   const initials = user.name.split(' ').map(n => n[0]).join('')
 
   return (

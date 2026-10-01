@@ -39,7 +39,7 @@ import {
   Crown,
   Plus,
 } from 'lucide-react'
-import { Role } from '../../types'
+import { Role, Requirement, Submission, Interview, Recruiter } from '../../types'
 import { PaginationFooter } from '../ui/PaginationFooter'
 import { RecruiterPerformanceChart } from '../ui/RecruiterPerformanceChart'
 import { RequirementCoverageChart } from '../ui/RequirementCoverageChart'
@@ -58,6 +58,8 @@ import {
 import { ClientWiseTeamPerformanceChart } from '../ui/ClientWiseTeamPerformanceChart'
 import { HistoryPage } from './HistoryPage'
 import { ActivityLogsPage } from './ActivityLogsPage'
+import { SubmissionsPage } from './SubmissionsPage'
+import { InterviewTrackingPage } from './InterviewTrackingPage'
 
 
 interface ClientSubmissionInfo {
@@ -440,9 +442,17 @@ const RECRUITER_REQ_SUBMISSION_DASHBOARD_DATA: RecruiterReqDashboardItem[] = [
   },
 ]
 
-interface ReportsPageProps {
+export interface ReportsPageProps {
   role?: Role
   initialMainTab?: 'performance' | 'history' | 'audit' | 'client_performance'
+  initialReportsTab?: 'reports' | 'submissions' | 'interviews'
+  requirements?: Requirement[]
+  submissions?: Submission[]
+  interviews?: Interview[]
+  recruiters?: Recruiter[]
+  onOpenSubmit?: (reqId?: string) => void
+  onOpenFeedback?: (iv: Interview) => void
+  onUpdateRequirements?: (requirements: Requirement[]) => void
 }
 
 interface ClientPerformanceTabContentProps {
@@ -456,7 +466,7 @@ function ClientPerformanceTabContent({
 }: ClientPerformanceTabContentProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(5)
   const [drillDownModal, setDrillDownModal] = useState<{
     client: ClientPerformanceData
     metric: 'reqSent' | 'reqAssigned' | 'submissions' | 'openReqs' | 'closedReqs'
@@ -733,8 +743,30 @@ function ClientPerformanceTabContent({
   )
 }
 
-export function ReportsPage({ role = 'recruiter', initialMainTab }: ReportsPageProps) {
-  const [mainTab, setMainTab] = useState<'performance' | 'history' | 'audit' | 'client_performance'>(initialMainTab || 'history')
+export function ReportsPage({
+  role = 'recruiter',
+  initialMainTab,
+  initialReportsTab = 'submissions',
+  requirements = [],
+  submissions = [],
+  interviews = [],
+  recruiters = [],
+  onOpenSubmit,
+  onOpenFeedback,
+  onUpdateRequirements,
+}: ReportsPageProps) {
+  const [reportsTopTab, setReportsTopTab] = useState<'reports' | 'submissions' | 'interviews'>(initialReportsTab)
+
+  React.useEffect(() => {
+    if (initialReportsTab) {
+      setReportsTopTab(initialReportsTab)
+    }
+  }, [initialReportsTab])
+
+  const [mainTab, setMainTab] = useState<'performance' | 'history' | 'audit' | 'client_performance'>(() => {
+    if (role === 'recruiter' && initialMainTab === 'client_performance') return 'history'
+    return initialMainTab || 'history'
+  })
 
   const [activeReportView, setActiveReportView] = useState<'self' | 'charts' | 'team'>(() => {
     return role === 'recruiter' ? 'self' : 'team'
@@ -777,7 +809,7 @@ export function ReportsPage({ role = 'recruiter', initialMainTab }: ReportsPageP
 
   // Dashboard Table 10-item Pagination State
   const [dashPage, setDashPage] = useState(1)
-  const dashPageSize = 10
+  const [dashPageSize, setDashPageSize] = useState(5)
   const [dateRange, setDateRange] = useState('30_days')
   const [selectedDept, setSelectedDept] = useState('All Departments')
   const [searchQuery, setSearchQuery] = useState('')
@@ -789,7 +821,7 @@ export function ReportsPage({ role = 'recruiter', initialMainTab }: ReportsPageP
 
   // Pagination for recruiters performance table
   const [recruiterPage, setRecruiterPage] = useState(1)
-  const [recruiterPageSize, setRecruiterPageSize] = useState(10)
+  const [recruiterPageSize, setRecruiterPageSize] = useState(5)
 
   // Selected recruiter & client for detailed drill-down pages (Admin only)
   const [selectedRecruiter, setSelectedRecruiter] = useState<RecruiterDetailData | null>(null)
@@ -1964,6 +1996,7 @@ export function ReportsPage({ role = 'recruiter', initialMainTab }: ReportsPageP
           totalItems={filteredItems.length}
           pageSize={dashPageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setDashPageSize}
         />
       </div>
     )
@@ -1996,59 +2029,133 @@ export function ReportsPage({ role = 'recruiter', initialMainTab }: ReportsPageP
 
   return (
     <div className="space-y-6 w-full pb-16 font-sans text-slate-800">
-      {/* CONSOLIDATED REPORTS TOP TABS FOR ALL ROLES */}
-      <div className="flex flex-wrap items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 w-fit">
-        <button
-          type="button"
-          onClick={() => setMainTab('history')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-            mainTab === 'history' || mainTab === 'performance'
-              ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4 text-[#6B3BF6]" />
-          <span>Recruiter Performance & History</span>
-        </button>
+      {/* PRIMARY CONSOLIDATED TOP NAVIGATION TAB BAR */}
+      <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+              <BarChart3 className="w-6 h-6 text-[#6B3BF6]" />
+              <span>Reports Page</span>
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Unified hub for Reports & Analytics, Total Submissions, and Interview Tracking.
+            </p>
+          </div>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setMainTab('client_performance')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-            mainTab === 'client_performance'
-              ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-          }`}
-        >
-          <Building2 className="w-4 h-4 text-[#6B3BF6]" />
-          <span>Client Performance</span>
-        </button>
-
-        {role !== 'recruiter' && (
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
           <button
             type="button"
-            onClick={() => setMainTab('audit')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-              mainTab === 'audit'
-                ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            onClick={() => setReportsTopTab('submissions')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
+              reportsTopTab === 'submissions'
+                ? 'bg-[#6B3BF6] text-white shadow-md shadow-purple-500/20 scale-[1.02]'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 hover:text-slate-900'
             }`}
           >
-            <ShieldCheck className="w-4 h-4 text-[#6B3BF6]" />
-            <span>Entry of Audit Logs</span>
+            <Send className="w-4 h-4" />
+            <span>Total Submissions</span>
           </button>
-        )}
+
+          <button
+            type="button"
+            onClick={() => setReportsTopTab('interviews')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
+              reportsTopTab === 'interviews'
+                ? 'bg-[#6B3BF6] text-white shadow-md shadow-purple-500/20 scale-[1.02]'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span>Interview Tracking</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setReportsTopTab('reports')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
+              reportsTopTab === 'reports'
+                ? 'bg-[#6B3BF6] text-white shadow-md shadow-purple-500/20 scale-[1.02]'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Reports & Analytics</span>
+          </button>
+        </div>
       </div>
 
-      {mainTab === 'client_performance' ? (
-        <ClientPerformanceTabContent
-          clientPerformanceList={clientPerformanceList}
-          onSelectClient={cli => setSelectedClient(cli)}
+      {reportsTopTab === 'submissions' ? (
+        <SubmissionsPage
+          role={role}
+          submissions={submissions}
+          requirements={requirements}
+          onOpenSubmitCandidate={onOpenSubmit ? (reqId?: string) => onOpenSubmit(reqId) : undefined}
+          onUpdateRequirements={onUpdateRequirements}
         />
-      ) : mainTab === 'audit' && role !== 'recruiter' ? (
-        <ActivityLogsPage role={role} />
+      ) : reportsTopTab === 'interviews' ? (
+        <InterviewTrackingPage
+          role={role}
+          interviews={interviews}
+          onOpenFeedbackModal={onOpenFeedback}
+        />
       ) : (
-        <HistoryPage role={role} />
+        <>
+          {/* CONSOLIDATED REPORTS SUB TABS */}
+          {role !== 'recruiter' && (
+            <div className="flex flex-wrap items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 w-fit">
+              <button
+                type="button"
+                onClick={() => setMainTab('history')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  mainTab === 'history' || mainTab === 'performance'
+                    ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 text-[#6B3BF6]" />
+                <span>Recruiter Performance & History</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMainTab('client_performance')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  mainTab === 'client_performance'
+                    ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <Building2 className="w-4 h-4 text-[#6B3BF6]" />
+                <span>Client Performance</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMainTab('audit')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  mainTab === 'audit'
+                    ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 text-[#6B3BF6]" />
+                <span>Entry of Audit Logs</span>
+              </button>
+            </div>
+          )}
+
+          {mainTab === 'client_performance' && role !== 'recruiter' ? (
+            <ClientPerformanceTabContent
+              clientPerformanceList={clientPerformanceList}
+              onSelectClient={cli => setSelectedClient(cli)}
+            />
+          ) : mainTab === 'audit' && role !== 'recruiter' ? (
+            <ActivityLogsPage role={role} />
+          ) : (
+            <HistoryPage role={role} />
+          )}
+        </>
       )}
 
       {/* REASON MODAL FOR RECRUITER */}

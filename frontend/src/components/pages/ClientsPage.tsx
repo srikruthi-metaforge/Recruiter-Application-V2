@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Building2,
   Plus,
@@ -41,6 +41,7 @@ import {
 import { Role } from '../../types'
 import { PaginationFooter } from '../ui/PaginationFooter'
 import { ClientDeliveryGapAnalysisPage } from './ClientDeliveryGapAnalysisPage'
+import { clientsService } from '../../services/workspace.service'
 
 export interface ClientRecord {
   id: string
@@ -345,7 +346,7 @@ export const getClientStats = (client: ClientRecord, period: 'All Time' | 'This 
 }
 
 export function ClientsPage({ role = 'superadmin' }: ClientsPageProps) {
-  const [clients, setClients] = useState<ClientRecord[]>(INITIAL_CLIENTS)
+  const [clients, setClients] = useState<ClientRecord[]>([])
   const canAddClient = role !== 'admin'
   const [viewMode, setViewMode] = useState<'list' | 'add' | 'view_agreement'>('list')
   const [selectedClientForAgreement, setSelectedClientForAgreement] = useState<ClientRecord | null>(null)
@@ -375,6 +376,49 @@ export function ClientsPage({ role = 'superadmin' }: ClientsPageProps) {
   const [newAgreementDoc, setNewAgreementDoc] = useState<File | null>(null)
 
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    clientsService
+      .list()
+      .then((rows: any) => {
+        const list = Array.isArray(rows) ? rows : rows?.items || rows?.data || []
+        if (cancelled) return
+        setClients(
+          list.map((c: any): ClientRecord => {
+            const poc = Array.isArray(c.pocContacts) && c.pocContacts[0] ? c.pocContacts[0] : {}
+            return {
+              id: c.clientId || c.id,
+              name: c.clientName || c.name || '',
+              domain: c.domain || '',
+              pocName: poc.name || c.pocName || '',
+              pocEmail: poc.email || c.pocEmail || '',
+              pocPhone: poc.phone || c.pocPhone || '',
+              location: poc.designation || c.location || '',
+              teamLead: c.accountLeadName || c.teamLead || '',
+              teamMemberCount: c.teamMemberCount || 0,
+              teamMembers: c.teamMembers || [],
+              activeReqs: c.activeReqs || 0,
+              totalSubmissions: c.totalSubmissions || 0,
+              totalPlacements: c.totalPlacements || 0,
+              commercialFee: c.commercialFee || '8.33% Annual CTC',
+              paymentTerms: c.paymentTerms || '30 Days Net',
+              slaTAT: c.slaDays ? `${c.slaDays} Days` : c.slaTAT || '5 Days',
+              agreementStatus: c.status === 'Active' ? 'Active - Executed' : 'Pending Signature',
+              agreementStartDate: c.agreementStartDate || '',
+              agreementEndDate: c.agreementEndDate || '',
+              agreementDocName: c.agreementsUrl || c.agreementDocName || '',
+              signedBy: c.signedBy || '',
+              signedDate: c.signedDate || '',
+            }
+          }),
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const showToast = (msg: string) => {
     setToastMsg(msg)
@@ -422,7 +466,7 @@ export function ClientsPage({ role = 'superadmin' }: ClientsPageProps) {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(5)
 
   const totalPages = Math.ceil(filteredClients.length / pageSize) || 1
 
@@ -1310,6 +1354,7 @@ export function ClientsPage({ role = 'superadmin' }: ClientsPageProps) {
           totalItems={filteredClients.length}
           pageSize={pageSize}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
 

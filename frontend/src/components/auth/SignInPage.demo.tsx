@@ -1,7 +1,7 @@
 import React from 'react'
 import { KeyRound } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { roleTheme } from '../../theme'
 
 /** Credential hints for the demo accounts, matching the existing RoleLoginPage pattern. */
@@ -21,7 +21,7 @@ export function DemoCredentialsPanel({ onPick }: { onPick: (email: string, passw
 
       <div className="grid grid-cols-2 gap-2">
         {roles.map(r => {
-          const acc = DEMO_ACCOUNTS[r]
+          const acc = SEED_ACCOUNTS[r]
           return (
             <button
               key={r}

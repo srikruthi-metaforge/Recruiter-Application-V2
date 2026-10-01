@@ -13,10 +13,11 @@ interface Props {
   totalPages: number
   pageSize: number
   setCurrentPage: (n: number) => void
+  setPageSize?: (n: number) => void
   setSelectedMemberDetail: (m: UnifiedTeamMember) => void
 }
 export function TeamsRecruitersList(p: Props) {
-  const { paginatedMembers, filteredMembers, role, currentPage, totalPages, pageSize, setCurrentPage, setSelectedMemberDetail } = p
+  const { paginatedMembers, filteredMembers, role, currentPage, totalPages, pageSize, setCurrentPage, setPageSize, setSelectedMemberDetail } = p
   return (
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -167,6 +168,7 @@ export function TeamsRecruitersList(p: Props) {
           pageSize={pageSize}
           totalItems={filteredMembers.length}
           onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
   )

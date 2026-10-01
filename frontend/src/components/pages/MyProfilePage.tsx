@@ -1,15 +1,20 @@
 import React, { useState } from 'react'
 import { Pencil, ShieldCheck } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { getSessionUser, setSessionUser } from '../../store/session'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { MyProfileDetailsCard } from './MyProfilePage.details'
+import { usersService } from '../../services/workspace.service'
 
 interface MyProfilePageProps {
   role: Role
 }
 
 export function MyProfilePage({ role }: MyProfilePageProps) {
-  const defaultAccount = DEMO_ACCOUNTS[role] || {
+  const session = getSessionUser()
+  const defaultAccount = session
+    ? { name: session.name, email: session.email, title: session.title || '' }
+    : SEED_ACCOUNTS[role] || {
     name: 'Harish Gadipally',
     email: 'harish.g@metaforgeit.com',
     title: 'Senior Recruiting Lead',
@@ -19,23 +24,35 @@ export function MyProfilePage({ role }: MyProfilePageProps) {
   const [name, setName] = useState(defaultAccount.name)
   const [email, setEmail] = useState(defaultAccount.email)
   const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   const [editName, setEditName] = useState(name)
   const [editEmail, setEditEmail] = useState(email)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editName.trim() || !editEmail.trim()) return
+    if (!editName.trim() || !editEmail.trim() || isSaving) return
 
-    setName(editName.trim())
-    setEmail(editEmail.trim())
-    setIsEditing(false)
-
-    setToastMessage('Profile information updated successfully!')
-    setTimeout(() => {
-      setToastMessage(null)
-    }, 4000)
+    setIsSaving(true)
+    try {
+      await usersService.updateMe({ name: editName.trim() })
+      setName(editName.trim())
+      setEmail(editEmail.trim())
+      const currentSession = getSessionUser()
+      if (currentSession) {
+        setSessionUser({ ...currentSession, name: editName.trim() })
+      }
+      setIsEditing(false)
+      setToastMessage('Profile information updated successfully!')
+    } catch (err: any) {
+      setToastMessage(err?.message || 'Failed to update profile information')
+    } finally {
+      setIsSaving(false)
+      setTimeout(() => {
+        setToastMessage(null)
+      }, 4000)
+    }
   }
 
   const handleCancel = () => {

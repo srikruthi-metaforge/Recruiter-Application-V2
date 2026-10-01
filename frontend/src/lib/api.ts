@@ -1,6 +1,6 @@
 import { clearSession, getAccessToken } from '../store/session'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1').replace(/\/$/, '')
 
 export class ApiError extends Error {
   status: number
@@ -21,14 +21,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAccessToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include' })
   if (res.status === 401) {
     clearSession()
   }
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  let data: any = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = text
+  }
   if (!res.ok) {
-    throw new ApiError(data?.message || res.statusText || 'Request failed', res.status, data)
+    const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message
+    throw new ApiError(message || res.statusText || 'Request failed', res.status, data)
   }
   return data as T
 }

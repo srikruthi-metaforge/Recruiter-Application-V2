@@ -1,7 +1,7 @@
 import React from 'react'
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, ArrowRight } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS } from '../../data/mockData'
+import { SEED_ACCOUNTS } from '../../data/seedCredentials'
 import { roleTheme } from '../../theme'
 
 export function RoleLoginForm({
@@ -34,7 +34,7 @@ export function RoleLoginForm({
   handleSubmit: (e: React.FormEvent) => void
 }) {
   const theme = roleTheme[role]
-  const account = DEMO_ACCOUNTS[role]
+  const account = SEED_ACCOUNTS[role]
 
   return (
     <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-slate-50 relative overflow-y-auto h-full">

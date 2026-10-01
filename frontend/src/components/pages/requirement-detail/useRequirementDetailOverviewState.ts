@@ -2,6 +2,23 @@ import type { RequirementDetailOverviewProps } from './preamble'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import React from 'react'
 
+export interface PipelineCandidateItem {
+  id: string
+  name: string
+  exp: string
+  company: string
+  notice: string
+  status: string
+  activity: string
+  action: 'Schedule Interview' | 'View only'
+  l1Status: 'locked' | 'active' | 'selected' | 'rejected'
+  l2Status: 'locked' | 'active' | 'selected' | 'skipped' | 'rejected'
+  finalStatus: 'locked' | 'active' | 'completed' | 'rejected'
+  offerLetterStatus?: 'none' | 'ready_to_release' | 'released'
+  rejectionReason?: string
+  rejectedStage?: 'L1' | 'L2' | 'FINAL' | null
+}
+
 export function useRequirementDetailOverviewState(props: RequirementDetailOverviewProps) {
   const {
   requirement,
@@ -29,6 +46,231 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [schedulingCandidateRow, setSchedulingCandidateRow] = useState<any>(null)
   const [isAddCandidateModalOpen, setIsAddCandidateModalOpen] = useState(false)
+
+  // Candidate Pipeline Interactive State
+  const [pipelineCandidates, setPipelineCandidates] = useState<PipelineCandidateItem[]>([
+    {
+      id: 'pipe-1',
+      name: 'MUNTAZAR SAYED',
+      exp: '8 Years 2 Months',
+      company: '—',
+      notice: '—',
+      status: 'COMPLETED',
+      activity: 'Just now',
+      action: 'Schedule Interview',
+      l1Status: 'selected',
+      l2Status: 'skipped',
+      finalStatus: 'completed',
+      offerLetterStatus: 'ready_to_release',
+    },
+    {
+      id: 'pipe-2',
+      name: 'Nikhil Joshte',
+      exp: '10 Years 4 Months',
+      company: '—',
+      notice: '—',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 19:29',
+      action: 'Schedule Interview',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+    {
+      id: 'pipe-3',
+      name: 'Pratibha Kale',
+      exp: '10 Years 5 Months',
+      company: '—',
+      notice: '—',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 18:45',
+      action: 'Schedule Interview',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+    {
+      id: 'pipe-4',
+      name: 'SANDEEP YADAV',
+      exp: '13 Years 1 Month',
+      company: '—',
+      notice: '—',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 18:38',
+      action: 'View only',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+    {
+      id: 'pipe-5',
+      name: 'Akshay Soni',
+      exp: '3 Years 6 Months',
+      company: '—',
+      notice: '—',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 18:33',
+      action: 'Schedule Interview',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+    {
+      id: 'pipe-6',
+      name: 'Sima Borokar',
+      exp: '4 Years 5 Months',
+      company: '—',
+      notice: '—',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 17:56',
+      action: 'Schedule Interview',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+    {
+      id: 'pipe-7',
+      name: 'Puttapaka Saiteja',
+      exp: '5 years',
+      company: 'Metaforge it solutions',
+      notice: '30 days ,last working 29 April 2026.',
+      status: 'Submitted to Client',
+      activity: '19/06/2026, 17:50',
+      action: 'Schedule Interview',
+      l1Status: 'active',
+      l2Status: 'locked',
+      finalStatus: 'locked',
+    },
+  ])
+
+  const [rejectionModalData, setRejectionModalData] = useState<{
+    candidateId: string
+    candidateName: string
+    stage: 'L1' | 'L2' | 'FINAL'
+  } | null>(null)
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(null), 3500)
+  }
+
+  const handleUpdatePipelineStage = (candidateId: string, stage: 'L1' | 'L2' | 'FINAL', action: string) => {
+    if (action === 'reject') {
+      const candidate = pipelineCandidates.find(c => c.id === candidateId)
+      if (candidate) {
+        setRejectionModalData({
+          candidateId,
+          candidateName: candidate.name,
+          stage,
+        })
+      }
+      return
+    }
+
+    setPipelineCandidates(prev =>
+      prev.map(c => {
+        if (c.id !== candidateId) return c
+
+        if (stage === 'L1') {
+          if (action === 'select') {
+            return {
+              ...c,
+              l1Status: 'selected',
+              l2Status: 'active',
+              status: 'L2 In Progress',
+              activity: 'Just now',
+            }
+          }
+          if (action === 'move_to_final') {
+            return {
+              ...c,
+              l1Status: 'selected',
+              l2Status: 'skipped',
+              finalStatus: 'active',
+              status: 'Final Round',
+              activity: 'Just now',
+            }
+          }
+        }
+
+        if (stage === 'L2') {
+          if (action === 'select') {
+            return {
+              ...c,
+              l2Status: 'selected',
+              finalStatus: 'active',
+              status: 'Final Round',
+              activity: 'Just now',
+            }
+          }
+        }
+
+        if (stage === 'FINAL') {
+          if (action === 'completed') {
+            return {
+              ...c,
+              finalStatus: 'completed',
+              offerLetterStatus: 'ready_to_release',
+              status: 'COMPLETED',
+              activity: 'Just now',
+            }
+          }
+        }
+
+        return c
+      })
+    )
+
+    if (action === 'select') {
+      showToast(`Candidate moved to ${stage === 'L1' ? 'L2' : 'FINAL'} stage.`)
+    } else if (action === 'move_to_final') {
+      showToast(`Candidate moved directly from L1 to FINAL stage (L2 skipped).`)
+    } else if (action === 'completed') {
+      showToast(`Candidate successfully COMPLETED FINAL stage! Offer letter ready to release.`)
+    }
+  }
+
+  const handleUpdateOfferLetterStatus = (candidateId: string, offerStatus: 'ready_to_release' | 'released') => {
+    setPipelineCandidates(prev =>
+      prev.map(c => {
+        if (c.id !== candidateId) return c
+        return {
+          ...c,
+          offerLetterStatus: offerStatus,
+          activity: 'Just now',
+        }
+      })
+    )
+    if (offerStatus === 'released') {
+      showToast(`Offer letter marked as Released!`)
+    } else {
+      showToast(`Offer letter marked as Ready to Release.`)
+    }
+  }
+
+  const handleConfirmRejection = (reason: string) => {
+    if (!rejectionModalData) return
+    const { candidateId, stage } = rejectionModalData
+
+    setPipelineCandidates(prev =>
+      prev.map(c => {
+        if (c.id !== candidateId) return c
+        return {
+          ...c,
+          l1Status: stage === 'L1' ? 'rejected' : c.l1Status,
+          l2Status: stage === 'L2' ? 'rejected' : c.l2Status,
+          finalStatus: stage === 'FINAL' ? 'rejected' : c.finalStatus,
+          status: 'REJECTED',
+          rejectionReason: reason,
+          rejectedStage: stage,
+          activity: 'Just now',
+        }
+      })
+    )
+
+    showToast(`Rejection recorded for ${rejectionModalData.candidateName} at ${stage} stage.`)
+    setRejectionModalData(null)
+  }
 
   const currentUserName = useMemo(() => {
     if (isSuperAdminOrAdmin) return 'Harish Gadipally'
@@ -128,11 +370,6 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
 
   const isUnassigned = !requirement.owner || requirement.owner === 'Unassigned'
 
-  const showToast = (msg: string) => {
-    setToastMsg(msg)
-    setTimeout(() => setToastMsg(null), 3500)
-  }
-
   // Skills lists matching attached screenshot
   const mandatorySkills = [
     'Catia V6',
@@ -200,6 +437,13 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     showToast,
     mandatorySkills,
     generalSkills,
+    pipelineCandidates,
+    setPipelineCandidates,
+    rejectionModalData,
+    setRejectionModalData,
+    handleUpdatePipelineStage,
+    handleConfirmRejection,
+    handleUpdateOfferLetterStatus,
   }
 }
 export type RequirementDetailVmState = ReturnType<typeof useRequirementDetailOverviewState>

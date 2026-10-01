@@ -1,26 +1,17 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem } from './types'
-import {
-  INITIAL_ADMINS,
-  INITIAL_INTERVIEWS,
-  INITIAL_LEADS,
-  INITIAL_RECRUITERS,
-  INITIAL_REQUIREMENTS,
-  INITIAL_SUBMISSIONS,
-  INITIAL_ACTIVITY_LOGS,
-  DEMO_ACCOUNTS,
-} from './data/mockData'
+import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from './types'
 import { brand } from './theme'
-import { logoutRemote } from './data/authService'
-import { clearSession } from './store/session'
+import { logoutRemote, restoreSession } from './data/authService'
+import { clearSession, getSessionUser } from './store/session'
+import { titleForRole } from './data/seedCredentials'
 import { workspaceService } from './services/workspace.service'
+import { saveSubmissionsStore } from './data/submissionsStore'
 
 import { Sidebar } from './components/layout/Sidebar'
 import { PageContainer } from './components/layout/PageContainer'
 
-import { LeadDashboard } from './components/dashboards/LeadDashboard'
 import { RecruiterDashboard } from './components/dashboards/RecruiterDashboard'
 import { DevTeamDashboard } from './components/dashboards/DevTeamDashboard'
 import { ModulePage } from './components/pages/ModulePage'
@@ -38,47 +29,25 @@ import { SubmitCandidateModal } from './components/modals/SubmitCandidateModal'
 import { InterviewFeedbackModal } from './components/modals/InterviewFeedbackModal'
 import { CandidateDetailModal } from './components/modals/CandidateDetailModal'
 
+const emptyUser = { email: '', name: '', password: '', title: '' }
+
 export default function App() {
-  const [role, setRole] = useState<Role>(() => {
-    try {
-      const savedRole = localStorage.getItem('metaforge_user_role') as Role
-      return savedRole || 'recruiter'
-    } catch {
-      return 'recruiter'
-    }
-  })
-
-  const [screen, setScreen] = useState<AuthScreen>(() => {
-    try {
-      const savedSession = localStorage.getItem('metaforge_session_active')
-      return savedSession === 'true' ? 'app' : 'landing'
-    } catch {
-      return 'landing'
-    }
-  })
-
-  const [loginRole, setLoginRole] = useState<Role>(role)
+  const [role, setRole] = useState<Role>('recruiter')
+  const [screen, setScreen] = useState<AuthScreen>('landing')
+  const [loginRole, setLoginRole] = useState<Role>('recruiter')
   const [recoveryEmail, setRecoveryEmail] = useState('')
-  const [activeNav, setActiveNav] = useState<string>(() => {
-    try {
-      const savedNav = localStorage.getItem('metaforge_active_nav')
-      if (savedNav && savedNav !== 'Dashboard') return savedNav
-      if (savedNav === 'Dashboard' && (role === 'lead' || role === 'superadmin' || role === 'admin' || role === 'devteam')) {
-        return 'Requirements'
-      }
-      if (savedNav) return savedNav
-    } catch {}
-    return (role === 'superadmin' || role === 'devteam' || role === 'admin' || role === 'lead') ? 'Requirements' : 'Dashboard'
-  })
+  const [activeNav, setActiveNav] = useState<string>('Dashboard')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
-  const [requirements, setRequirements] = useState<Requirement[]>(INITIAL_REQUIREMENTS)
-  const [submissions, setSubmissions] = useState<Submission[]>(INITIAL_SUBMISSIONS)
-  const [interviews, setInterviews] = useState<Interview[]>(INITIAL_INTERVIEWS)
-  const [recruiters, setRecruiters] = useState<Recruiter[]>(INITIAL_RECRUITERS)
-  const [leads] = useState(INITIAL_LEADS)
-  const [admins] = useState(INITIAL_ADMINS)
-  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>(INITIAL_ACTIVITY_LOGS)
+  const [requirements, setRequirements] = useState<Requirement[]>([])
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [interviews, setInterviews] = useState<Interview[]>([])
+  const [recruiters, setRecruiters] = useState<Recruiter[]>([])
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [admins, setAdmins] = useState<Admin[]>([])
+  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [currentUser, setCurrentUser] = useState(emptyUser)
 
   const handleAddActivityLog = (newLog: ActivityLogItem) => {
     setActivityLogs(prev => [newLog, ...prev])
@@ -98,23 +67,41 @@ export default function App() {
   const [isCandidateDetailOpen, setIsCandidateDetailOpen] = useState(false)
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
 
-  const currentUser = DEMO_ACCOUNTS[role]
+  const loadWorkspace = async () => {
+    const payload = await workspaceService.load()
+    setRequirements(payload.requirements || [])
+    setSubmissions(payload.submissions || [])
+    saveSubmissionsStore(payload.submissions || [])
+    setInterviews(payload.interviews || [])
+    setRecruiters(payload.recruiters || [])
+    setLeads(payload.leads || [])
+    setAdmins(payload.admins || [])
+    setActivityLogs(payload.activityLogs || [])
+    setCandidates(payload.candidates || [])
+  }
 
   useEffect(() => {
     let cancelled = false
-    workspaceService
-      .load()
-      .then(payload => {
-        if (cancelled || !payload) return
-        if (payload.requirements?.length) setRequirements(payload.requirements)
-        if (payload.submissions?.length) setSubmissions(payload.submissions)
-        if (payload.interviews?.length) setInterviews(payload.interviews)
-        if (payload.recruiters?.length) setRecruiters(payload.recruiters)
-        if (payload.activityLogs?.length) setActivityLogs(payload.activityLogs)
+    restoreSession()
+      .then(async user => {
+        if (cancelled || !user) return
+        const r = user.role as Role
+        setRole(r)
+        setCurrentUser({
+          email: user.email,
+          name: user.name,
+          password: '',
+          title: user.title || titleForRole(r),
+        })
+        setActiveNav((r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard')
+        setScreen('app')
+        try {
+          await loadWorkspace()
+        } catch {
+          // Empty workspace until API recovers
+        }
       })
-      .catch(() => {
-        // Keep existing mock seed so the current workflow still renders if API is down.
-      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -123,32 +110,32 @@ export default function App() {
   const handleLogout = () => {
     void logoutRemote()
     clearSession()
-    try {
-      localStorage.removeItem('metaforge_session_active')
-      localStorage.removeItem('metaforge_user_role')
-      localStorage.removeItem('metaforge_active_nav')
-      localStorage.removeItem('metaforge_reports_active_view')
-      localStorage.removeItem('metaforge_candidate_view_mode')
-    } catch (e) {
-      // ignore
-    }
     setScreen('landing')
     setActiveNav('Requirements')
+    setRequirements([])
+    setSubmissions([])
+    setInterviews([])
+    setRecruiters([])
+    setLeads([])
+    setAdmins([])
+    setActivityLogs([])
+    setCandidates([])
+    setCurrentUser(emptyUser)
   }
 
-  /** Shared post-authentication handoff used by every sign-in surface. */
   const handleAuthenticated = (r: Role) => {
     setRole(r)
+    const session = getSessionUser()
+    setCurrentUser({
+      email: session?.email || '',
+      name: session?.name || '',
+      password: '',
+      title: session?.title || titleForRole(r),
+    })
     const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-    try {
-      localStorage.setItem('metaforge_session_active', 'true')
-      localStorage.setItem('metaforge_user_role', r)
-      localStorage.setItem('metaforge_active_nav', defaultNav)
-    } catch (e) {
-      // ignore
-    }
     setActiveNav(defaultNav)
     setScreen('app')
+    void loadWorkspace().catch(() => undefined)
   }
 
   const handleNavSelect = (nav: string) => {
@@ -156,9 +143,6 @@ export default function App() {
       setSelectedReqIdForSubmit(null)
     }
     setActiveNav(nav)
-    try {
-      localStorage.setItem('metaforge_active_nav', nav)
-    } catch (e) {}
   }
 
   const handleOpenSubmitCandidateFromDashboard = (reqId?: string) => {
@@ -175,6 +159,7 @@ export default function App() {
 
   const handleSubmitCandidate = (newSub: Submission) => {
     setSubmissions([newSub, ...submissions])
+    saveSubmissionsStore([newSub, ...submissions])
     void workspaceService.createSubmission(newSub).catch(() => undefined)
     setRequirements(prev =>
       prev.map(r => (r.id === newSub.req ? { ...r, submissions: r.submissions + 1 } : r))
@@ -198,7 +183,7 @@ export default function App() {
       targetEntity: `Candidate ${newSub.candidate}`,
       targetId: newSub.id,
       clientName: newSub.client,
-      ipAddress: '192.168.1.45',
+      ipAddress: '127.0.0.1',
       status: 'Success',
       details: `Submitted candidate profile to client ${newSub.client}`,
     })
@@ -220,7 +205,7 @@ export default function App() {
       targetEntity: `Interview ${interviewId}`,
       targetId: interviewId,
       clientName: targetIv?.client || 'Client',
-      ipAddress: '192.168.1.45',
+      ipAddress: '127.0.0.1',
       status: 'Success',
       details: notes || `Interview status updated to ${status}`,
     })
@@ -362,6 +347,8 @@ export default function App() {
         onNavigateToDashboard={() => setActiveNav('Dashboard')}
         currentUserName={currentUser.name}
         currentUserEmail={currentUser.email}
+        initialCandidates={candidates}
+        onCandidatesChange={setCandidates}
       />
     )
   }

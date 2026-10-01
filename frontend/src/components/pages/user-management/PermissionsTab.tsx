@@ -20,7 +20,7 @@ export function PermissionsTab({
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search recruiter name, email..."
+                placeholder="Search user name, email..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#6B3BF6]"
@@ -34,11 +34,12 @@ export function PermissionsTab({
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-[#6B3BF6] cursor-pointer"
               >
                 <option value="All Roles">All Roles</option>
-                <option value="Team Lead">Team Lead</option>
-                <option value="Senior Technical Recruiter">Senior Technical Recruiter</option>
-                <option value="IT Recruiter">IT Recruiter</option>
-                <option value="ERP Technical Recruiter">ERP Technical Recruiter</option>
+                <option value="Super Admin">Super Admin</option>
                 <option value="Admin">Admin</option>
+                <option value="Team Lead">Team Lead</option>
+                <option value="Recruiter">Recruiter</option>
+                <option value="Dev Team">Dev Team</option>
+                <option value="Client Reviewer">Client Reviewer</option>
               </select>
             </div>
           </div>

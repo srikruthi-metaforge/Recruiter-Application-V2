@@ -23,4 +23,8 @@ export interface SubmissionCandidateDetailModalProps {
   onBackToRequirement?: () => void
   rejectionReason?: string
   onSaveRejectionReason?: (submissionId: string, newReason: string) => void
+  onUpdateStage?: (id: string, stage: string, notes?: string) => Promise<void> | void
+  onLeadApproval?: (id: string, approved: boolean, status?: string, reason?: string) => Promise<void> | void
+  onForwardClient?: (id: string, notes?: string) => Promise<void> | void
 }
+

@@ -19,6 +19,7 @@ export function ScheduleInterviewFormFields({
   setCandidateEmail,
   candidatePhone,
   setCandidatePhone,
+  dynamicSubmissions = [],
 }: {
   submission: string
   setSubmission: (value: string) => void
@@ -38,6 +39,7 @@ export function ScheduleInterviewFormFields({
   setCandidateEmail: (value: string) => void
   candidatePhone: string
   setCandidatePhone: (value: string) => void
+  dynamicSubmissions?: Array<{ id: string; label: string }>
 }) {
   return (
     <>
@@ -49,24 +51,34 @@ export function ScheduleInterviewFormFields({
             onChange={e => setSubmission(e.target.value)}
             className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-[#2563EB] cursor-pointer"
           >
-            <option value="" disabled hidden>
+            <option value="">
               Select submission
             </option>
-            <option value="Siddharth Sunil — Java Full Stack Developer">
-              Siddharth Sunil — Java Full Stack Developer
-            </option>
-            <option value="Priyanka Sharma — Senior React Developer">
-              Priyanka Sharma — Senior React Developer
-            </option>
-            <option value="Vidyasagar Gade — SAP MM Specialist">
-              Vidyasagar Gade — SAP MM Specialist
-            </option>
-            <option value="Kanchan Meshram — AI Developer">
-              Kanchan Meshram — AI Developer
-            </option>
-            <option value="Arpit Srivastav — MIG Welding Engineer">
-              Arpit Srivastav — MIG Welding Engineer
-            </option>
+            {dynamicSubmissions.length > 0 ? (
+              dynamicSubmissions.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="Siddharth Sunil — Java Full Stack Developer">
+                  Siddharth Sunil — Java Full Stack Developer
+                </option>
+                <option value="Priyanka Sharma — Senior React Developer">
+                  Priyanka Sharma — Senior React Developer
+                </option>
+                <option value="Vidyasagar Gade — SAP MM Specialist">
+                  Vidyasagar Gade — SAP MM Specialist
+                </option>
+                <option value="Kanchan Meshram — AI Developer">
+                  Kanchan Meshram — AI Developer
+                </option>
+                <option value="Arpit Srivastav — MIG Welding Engineer">
+                  Arpit Srivastav — MIG Welding Engineer
+                </option>
+              </>
+            )}
           </select>
         </div>
 

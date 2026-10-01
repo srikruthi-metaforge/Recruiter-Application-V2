@@ -1,134 +1,157 @@
 import React from 'react'
-import type { UserAccountData, EnterpriseRoleData } from './types'
+import { usersService, rolesService } from '../../../services/workspace.service'
+import { apiErrorMessage, enabledPermissionKeys, roleCodeForLabel } from './userApi'
 import type { UserManagementState } from './useUserManagementState'
 
 export function useUserFormActions(s: UserManagementState) {
   const {
-    role, canModifyUsers, users, setUsers,
-    roles, setRoles, setRecruiterUsers, setViewMode,
+    canModifyUsers, setViewMode,
     selectedUser, setSelectedUser, newUserName, setNewUserName,
     newUserEmail, setNewUserEmail, newUserPhone, setNewUserPhone,
-    newUserEmpId, setNewUserEmpId, newUserRole, newUserTeam,
-    newUserSupervisor, newUserClient, resetNewPass, targetRole,
-    targetClient, newRoleName, setNewRoleName, newRoleDescription,
+    newUserEmpId, setNewUserEmpId, newUserRole, tempPassword,
+    resetNewPass, resetConfirmPass, targetRole,
+    newRoleName, setNewRoleName, newRoleDescription,
     setNewRoleDescription, newPermissions, editingRole, setEditingRole,
-    tempRolePermissions, showToast
+    tempRolePermissions, showToast, isSaving, setIsSaving, reloadUsers, reloadRoles,
   } = s
 
-  const handleCreateUserSubmit = (e: React.FormEvent) => {
+  const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSaving) return
     if (!canModifyUsers) {
       showToast('Access Restricted: Admin has view-only permissions.')
       setViewMode('list')
       return
     }
-    if (!newUserName.trim() || !newUserEmail.trim()) return
-
-    const newRecord: UserAccountData = {
-      id: `usr-${Date.now()}`,
-      name: newUserName.trim(),
-      email: newUserEmail.trim(),
-      phone: newUserPhone.trim() || '+91 98765 00000',
-      employeeId: newUserEmpId.trim() || `EMP-2026-${Math.floor(100 + Math.random() * 900)}`,
-      role: newUserRole,
-      roleCode: newUserRole.toLowerCase().replace(/\s+/g, '_'),
-      team: newUserTeam,
-      supervisor: newUserSupervisor,
-      assignedClient: newUserClient,
-      status: 'Active',
-      twoFactorEnabled: true,
-      lastLogin: 'Never (New Account)',
-      lastPasswordChange: 'Just now',
+    if (!newUserName.trim()) {
+      showToast('Name is required')
+      return
+    }
+    if (!newUserEmail.trim()) {
+      showToast('Email is required')
+      return
+    }
+    if (!tempPassword || tempPassword.length < 8) {
+      showToast('Password must be at least 8 characters long')
+      return
     }
 
-    setUsers([newRecord, ...users])
-    setViewMode('list')
-    showToast(`Successfully created user account for ${newUserName} (Client: ${newUserClient})`)
-
-    setNewUserName('')
-    setNewUserEmail('')
-    setNewUserPhone('')
-    setNewUserEmpId('')
+    setIsSaving(true)
+    try {
+      await usersService.create({
+        name: newUserName.trim(),
+        email: newUserEmail.trim(),
+        password: tempPassword,
+        role: roleCodeForLabel(newUserRole),
+        ...(newUserPhone.trim() ? { phone: newUserPhone.trim() } : {}),
+      })
+      await reloadUsers()
+      setViewMode('list')
+      showToast(`Created user account for ${newUserName.trim()}`)
+      setNewUserName('')
+      setNewUserEmail('')
+      setNewUserPhone('')
+      setNewUserEmpId('')
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Handle Reset Password Submit
-  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSaving) return
     if (!selectedUser || !resetNewPass) return
+    if (resetNewPass.length < 8) {
+      showToast('Password must be at least 8 characters long')
+      return
+    }
+    if (resetConfirmPass && resetNewPass !== resetConfirmPass) {
+      showToast('Passwords do not match')
+      return
+    }
 
-    setUsers(prev =>
-      prev.map(u =>
-        u.id === selectedUser.id ? { ...u, lastPasswordChange: 'Today (Reset by Admin)' } : u
-      )
-    )
-    setViewMode('list')
-    showToast(`Password successfully reset for ${selectedUser.name}!`)
-    setSelectedUser(null)
+    setIsSaving(true)
+    try {
+      await usersService.update(selectedUser.id, { password: resetNewPass })
+      await reloadUsers()
+      setViewMode('list')
+      showToast(`Password updated for ${selectedUser.name}`)
+      setSelectedUser(null)
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Handle Assign Role & Adjust Client Submit
-  const handleAssignRoleSubmit = (e: React.FormEvent) => {
+  const handleAssignRoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedUser) return
+    if (isSaving || !selectedUser) return
 
-    setUsers(prev =>
-      prev.map(u =>
-        u.id === selectedUser.id
-          ? {
-              ...u,
-              role: targetRole,
-              roleCode: targetRole.toLowerCase().replace(/\s+/g, '_'),
-              assignedClient: targetClient,
-            }
-          : u
-      )
-    )
-    setRecruiterUsers(prev =>
-      prev.map(r =>
-        r.id === selectedUser.id || r.email === selectedUser.email
-          ? { ...r, assignedClient: targetClient }
-          : r
-      )
-    )
-    setViewMode('list')
-    showToast(`Updated role to "${targetRole}" & client to "${targetClient}" for ${selectedUser.name}`)
-    setSelectedUser(null)
+    setIsSaving(true)
+    try {
+      await usersService.update(selectedUser.id, { role: roleCodeForLabel(targetRole) })
+      await reloadUsers()
+      setViewMode('list')
+      showToast(`Updated role to "${targetRole}" for ${selectedUser.name}`)
+      setSelectedUser(null)
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Handle Create Role Form Submit
-  const handleCreateRoleSubmit = (e: React.FormEvent) => {
+  const handleCreateRoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newRoleName.trim()) return
-
-    const createdRole: EnterpriseRoleData = {
-      id: `role-${Date.now()}`,
-      name: newRoleName.trim(),
-      code: newRoleName.toLowerCase().replace(/\s+/g, '_'),
-      description: newRoleDescription.trim() || 'Custom enterprise role created by administrator.',
-      userCount: 0,
-      isSystem: false,
-      lastUpdated: 'Just now',
-      permissions: { ...newPermissions },
+    if (isSaving) return
+    if (!newRoleName.trim()) {
+      showToast('Role name is required')
+      return
     }
 
-    setRoles([...roles, createdRole])
-    setViewMode('list')
-    showToast(`New Role "${createdRole.name}" created successfully!`)
-
-    setNewRoleName('')
-    setNewRoleDescription('')
+    const roleCode = newRoleName.trim().toLowerCase().replace(/\s+/g, '_')
+    setIsSaving(true)
+    try {
+      await rolesService.updatePermissions({
+        roleCode,
+        permissions: enabledPermissionKeys(newPermissions),
+      })
+      await reloadRoles()
+      setViewMode('list')
+      showToast(`Saved role "${newRoleName.trim()}"`)
+      setNewRoleName('')
+      setNewRoleDescription('')
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  // Handle Save Role Permissions
-  const handleSaveRolePermissions = () => {
-    if (!editingRole) return
-    const updatedRoles = roles.map(r =>
-      r.id === editingRole.id ? { ...r, permissions: { ...tempRolePermissions }, lastUpdated: 'Today' } : r
-    )
-    setRoles(updatedRoles)
-    setViewMode('list')
-    showToast(`Role permissions updated for ${editingRole.name}!`)
-    setEditingRole(null)
+  const handleSaveRolePermissions = async () => {
+    if (isSaving || !editingRole) return
+    const roleCode = editingRole.code || editingRole.id
+    setIsSaving(true)
+    try {
+      await rolesService.updatePermissions({
+        roleCode,
+        permissions: enabledPermissionKeys(tempRolePermissions),
+      })
+      await reloadRoles()
+      setViewMode('list')
+      showToast(`Role permissions updated for ${editingRole.name}`)
+      setEditingRole(null)
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return {

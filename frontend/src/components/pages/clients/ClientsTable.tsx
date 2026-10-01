@@ -1,5 +1,5 @@
 import React from 'react'
-import { ShieldCheck, User, Users, ChevronDown, Sparkles, Layers } from 'lucide-react'
+import { ShieldCheck, User, Users, ChevronDown, Sparkles, Layers, Edit2 } from 'lucide-react'
 import { ClientDeliveryGapAnalysisPage } from '../ClientDeliveryGapAnalysisPage'
 import { PaginationFooter } from '../../ui/PaginationFooter'
 import { ClientsVm } from './useClientsPage'
@@ -20,6 +20,7 @@ export function ClientsTable({ vm }: { vm: ClientsVm }) {
     pageSize,
     totalPages,
     paginatedClients,
+    openEditClient,
   } = vm
   return (
     <>
@@ -179,6 +180,19 @@ export function ClientsTable({ vm }: { vm: ClientsVm }) {
 
                   {/* Column 7: Actions */}
                   <td className="py-4 px-4 text-right whitespace-nowrap">
+                    {openEditClient && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          openEditClient(client)
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] border border-purple-200 font-extrabold cursor-pointer inline-flex items-center gap-1.5 text-xs shadow-2xs transition-all active:scale-98 mr-2"
+                        title={`Edit ${client.name}`}
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
                     {/* CLIENT DELIVERY GAP ANALYSIS BUTTON */}
                     <button
                       onClick={e => {

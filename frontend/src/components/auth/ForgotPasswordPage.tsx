@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Mail, Key, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { AuthLayout } from './AuthLayout'
-import { DEMO_ACCOUNTS, ROLE_META } from '../../data/mockData'
+import { SEED_ACCOUNTS, ROLE_META } from '../../data/mockData'
 import { Role } from '../../types'
+import { requestPasswordReset } from '../../data/authService'
 
 interface ForgotPasswordPageProps {
   onBack: () => void
@@ -15,7 +16,7 @@ export function ForgotPasswordPage({ onBack, onSent }: ForgotPasswordPageProps) 
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     if (!email) {
       setError('Work email address is required')
@@ -28,10 +29,14 @@ export function ForgotPasswordPage({ onBack, onSent }: ForgotPasswordPageProps) 
 
     setError('')
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    try {
+      await requestPasswordReset(email)
       setSent(true)
-    }, 800)
+    } catch {
+      setError('Unable to send recovery instructions. Confirm the API is running.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (sent) {
@@ -103,7 +108,7 @@ export function ForgotPasswordPage({ onBack, onSent }: ForgotPasswordPageProps) 
           <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2">
             <p className="font-mono text-[10px] text-slate-400 uppercase tracking-wider font-bold">Quick Demo Emails:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {(Object.entries(DEMO_ACCOUNTS) as [Role, typeof DEMO_ACCOUNTS[Role]][]).map(([r, acc]) => (
+              {(Object.entries(SEED_ACCOUNTS) as [Role, typeof SEED_ACCOUNTS[Role]][]).map(([r, acc]) => (
                 <button
                   key={r}
                   type="button"

@@ -1,5 +1,6 @@
 import React from 'react'
 import { Requirement, Submission, Interview, Recruiter, Candidate, ActivityLogItem, Role } from '../../types'
+import { upsertCandidate, UiCandidate } from '../../services/candidatePayload'
 import { PAGE_META, getPageTitle } from '../../config/navigation'
 import { Panel, DataTable, QuickActions } from '../wireframe/WireframeKit'
 import { PageHeader } from '../layout/PageHeader'
@@ -69,7 +70,19 @@ export function renderModulePage(props: ModulePageRouteProps) {
   }
 
   if (pageKey === 'Reports' || pageKey === 'Reports & Analytics') {
-    return <ReportsPage role={role} />
+    return (
+      <ReportsPage
+        role={role}
+        initialReportsTab="submissions"
+        requirements={requirements}
+        submissions={submissions}
+        interviews={interviews}
+        recruiters={recruiters}
+        onOpenSubmit={onOpenSubmit}
+        onOpenFeedback={onOpenFeedback}
+        onUpdateRequirements={onUpdateRequirements}
+      />
+    )
   }
 
   if (pageKey === 'Roles' || pageKey === 'Roles & Permissions') {
@@ -81,7 +94,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
   }
 
   if (pageKey === 'Users' || pageKey === 'User Management') {
-    return <UserManagementPage role={role} />
+    return <UserManagementPage role={role} initialTab="users" />
   }
 
   if (pageKey === 'Recruiters' || pageKey === 'Teams' || pageKey === 'Teams & Recruiters') {
@@ -90,14 +103,40 @@ export function renderModulePage(props: ModulePageRouteProps) {
 
   if (pageKey === 'Activity Logs' || pageKey === 'Audit Logs') {
     if (role !== 'recruiter') {
-      return <ReportsPage role={role} initialMainTab="audit" />
+      return (
+        <ReportsPage
+          role={role}
+          initialReportsTab="reports"
+          initialMainTab="audit"
+          requirements={requirements}
+          submissions={submissions}
+          interviews={interviews}
+          recruiters={recruiters}
+          onOpenSubmit={onOpenSubmit}
+          onOpenFeedback={onOpenFeedback}
+          onUpdateRequirements={onUpdateRequirements}
+        />
+      )
     }
     return <ActivityLogsPage role={role} logs={activityLogs} />
   }
 
   if (pageKey === 'History' || pageKey === 'Recruiter History' || pageKey === 'Performance History') {
     if (role !== 'recruiter') {
-      return <ReportsPage role={role} initialMainTab="history" />
+      return (
+        <ReportsPage
+          role={role}
+          initialReportsTab="reports"
+          initialMainTab="history"
+          requirements={requirements}
+          submissions={submissions}
+          interviews={interviews}
+          recruiters={recruiters}
+          onOpenSubmit={onOpenSubmit}
+          onOpenFeedback={onOpenFeedback}
+          onUpdateRequirements={onUpdateRequirements}
+        />
+      )
     }
     return <HistoryPage role={role} currentUserName={currentUserName} currentUserEmail={currentUserEmail} />
   }
@@ -130,6 +169,9 @@ export function renderModulePage(props: ModulePageRouteProps) {
           selectedReqId={selectedReqId}
           role={role}
           onOpenAddForm={() => handleCandidateViewModeChange('add')}
+          onCandidateUpdated={saved => {
+            setCandidatesList(prev => upsertCandidate(prev as UiCandidate[], saved))
+          }}
           onSelectRequirement={onSelectRequirement}
           onBackToDashboard={() => handleCandidateViewModeChange('add')}
         />
@@ -141,8 +183,8 @@ export function renderModulePage(props: ModulePageRouteProps) {
         requirements={requirements}
         selectedReqId={selectedReqId}
         onOpenRepository={() => handleCandidateViewModeChange('repository')}
-        onAddCandidate={newCandidate => {
-          setCandidatesList([newCandidate, ...candidatesList])
+        onAddCandidate={saved => {
+          setCandidatesList(prev => upsertCandidate(prev as UiCandidate[], saved as UiCandidate))
         }}
       />
     )
@@ -150,11 +192,15 @@ export function renderModulePage(props: ModulePageRouteProps) {
 
   if (pageKey === 'Submissions' || pageKey === 'Submission to Client' || pageKey === 'Submissions to Client') {
     return (
-      <SubmissionsPage
+      <ReportsPage
         role={role}
-        submissions={submissions}
+        initialReportsTab="submissions"
         requirements={requirements}
-        onOpenSubmitCandidate={onOpenSubmit ? (reqId?: string) => onOpenSubmit(reqId) : undefined}
+        submissions={submissions}
+        interviews={interviews}
+        recruiters={recruiters}
+        onOpenSubmit={onOpenSubmit}
+        onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}
       />
     )
@@ -162,10 +208,16 @@ export function renderModulePage(props: ModulePageRouteProps) {
 
   if (pageKey === 'Interviews' || pageKey === 'Interview Tracking') {
     return (
-      <InterviewTrackingPage
+      <ReportsPage
         role={role}
+        initialReportsTab="interviews"
+        requirements={requirements}
+        submissions={submissions}
         interviews={interviews}
-        onOpenFeedbackModal={onOpenFeedback}
+        recruiters={recruiters}
+        onOpenSubmit={onOpenSubmit}
+        onOpenFeedback={onOpenFeedback}
+        onUpdateRequirements={onUpdateRequirements}
       />
     )
   }

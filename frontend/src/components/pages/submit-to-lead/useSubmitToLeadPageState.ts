@@ -1,7 +1,7 @@
 import { CLIENT_TRACKER_PRESETS } from './trackerPresets.data'
 import type { SubmitToLeadPageProps } from './preamble'
 import { getForwardRequestByReq, ForwardRequest } from '../../../data/forwardRequestsStore'
-import { useState, useEffect, useRef } from 'react'
+import { getSessionUser } from '../../../store/session'
 import React from 'react'
 
 export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
@@ -12,7 +12,7 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
   onBack,
   onSubmitSuccess,
 }: SubmitToLeadPageProps = props as SubmitToLeadPageProps & Record<string, never>
-  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('metaforge_user_role') : null
+  const storedRole = getSessionUser()?.role || null
   const activeRole = role || storedRole || 'recruiter'
   const normalizedRole = (activeRole || '').toLowerCase()
   const isSuperAdminOrAdmin = normalizedRole === 'superadmin' || normalizedRole === 'admin' || normalizedRole === 'devteam'

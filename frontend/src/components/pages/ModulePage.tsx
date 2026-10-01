@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { Requirement, Submission, Interview, Recruiter, Candidate, ActivityLogItem } from '../../types'
 import { Role } from '../../types'
-import { INITIAL_CANDIDATES } from '../../data/mockData'
 import { renderModulePage } from './ModulePage.routes'
 
 interface ModulePageProps {
@@ -15,6 +14,7 @@ interface ModulePageProps {
   activityLogs?: ActivityLogItem[]
   currentUserName?: string
   currentUserEmail?: string
+  initialCandidates?: Candidate[]
   onOpenSubmit?: (reqId?: string) => void
   onOpenFeedback?: (iv: Interview) => void
   onOpenCandidate?: (sub: Submission) => void
@@ -22,6 +22,7 @@ interface ModulePageProps {
   onSelectRequirement?: (reqId: string | null) => void
   onAddActivityLog?: (log: ActivityLogItem) => void
   onNavigateToDashboard?: () => void
+  onCandidatesChange?: (candidates: Candidate[]) => void
 }
 
 export function ModulePage({
@@ -42,29 +43,30 @@ export function ModulePage({
   onSelectRequirement,
   onAddActivityLog,
   onNavigateToDashboard,
+  onCandidatesChange,
+  initialCandidates = [],
 }: ModulePageProps) {
-  const [candidatesList, setCandidatesList] = useState<Candidate[]>(INITIAL_CANDIDATES)
-  const [candidateViewMode, setCandidateViewMode] = useState<'add' | 'repository'>(() => {
-    try {
-      const saved = localStorage.getItem('metaforge_candidate_view_mode')
-      if (saved === 'add' || saved === 'repository') return saved
-    } catch {}
-    return 'add'
-  })
+  const [candidatesList, setCandidatesList] = useState<Candidate[]>(initialCandidates)
+  const updateCandidatesList: React.Dispatch<React.SetStateAction<Candidate[]>> = updater => {
+    setCandidatesList(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      onCandidatesChange?.(next)
+      return next
+    })
+  }
+  const [candidateViewMode, setCandidateViewMode] = useState<'add' | 'repository'>('add')
+
+  React.useEffect(() => {
+    setCandidatesList(initialCandidates)
+  }, [initialCandidates])
 
   const handleCandidateViewModeChange = (mode: 'add' | 'repository') => {
     setCandidateViewMode(mode)
-    try {
-      localStorage.setItem('metaforge_candidate_view_mode', mode)
-    } catch {}
   }
 
   React.useEffect(() => {
     if (selectedReqId) {
       setCandidateViewMode('repository')
-      try {
-        localStorage.setItem('metaforge_candidate_view_mode', 'repository')
-      } catch {}
     }
   }, [selectedReqId, pageKey])
 
@@ -89,6 +91,6 @@ export function ModulePage({
     onAddActivityLog,
     onNavigateToDashboard,
     handleCandidateViewModeChange,
-    setCandidatesList,
+    setCandidatesList: updateCandidatesList,
   })
 }

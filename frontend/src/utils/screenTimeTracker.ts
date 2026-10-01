@@ -23,38 +23,33 @@ function getTodayKey(): string {
   return today.toISOString().split('T')[0]
 }
 
+const records = new Map<string, ScreenTimeRecord>()
+
 export function getRecruiterScreenTime(userName: string): ScreenTimeRecord {
   const dateKey = getTodayKey()
   const storageKey = `${STORAGE_PREFIX}${userName}_${dateKey}`
-  try {
-    const data = localStorage.getItem(storageKey)
-    if (data) {
-      return JSON.parse(data)
-    }
-  } catch (e) {
-    console.error('Failed to load screen time record', e)
-  }
+  const existing = records.get(storageKey)
+  if (existing) return existing
 
-  // Initial seed fallback if none exists
-  return {
+  const created: ScreenTimeRecord = {
     date: dateKey,
     userName,
     userRole: 'recruiter',
-    activeSeconds: Math.floor(Math.random() * 3600) + 7200, // Seed 2 to 3 hrs demo time
-    idleSeconds: 420,
-    sessionStartTimestamp: Date.now() - 7620000,
+    activeSeconds: 0,
+    idleSeconds: 0,
+    sessionStartTimestamp: Date.now(),
     lastActivityTimestamp: Date.now(),
     status: 'Active',
   }
+  records.set(storageKey, created)
+  return created
 }
 
 export function saveRecruiterScreenTime(record: ScreenTimeRecord): void {
   const storageKey = `${STORAGE_PREFIX}${record.userName}_${record.date}`
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(record))
+  records.set(storageKey, record)
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('metaforge_screentime_update', { detail: record }))
-  } catch (e) {
-    console.error('Failed to save screen time record', e)
   }
 }
 

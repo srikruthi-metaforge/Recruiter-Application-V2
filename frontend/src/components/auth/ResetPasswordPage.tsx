@@ -1,19 +1,17 @@
 import React, { useState } from 'react'
 import { CheckCircle2, Lock, LockKeyhole, ShieldCheck } from 'lucide-react'
-import { isStrongPassword } from '../../data/authService'
+import { isStrongPassword, resetPassword } from '../../data/authService'
 import { AuthCard, AuthIconTile, AuthShell } from './AuthShell'
 import { AuthAlert, PasswordField, PasswordRequirements, SubmitButton } from './AuthFormControls'
 
 interface ResetPasswordPageProps {
-  /** Email whose password is being reset (already verified upstream) */
   email: string
-  /** Return to sign in — used from both the form and the success state */
+  resetToken?: string
   onDone: () => void
-  /** Back to the verification step */
   onBack?: () => void
 }
 
-export function ResetPasswordPage({ email, onDone, onBack }: ResetPasswordPageProps) {
+export function ResetPasswordPage({ email, resetToken, onDone, onBack }: ResetPasswordPageProps) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<{ password?: string; confirm?: string; general?: string }>({})
@@ -33,10 +31,18 @@ export function ResetPasswordPage({ email, onDone, onBack }: ResetPasswordPagePr
     if (Object.keys(next).length > 0) return
 
     setLoading(true)
-    window.setTimeout(() => {
-      setLoading(false)
-      setDone(true)
-    }, 800)
+    void (async () => {
+      try {
+        if (resetToken) {
+          await resetPassword(resetToken, password)
+        }
+        setDone(true)
+      } catch (err) {
+        setErrors({ general: err instanceof Error ? err.message : 'Unable to update password. Try again.' })
+      } finally {
+        setLoading(false)
+      }
+    })()
   }
 
   // Once the password is changed there is nothing to go back to.

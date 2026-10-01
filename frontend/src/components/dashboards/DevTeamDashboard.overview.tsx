@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'
 import { Building2, Target, Server } from 'lucide-react'
 import { Interview, Recruiter, Requirement, Lead } from '../../types'
@@ -9,6 +9,7 @@ import {
   RECRUITER_PERFORM_DATA,
   CustomDevTooltip,
 } from './DevTeamDashboard.data'
+import { analyticsService } from '../../services/workspace.service'
 
 export function DevTeamDashboardOverview({
   openPositions,
@@ -23,6 +24,31 @@ export function DevTeamDashboardOverview({
   leads: Lead[]
   interviews: Interview[]
 }) {
+  const [liveKpis, setLiveKpis] = useState<any>(null)
+  const [clientStats, setClientStats] = useState<any>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    Promise.all([
+      analyticsService.dashboard().catch(() => null),
+      analyticsService.clients().catch(() => null),
+    ]).then(([dashRes, clientRes]) => {
+      if (isMounted) {
+        if (dashRes?.kpis) setLiveKpis(dashRes.kpis)
+        if (clientRes) setClientStats(clientRes)
+      }
+    })
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const kpis = liveKpis || {}
+  const totalClients = clientStats?.total ?? 14
+  const totalSubs = kpis.totalSubmissions ?? 42
+  const activeReqs = kpis.activeRequirements ?? requirements.length
+  const totalInts = kpis.totalInterviews ?? interviews.length
+
   return (
     <>
       <KpiGrid
@@ -30,18 +56,19 @@ export function DevTeamDashboardOverview({
         items={[
           { label: 'System Status', value: 'Operational', highlight: true, sub: '99.98% Uptime' },
           { label: 'Avg Latency', value: '138ms', sub: 'Peak load 180ms' },
-          { label: 'Total Clients', value: 14 },
-          { label: 'Active Reqs', value: requirements.length, highlight: true },
-          { label: 'Open Positions', value: openPositions },
+          { label: 'Total Clients', value: totalClients },
+          { label: 'Active Reqs', value: activeReqs, highlight: true },
+          { label: 'Open Positions', value: kpis.totalOpenings || openPositions },
           { label: 'Total Recruiters', value: recruiters.length },
           { label: 'Active Leads', value: leads.length },
-          { label: 'Submissions Today', value: 42 },
-          { label: 'Interviews Active', value: interviews.length },
-          { label: 'Database Size', value: '12.4K', sub: 'Resumes & Profiles' },
-          { label: 'AI Worker Engine', value: 'Online', sub: '1,248 runs today' },
+          { label: 'Total Submissions', value: totalSubs },
+          { label: 'Interviews Active', value: totalInts },
+          { label: 'Database Size', value: `${kpis.totalCandidates || 12} Profiles`, sub: 'Resumes & Candidates' },
+          { label: 'AI Worker Engine', value: 'Online', sub: 'Active Real-time' },
           { label: 'Security Health', value: 'Grade A+', highlight: true },
         ]}
       />
+
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-3">

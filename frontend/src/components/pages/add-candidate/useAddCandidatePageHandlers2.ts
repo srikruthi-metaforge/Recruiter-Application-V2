@@ -1,12 +1,12 @@
 import React from 'react'
-import { Candidate } from '../../../types'
-import { getSavedDrafts, saveDraftItem, removeSavedDraft, SavedDraftItem } from '../../../data/savedDraftsStore'
+import { removeSavedDraft, SavedDraftItem } from '../../../data/savedDraftsStore'
+import { apiErrorMessage, createCandidateFromForm } from '../../../services/candidatePayload'
 import type { AddCandidateVmState } from './useAddCandidatePageState'
 
 export function useAddCandidatePageHandlers2(s: AddCandidateVmState) {
   const {
     onAddCandidate, setImportMode, parsedFileName, setParsedFileName,
-    setShowSuccessToast, setToastMsg, setDraftsList, candidateId,
+    setShowSuccessToast, setToastMsg, setDraftsList, isSaving, setIsSaving, candidateId,
     setCandidateId, submissionDate, candidateName, setCandidateName,
     currentCompany, setCurrentCompany, contactNumber, setContactNumber,
     email, setEmail, linkedInUrl, setLinkedInUrl,
@@ -58,40 +58,48 @@ export function useAddCandidatePageHandlers2(s: AddCandidateVmState) {
     setTimeout(() => setToastMsg(null), 3000)
   }
 
-  const handleDirectSubmitDraft = (draft: SavedDraftItem, e: React.MouseEvent) => {
+  const handleDirectSubmitDraft = async (draft: SavedDraftItem, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (draft.type === 'candidate' && draft.data) {
-      const d = draft.data
-      const newCand: Candidate = {
-        id: d.candidateId || `CAND-${Date.now()}`,
-        submissionDate: d.submissionDate || new Date().toISOString().split('T')[0],
-        name: d.candidateName || draft.title || 'Saved Candidate',
-        company: d.currentCompany || 'Company',
-        phone: d.contactNumber || '+91 98765 43210',
-        email: d.email || 'candidate@gmail.com',
+    if (isSaving) return
+    if (draft.type !== 'candidate' || !draft.data) return
+    const d = draft.data
+    setIsSaving(true)
+    try {
+      const saved = await createCandidateFromForm({
+        name: d.candidateName || '',
+        email: d.email || '',
+        phone: d.contactNumber || '',
         linkedIn: d.linkedInUrl || '',
+        company: d.currentCompany || '',
         qualification: d.qualification || '',
         skills: d.skills || '',
-        technologies: d.technologies || 'Full Stack',
-        totalExperience: d.totalExperience || '5 Years',
-        relevantExperience: d.relevantExperience || '4 Years',
-        currentCtc: d.currentCtc || '14 LPA',
-        expectedCtc: d.expectedCtc || '18 LPA',
-        noticePeriod: d.noticePeriod || '30 Days',
-        currentLocation: d.currentLocation || 'Hyderabad',
-        preferredLocation: d.preferredLocation || 'Hyderabad',
-        interviewAvailability: d.interviewAvailability || 'Immediate',
-        offerInHand: d.offerInHand || 'No',
+        technologies: d.technologies || '',
+        totalExperience: d.totalExperience || '',
+        relevantExperience: d.relevantExperience || '',
+        currentCtc: d.currentCtc || '',
+        expectedCtc: d.expectedCtc || '',
+        noticePeriod: d.noticePeriod || '',
+        currentLocation: d.currentLocation || '',
+        preferredLocation: d.preferredLocation || '',
+        offerInHand: d.offerInHand || '',
+        status: 'Parsed',
+      })
+      onAddCandidate?.({
+        ...saved,
+        interviewAvailability: d.interviewAvailability || '',
         reasonForChange: d.reasonForChange || '',
         notes: d.notes || '',
         resumeName: d.parsedFileName,
-        matchScore: '92%',
-        status: 'Parsed',
-      }
-      onAddCandidate?.(newCand)
-      handleDeleteDraft(draft.id, e)
+        submissionDate: saved.submissionDate || d.submissionDate,
+      })
+      setDraftsList(removeSavedDraft(draft.id))
       setShowSuccessToast(true)
       setTimeout(() => setShowSuccessToast(false), 3000)
+    } catch (err) {
+      setToastMsg(apiErrorMessage(err))
+      setTimeout(() => setToastMsg(null), 5000)
+    } finally {
+      setIsSaving(false)
     }
   }
 

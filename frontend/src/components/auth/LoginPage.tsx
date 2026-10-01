@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { Mail, Lock, Eye, EyeOff, Shield, ArrowRight, Sparkles, Zap } from 'lucide-react'
 import { Role } from '../../types'
-import { DEMO_ACCOUNTS, ROLE_META } from '../../data/mockData'
+import { SEED_ACCOUNTS, ROLE_META } from '../../data/mockData'
+import { authenticate } from '../../data/authService'
 import { AuthLayout } from './AuthLayout'
 
 interface LoginPageProps {
@@ -20,19 +21,36 @@ export function LoginPage({ onLogin, onForgot, onSignup }: LoginPageProps) {
 
   const fillDemo = (role: Role) => {
     setQuickRole(role)
-    setEmail(DEMO_ACCOUNTS[role].email)
-    setPassword(DEMO_ACCOUNTS[role].password)
+    setEmail(SEED_ACCOUNTS[role].email)
+    setPassword(SEED_ACCOUNTS[role].password)
     setErrors({})
   }
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    onLogin(quickRole || 'superadmin')
+    setLoading(true)
+    const role = quickRole || 'superadmin'
+    const acc = SEED_ACCOUNTS[role]
+    const result = await authenticate(email || acc.email, password || acc.password, role)
+    setLoading(false)
+    if (!result.ok) {
+      setErrors({ general: result.message })
+      return
+    }
+    onLogin(result.account.role)
   }
 
-  const handleDemoClick = (role: Role) => {
+  const handleDemoClick = async (role: Role) => {
     fillDemo(role)
-    onLogin(role)
+    setLoading(true)
+    const acc = SEED_ACCOUNTS[role]
+    const result = await authenticate(acc.email, acc.password, role)
+    setLoading(false)
+    if (!result.ok) {
+      setErrors({ general: result.message })
+      return
+    }
+    onLogin(result.account.role)
   }
 
   return (
@@ -50,7 +68,7 @@ export function LoginPage({ onLogin, onForgot, onSignup }: LoginPageProps) {
             Explore the updated dashboards, visual charts, command palette, and candidate Kanban boards.
           </p>
           <button
-            onClick={() => onLogin(quickRole || 'superadmin')}
+            onClick={() => void handleSubmit()}
             className="w-full h-11 bg-white text-blue-700 hover:bg-blue-50 font-bold font-sans text-xs sm:text-sm rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             Launch Redesigned Dashboard Directly <ArrowRight className="w-4 h-4" />
