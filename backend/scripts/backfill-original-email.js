@@ -32,7 +32,7 @@ const VERBOSE = args.includes('--verbose');
 const sqliteArg = args.indexOf('--sqlite');
 const SQLITE_PATH = sqliteArg >= 0
   ? path.resolve(args[sqliteArg + 1])
-  : path.resolve(__dirname, '../../Mail extraction/devloper/devloper/data/processed_messages.db');
+  : path.resolve(__dirname, '../../mail_extraction_fastapi/Mail extraction/devloper/devloper/data/processed_messages.db');
 
 if (/backup/i.test(path.basename(SQLITE_PATH))) {
   console.error('Refusing to read a backup .db file:', SQLITE_PATH);

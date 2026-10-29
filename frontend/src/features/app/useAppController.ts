@@ -9,6 +9,7 @@ import { titleForRole } from '../../data/roleMeta'
 import { createSaveInterviewFeedbackHandler, createSubmitCandidateHandler } from './appHandlers'
 import { createAuthenticatedHandler, createLogoutHandler, createNavSelectHandler } from './appSessionHandlers'
 import { saveSubmissionsStore } from '../../data/submissionsStore'
+import { navKeyFromPathname, resetBrowserPathToRoot, syncBrowserPath } from '../../config/navRoutes'
 
 const emptyUser = { email: '', name: '', password: '', title: '' }
 
@@ -76,8 +77,11 @@ export function useAppController() {
           password: '',
           title: user.title || titleForRole(r),
         })
+        const fromUrl = typeof window !== 'undefined' ? navKeyFromPathname(window.location.pathname) : null
         const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-        setActiveNav(defaultNav)
+        const targetNav = fromUrl || defaultNav
+        setActiveNav(targetNav)
+        syncBrowserPath(targetNav, 'replace')
         setScreen('app')
         try {
           await applyWorkspace()
@@ -92,7 +96,21 @@ export function useAppController() {
     }
   }, [])
 
-  const handleLogout = createLogoutHandler(setScreen, setActiveNav)
+  useEffect(() => {
+    const onPopState = () => {
+      const key = navKeyFromPathname(window.location.pathname)
+      if (!key) return
+      setActiveNav(key)
+      if (key === 'Requirements') applyWorkspace().catch(() => undefined)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  const handleLogout = () => {
+    createLogoutHandler(setScreen, setActiveNav)()
+    resetBrowserPathToRoot()
+  }
 
   const handleAuthenticated = (r: Role) => {
     const session = getSessionUser()
@@ -103,6 +121,11 @@ export function useAppController() {
       title: session?.title || titleForRole(r),
     })
     createAuthenticatedHandler(setRole, setActiveNav, setScreen)(r)
+    const fromUrl = typeof window !== 'undefined' ? navKeyFromPathname(window.location.pathname) : null
+    const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
+    const targetNav = fromUrl || defaultNav
+    setActiveNav(targetNav)
+    syncBrowserPath(targetNav, 'replace')
     setWorkspaceReady(false)
     applyWorkspace()
       .then(() => setWorkspaceReady(true))
@@ -111,6 +134,7 @@ export function useAppController() {
 
   const handleNavSelect = (key: string) => {
     createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)(key)
+    syncBrowserPath(key, 'push')
     if (key === 'Requirements') {
       applyWorkspace().catch(() => undefined)
     }

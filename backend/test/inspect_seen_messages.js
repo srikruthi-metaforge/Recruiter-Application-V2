@@ -1,7 +1,7 @@
 const sqlite3 = require('sqlite3');
 const path = require('path');
 
-const dbPath = 'f:/Recruiter-Appplication-V2/Mail extraction/Auto_email_extraction/data/processed_messages.db';
+const dbPath = 'f:/Recruiter-Appplication-V2/mail_extraction_fastapi/Mail extraction/Auto_email_extraction/data/processed_messages.db';
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {

@@ -27,6 +27,7 @@ import { NewRequirementModal } from './components/modals/NewRequirementModal'
 import { SubmitCandidateModal } from './components/modals/SubmitCandidateModal'
 import { InterviewFeedbackModal } from './components/modals/InterviewFeedbackModal'
 import { CandidateDetailModal } from './components/modals/CandidateDetailModal'
+import { navKeyFromPathname, resetBrowserPathToRoot, syncBrowserPath } from './config/navRoutes'
 
 const emptyUser = { email: '', name: '', password: '', title: '' }
 const NAV_STORAGE_KEY = 'mrap_active_nav'
@@ -130,12 +131,14 @@ export default function App() {
           password: '',
           title: user.title || titleForRole(r),
         })
+        const fromUrl = typeof window !== 'undefined' ? navKeyFromPathname(window.location.pathname) : null
         const saved = getSavedNav()
         const normalizedSaved = (saved === 'Submissions' || saved === 'Interviews' || saved === 'Submission to Client') ? 'Reports' : saved
         const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-        const targetNav = normalizedSaved || defaultNav
+        const targetNav = fromUrl || normalizedSaved || defaultNav
         setActiveNav(targetNav)
         saveNav(targetNav)
+        syncBrowserPath(targetNav, 'replace')
         setScreen('app')
         try {
           await loadWorkspace()
@@ -152,12 +155,28 @@ export default function App() {
     }
   }, [])
 
+  // Browser back/forward → update active nav from the URL
+  useEffect(() => {
+    const onPopState = () => {
+      const key = navKeyFromPathname(window.location.pathname)
+      if (!key) return
+      setActiveNav(key)
+      saveNav(key)
+      if (key === 'Requirements') {
+        void loadWorkspace().catch(() => undefined)
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const handleLogout = () => {
     void logoutRemote()
     clearSession()
     clearSavedNav()
     setScreen('landing')
     setActiveNav('Requirements')
+    resetBrowserPathToRoot()
     setRequirements([])
     setSubmissions([])
     setInterviews([])
@@ -178,12 +197,14 @@ export default function App() {
       password: '',
       title: session?.title || titleForRole(r),
     })
+    const fromUrl = typeof window !== 'undefined' ? navKeyFromPathname(window.location.pathname) : null
     const saved = getSavedNav()
     const normalizedSaved = (saved === 'Submissions' || saved === 'Interviews' || saved === 'Submission to Client') ? 'Reports' : saved
     const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-    const targetNav = normalizedSaved || defaultNav
+    const targetNav = fromUrl || normalizedSaved || defaultNav
     setActiveNav(targetNav)
     saveNav(targetNav)
+    syncBrowserPath(targetNav, 'replace')
     setScreen('app')
     void loadWorkspace().catch(() => undefined)
   }
@@ -194,6 +215,7 @@ export default function App() {
     }
     setActiveNav(nav)
     saveNav(nav)
+    syncBrowserPath(nav, 'push')
     if (nav === 'Requirements') {
       void loadWorkspace().catch(() => undefined)
     }
@@ -204,6 +226,7 @@ export default function App() {
     if (role !== 'recruiter') {
       setActiveNav('Candidates')
       saveNav('Candidates')
+      syncBrowserPath('Candidates', 'push')
     }
   }
 
@@ -306,6 +329,8 @@ export default function App() {
   const handleOpenSubmitForReq = (reqId?: string) => {
     setSelectedReqIdForSubmit(reqId || null)
     setActiveNav('Candidates')
+    saveNav('Candidates')
+    syncBrowserPath('Candidates', 'push')
   }
 
   const handleOpenFeedbackForInterview = (iv: Interview) => {
@@ -417,7 +442,11 @@ export default function App() {
         onSelectRequirement={setSelectedReqIdForSubmit}
         activityLogs={activityLogs}
         onAddActivityLog={handleAddActivityLog}
-        onNavigateToDashboard={() => setActiveNav('Dashboard')}
+        onNavigateToDashboard={() => {
+          setActiveNav('Dashboard')
+          saveNav('Dashboard')
+          syncBrowserPath('Dashboard', 'push')
+        }}
         currentUserName={currentUser.name}
         currentUserEmail={currentUser.email}
         initialCandidates={candidates}

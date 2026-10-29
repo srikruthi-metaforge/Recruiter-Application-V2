@@ -812,13 +812,18 @@ export class RequirementsService {
 
   /**
    * Locate the Python auto mail extraction pipeline.
-   * MAIL_EXTRACTION_DIR / MAIL_EXTRACTION_PYTHON override; otherwise the known
-   * folders under "<repo>/Mail extraction" are probed.
+   * MAIL_EXTRACTION_DIR / MAIL_EXTRACTION_PYTHON override; otherwise known
+   * folders under mail_extraction_fastapi/Mail extraction are probed.
    */
   private resolveMailExtractionRuntime(): { dir: string; pythonExe: string; scriptPath: string } | null {
     const repoRoot = path.resolve(process.cwd(), '..');
+    const bundleRoot = path.join(repoRoot, 'mail_extraction_fastapi');
     const candidates = [
       process.env.MAIL_EXTRACTION_DIR,
+      path.join(bundleRoot, 'Mail extraction', 'devloper', 'devloper'),
+      path.join(bundleRoot, 'Mail extraction', 'Auto_email_extraction'),
+      path.join(process.cwd(), 'mail_extraction_fastapi', 'Mail extraction', 'devloper', 'devloper'),
+      // Legacy layout (pre-move)
       path.join(repoRoot, 'Mail extraction', 'devloper', 'devloper'),
       path.join(repoRoot, 'Mail extraction', 'Auto_email_extraction'),
       path.join(process.cwd(), 'Mail extraction', 'devloper', 'devloper'),
@@ -865,7 +870,62 @@ export class RequirementsService {
     };
   }
 
-  /** Spawn sync_to_backend.py in the background and track its progress in syncState. */
+  /** Apply completion state after spawn or FastAPI mail sync (same behaviour either path). */
+  private applyMailExtractionCompletion(
+    label: string,
+    onDone: (parsed: any) => string,
+    opts: {
+      ok: boolean;
+      timedOut?: boolean;
+      timeoutMinutes?: number;
+      exitCode?: number | null;
+      parsed?: any;
+      errorTail?: string;
+    },
+  ) {
+    this.syncState.lastSyncedAt = new Date();
+    if (opts.ok) {
+      const parsed = opts.parsed || null;
+      this.syncState.status = 'completed';
+      this.syncState.totalProcessed = parsed?.totalFetched || 0;
+      this.syncState.totalSynced = Math.max(this.syncState.totalSynced, parsed?.totalSynced || 0);
+      this.syncState.message = onDone(parsed);
+      const rec = parsed?.reconcile;
+      if (parsed?.aiUnavailable) {
+        this.syncState.status = 'waiting';
+        this.syncState.error = `AI extraction unavailable: ${parsed.aiUnavailable}`;
+        this.syncState.message +=
+          ' New requirement mail is on hold until AI extraction is available again (nothing saved from guesses).';
+        this.logger.error(`[${label}] AI extraction unavailable, mail held for retry: ${parsed.aiUnavailable}`);
+      } else if (rec && !rec.skipped && !rec.error) {
+        const recovered = (rec.recovered || []).length;
+        const still: string[] = rec.stillMissing || [];
+        this.syncState.message +=
+          ` Reconciled ${rec.checked} listed requirement ID(s)` +
+          (recovered ? `, recovered ${recovered}` : '') +
+          (still.length ? `, STILL MISSING: ${still.join(', ')} (queued for review)` : ', none missing') +
+          '.';
+        if (still.length) this.logger.error(`[${label}] Listed requirements not in the app: ${still.join(', ')}`);
+      } else if (rec?.error) {
+        this.syncState.message += ` Reconcile failed: ${rec.error}`;
+      }
+      this.logger.log(`[${label}] ${this.syncState.message}`);
+      return;
+    }
+
+    const timeoutMinutes = opts.timeoutMinutes ?? 20;
+    this.syncState.status = 'failed';
+    this.syncState.error = opts.timedOut
+      ? `Timed out after ${timeoutMinutes} minute(s)`
+      : opts.errorTail || `Process exited with code ${opts.exitCode}`;
+    this.syncState.message = `${label} failed: ${this.syncState.error}`;
+    this.logger.error(this.syncState.message);
+  }
+
+  /**
+   * Prefer FastAPI (PYTHON_API_URL) when configured; otherwise spawn sync_to_backend.py locally.
+   * Extraction / ingest business logic is unchanged either way.
+   */
   private async runMailExtraction(
     args: string[],
     label: string,
@@ -891,22 +951,28 @@ export class RequirementsService {
       return { status: 'running', message: 'Mail extraction is already running in another backend instance' };
     }
 
-    const runtime = this.resolveMailExtractionRuntime();
-    if (!runtime) {
-      await lease.release();
-      this.syncState.status = 'failed';
-      this.syncState.error =
-        'Mail extraction pipeline not found. Set MAIL_EXTRACTION_DIR to the folder containing scripts/sync_to_backend.py and its .venv';
-      this.logger.error(this.syncState.error);
-      return { status: 'failed', message: this.syncState.error };
-    }
-
+    const pythonApiUrl = String(process.env.PYTHON_API_URL || '').trim().replace(/\/$/, '');
     this.syncState.status = 'running';
     this.syncState.error = null;
     this.syncState.totalProcessed = 0;
     this.syncState.totalSynced = 0;
     this.syncState.totalDeduped = 0;
     this.syncState.message = startMessage;
+
+    if (pythonApiUrl) {
+      void this.runMailExtractionViaPythonApi(pythonApiUrl, args, label, onDone, lease, timeoutMinutes);
+      return { status: 'running', message: `${label} started via Python API. Processing in background...` };
+    }
+
+    const runtime = this.resolveMailExtractionRuntime();
+    if (!runtime) {
+      await lease.release();
+      this.syncState.status = 'failed';
+      this.syncState.error =
+        'Mail extraction pipeline not found. Set PYTHON_API_URL (FastAPI) or MAIL_EXTRACTION_DIR for local spawn.';
+      this.logger.error(this.syncState.error);
+      return { status: 'failed', message: this.syncState.error };
+    }
 
     // The pipeline posts each extracted requirement back to this backend's ingest endpoint.
     const port = process.env.PORT || '3001';
@@ -924,7 +990,6 @@ export class RequirementsService {
     this.logger.log(`[${label}] Spawning ${runtime.scriptPath} ${args.join(' ')}`);
     const proc = spawn(runtime.pythonExe, [runtime.scriptPath, ...args], { cwd: runtime.dir, env });
 
-    // Keep only the tail of the output; the pipeline logs verbosely.
     const MAX_BUFFER = 64 * 1024;
     let stdout = '';
     let stderr = '';
@@ -945,49 +1010,24 @@ export class RequirementsService {
     proc.on('close', (code) => {
       clearTimeout(killTimer);
       void activeLease.release();
-      this.syncState.lastSyncedAt = new Date();
-      if (code === 0) {
-        let parsed: any = null;
-        const match = stdout.match(/SYNC_RESULT_JSON:(.+)/);
-        if (match) {
-          try {
-            parsed = JSON.parse(match[1]);
-          } catch {
-            parsed = null;
-          }
+      let parsed: any = null;
+      const match = stdout.match(/SYNC_RESULT_JSON:(.+)/);
+      if (match) {
+        try {
+          parsed = JSON.parse(match[1]);
+        } catch {
+          parsed = null;
         }
-        this.syncState.status = 'completed';
-        this.syncState.totalProcessed = parsed?.totalFetched || 0;
-        // Requirements created through ingest-email during this run are counted by the backend itself.
-        this.syncState.totalSynced = Math.max(this.syncState.totalSynced, parsed?.totalSynced || 0);
-        this.syncState.message = onDone(parsed);
-        const rec = parsed?.reconcile;
-        if (parsed?.aiUnavailable) {
-          // Mail is held, not lost: the pipeline retries it every run until the AI model is reachable again.
-          this.syncState.status = 'waiting';
-          this.syncState.error = `AI extraction unavailable: ${parsed.aiUnavailable}`;
-          this.syncState.message += ' New requirement mail is on hold until AI extraction is available again (nothing saved from guesses).';
-          this.logger.error(`[${label}] AI extraction unavailable, mail held for retry: ${parsed.aiUnavailable}`);
-        } else if (rec && !rec.skipped && !rec.error) {
-          const recovered = (rec.recovered || []).length;
-          const still: string[] = rec.stillMissing || [];
-          this.syncState.message += ` Reconciled ${rec.checked} listed requirement ID(s)` +
-            (recovered ? `, recovered ${recovered}` : '') +
-            (still.length ? `, STILL MISSING: ${still.join(', ')} (queued for review)` : ', none missing') + '.';
-          if (still.length) this.logger.error(`[${label}] Listed requirements not in the app: ${still.join(', ')}`);
-        } else if (rec?.error) {
-          this.syncState.message += ` Reconcile failed: ${rec.error}`;
-        }
-        this.logger.log(`[${label}] ${this.syncState.message}`);
-      } else {
-        const tail = (stderr || stdout).trim().split(/\r?\n/).slice(-15).join('\n');
-        this.syncState.status = 'failed';
-        this.syncState.error = timedOut
-          ? `Timed out after ${timeoutMinutes} minute(s)`
-          : tail || `Process exited with code ${code}`;
-        this.syncState.message = `${label} failed: ${this.syncState.error}`;
-        this.logger.error(this.syncState.message);
       }
+      const tail = (stderr || stdout).trim().split(/\r?\n/).slice(-15).join('\n');
+      this.applyMailExtractionCompletion(label, onDone, {
+        ok: code === 0,
+        timedOut,
+        timeoutMinutes,
+        exitCode: code,
+        parsed,
+        errorTail: tail,
+      });
     });
 
     proc.on('error', (err) => {
@@ -1000,6 +1040,84 @@ export class RequirementsService {
     });
 
     return { status: 'running', message: `${label} started. Processing in background...` };
+  }
+
+  /** Background HTTP call to FastAPI /v1/mail/sync (same CLI args Nest used for spawn). */
+  private async runMailExtractionViaPythonApi(
+    pythonApiUrl: string,
+    args: string[],
+    label: string,
+    onDone: (parsed: any) => string,
+    lease: { release: () => Promise<void> },
+    timeoutMinutes: number,
+  ) {
+    const body = this.mailArgsToPythonApiBody(args);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const apiKey = String(process.env.PYTHON_API_KEY || '').trim();
+    if (apiKey) headers['X-API-Key'] = apiKey;
+
+    this.logger.log(`[${label}] Calling Python API ${pythonApiUrl}/v1/mail/sync ${JSON.stringify(body)}`);
+    const controller = new AbortController();
+    const killTimer = setTimeout(() => controller.abort(), timeoutMinutes * 60 * 1000);
+
+    try {
+      const res = await fetch(`${pythonApiUrl}/v1/mail/sync`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const payload: any = await res.json().catch(() => null);
+      const detail = payload?.detail && typeof payload.detail === 'object' ? payload.detail : payload;
+      const ok = Boolean(res.ok && detail?.ok);
+      const timedOut = Boolean(detail?.timedOut);
+      const parsed = detail?.result ?? null;
+      const errorTail =
+        String(detail?.message || detail?.stderrTail || detail?.stdoutTail || payload?.message || '').trim() ||
+        `Python API returned HTTP ${res.status}`;
+      this.applyMailExtractionCompletion(label, onDone, {
+        ok,
+        timedOut,
+        timeoutMinutes,
+        exitCode: detail?.exitCode ?? res.status,
+        parsed,
+        errorTail,
+      });
+    } catch (err: any) {
+      const timedOut = err?.name === 'AbortError';
+      this.applyMailExtractionCompletion(label, onDone, {
+        ok: false,
+        timedOut,
+        timeoutMinutes,
+        exitCode: -1,
+        errorTail: timedOut ? undefined : err?.message || String(err),
+      });
+    } finally {
+      clearTimeout(killTimer);
+      await lease.release();
+    }
+  }
+
+  /** Map spawn CLI args to FastAPI JSON body (no behaviour change). */
+  private mailArgsToPythonApiBody(args: string[]): {
+    mode: 'sync' | 'historical';
+    limit: number;
+    days: number;
+    timezone: string;
+    force: boolean;
+  } {
+    const get = (flag: string, fallback: string) => {
+      const i = args.indexOf(flag);
+      return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
+    };
+    const mode = args.includes('--mode') && get('--mode', 'sync') === 'historical' ? 'historical' : 'sync';
+    return {
+      mode,
+      limit: parseInt(get('--limit', '25'), 10) || 25,
+      days: parseInt(get('--days', '2'), 10) || 2,
+      timezone: get('--timezone', process.env.MAIL_EXTRACTION_TIMEZONE || 'Asia/Kolkata'),
+      force: args.includes('--force'),
+    };
   }
 
   /** Run the Outlook auto-extraction pipeline for mail received since the last watermark */

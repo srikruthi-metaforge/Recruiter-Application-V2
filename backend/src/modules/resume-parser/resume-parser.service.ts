@@ -41,18 +41,27 @@ export {
 export const MAX_BULK_RESUMES = 5;
 
 /**
- * Bridges the standalone resume-parser module (../resume-parser-module-ready) into the backend.
- * The module is loaded from its compiled dist at runtime so it keeps its own dependencies
- * (pdf-parse, mammoth, OCR) and its own Gemini configuration.
+ * Bridges resume parsing via parser-api (PARSER_API_URL) when configured,
+ * otherwise loads resume-parser-module-ready in-process (legacy path).
+ * Extraction logic is unchanged either way.
  */
 @Injectable()
 export class ResumeParserService implements OnModuleInit {
   private readonly logger = new Logger(ResumeParserService.name);
   private lib: any = null;
   private loadError: string | null = null;
+  private parserApiUrl = '';
 
   onModuleInit() {
-    const dir = process.env.RESUME_PARSER_DIR || path.resolve(process.cwd(), '..', 'resume-parser-module-ready');
+    this.parserApiUrl = String(process.env.PARSER_API_URL || '').trim().replace(/\/$/, '');
+    if (this.parserApiUrl) {
+      this.logger.log(`Resume parser via parser-api at ${this.parserApiUrl}`);
+      return;
+    }
+
+    const dir =
+      process.env.RESUME_PARSER_DIR ||
+      path.resolve(process.cwd(), '..', 'JD', 'resume parser_node', 'resume-parser-module-ready');
     try {
       this.loadGeminiSettings(path.join(dir, '.env'));
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -65,7 +74,6 @@ export class ResumeParserService implements OnModuleInit {
     }
   }
 
-  /** Copy only the module's GEMINI_* settings into the environment (never overrides existing values). */
   private loadGeminiSettings(envFile: string) {
     if (!fs.existsSync(envFile)) return;
     for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
@@ -81,7 +89,24 @@ export class ResumeParserService implements OnModuleInit {
     return this.lib;
   }
 
+  private parserHeaders(json = false): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const key = String(process.env.PARSER_API_KEY || '').trim();
+    if (key) headers['X-API-Key'] = key;
+    if (json) headers['Content-Type'] = 'application/json';
+    return headers;
+  }
+
   health() {
+    if (this.parserApiUrl) {
+      return {
+        status: 'ok',
+        mode: 'parser-api',
+        parserApiUrl: this.parserApiUrl,
+        aiParserAvailable: true,
+        aiSuspendedNotice: null,
+      };
+    }
     if (!this.lib) return { status: 'unavailable', error: this.loadError, mode: 'unavailable' };
     const aiAvailable = !!this.lib.isMetaforgeParserAvailable?.();
     const suspended = this.lib.getAiParsingSuspendedReason?.() || null;
@@ -94,11 +119,51 @@ export class ResumeParserService implements OnModuleInit {
   }
 
   async parseOne(file: UploadedResume): Promise<ParsedResume> {
+    if (this.parserApiUrl) {
+      const form = new FormData();
+      form.append(
+        'resume',
+        new Blob([Uint8Array.from(file.buffer)], { type: file.mimetype || 'application/octet-stream' }),
+        file.originalname || 'resume.pdf',
+      );
+      const res = await fetch(`${this.parserApiUrl}/v1/resume/parse`, {
+        method: 'POST',
+        headers: this.parserHeaders(),
+        body: form,
+      });
+      const payload: any = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new ServiceUnavailableException(payload?.error || `parser-api resume parse failed (${res.status})`);
+      }
+      return payload.data as ParsedResume;
+    }
+
     const raw = await this.requireLib().parseResumeBuffer(file.buffer, file.originalname || 'resume.pdf');
     return normalize(raw, file.originalname);
   }
 
   async parseMany(files: UploadedResume[]): Promise<BulkParseResult[]> {
+    if (this.parserApiUrl) {
+      const form = new FormData();
+      for (const file of files) {
+        form.append(
+          'resumes',
+          new Blob([Uint8Array.from(file.buffer)], { type: file.mimetype || 'application/octet-stream' }),
+          file.originalname || 'resume.pdf',
+        );
+      }
+      const res = await fetch(`${this.parserApiUrl}/v1/resume/parse/bulk`, {
+        method: 'POST',
+        headers: this.parserHeaders(),
+        body: form,
+      });
+      const payload: any = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new ServiceUnavailableException(payload?.error || `parser-api bulk parse failed (${res.status})`);
+      }
+      return (payload.results || []) as BulkParseResult[];
+    }
+
     const results = await this.requireLib().parseResumeBuffersBulk(
       files.map((f) => ({ buffer: f.buffer, filename: f.originalname || 'resume.pdf' })),
     );
@@ -119,11 +184,9 @@ function text(v: unknown): string | null {
 function normalizePhone(v: unknown): string | null {
   const s = text(v);
   if (!s) return null;
-  // If multiple phone numbers are separated by comma, slash, pipe, newline, or 'or', take the first one
   const firstPart = s.split(/[\/,|\n]|(?:\bor\b)/i)[0].trim();
   const digits = firstPart.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
   if (!digits) return null;
-  // If digits were glued together without delimiter (e.g. +919067528514919167483752), take the first valid phone
   if (digits.startsWith('+91') && digits.length > 13) {
     return digits.slice(0, 13);
   }
@@ -141,7 +204,6 @@ function normalize(raw: any, filename: string): ParsedResume {
     linkedInUrl: text(raw?.linkedinUrl ?? raw?.linkedInUrl),
     qualification: text(raw?.highestQualification),
     skills: text(raw?.skillsRaw),
-    // Technologies form field = designation/role only (not skills list).
     technologies: text(raw?.technologiesRaw ?? raw?.role ?? raw?.technologies),
     totalExperience: text(raw?.totalExperience),
     relevantExperience: text(raw?.relevantExperience),

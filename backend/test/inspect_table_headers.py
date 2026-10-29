@@ -2,10 +2,10 @@ import sys, os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
-env_path = "f:/Recruiter-Appplication-V2/Mail extraction/Auto_email_extraction/.env"
+env_path = "f:/Recruiter-Appplication-V2/mail_extraction_fastapi/Mail extraction/Auto_email_extraction/.env"
 load_dotenv(env_path)
 
-sys.path.append("f:/Recruiter-Appplication-V2/Mail extraction/Auto_email_extraction/src/email_extraction")
+sys.path.append("f:/Recruiter-Appplication-V2/mail_extraction_fastapi/Mail extraction/Auto_email_extraction/src/email_extraction")
 
 from outlook_graph import _token_client_credentials, fetch_message_by_id
 from config import Settings

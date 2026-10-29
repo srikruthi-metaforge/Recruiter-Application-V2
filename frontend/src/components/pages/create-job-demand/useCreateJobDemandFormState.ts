@@ -137,6 +137,7 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
   ])
 
   const [jdText, setJdText] = useState('')
+  const [jdFile, setJdFile] = useState<File | null>(null)
   const [isExtracting, setIsExtracting] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
 
@@ -218,6 +219,8 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
     setSkills,
     jdText,
     setJdText,
+    jdFile,
+    setJdFile,
     isExtracting,
     setIsExtracting,
     toastMsg,

@@ -30,6 +30,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { ResumeParserModule } from './modules/resume-parser/resume-parser.module';
+import { JdParserModule } from './modules/jd-parser/jd-parser.module';
 import { RecruiterAttendanceModule } from './modules/recruiter-attendance/recruiter-attendance.module';
 
 // AI
@@ -266,6 +267,7 @@ import {
 
     RedisModule,
     ResumeParserModule,
+    JdParserModule,
     OrganizationModule,
     AuthModule,
     UsersModule,
