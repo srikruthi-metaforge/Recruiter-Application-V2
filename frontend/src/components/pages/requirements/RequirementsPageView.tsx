@@ -11,7 +11,7 @@ import { RequirementsModals } from './RequirementsModals'
 
 export function RequirementsPage(props: RequirementsPageProps) {
   const vm = useRequirementsPage(props)
-  if (vm.isCreatingDemand && vm.role !== 'admin') return <RequirementsCreate vm={vm} />
+  if (vm.isCreatingDemand) return <RequirementsCreate vm={vm} />
   if (vm.isEditingDemand && vm.editingReq) return <RequirementsEdit vm={vm} />
   if (vm.selectedReqForDetail) return <RequirementsDetail vm={vm} />
   return (

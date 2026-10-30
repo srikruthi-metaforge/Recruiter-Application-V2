@@ -38,6 +38,8 @@ export interface RequirementsPageProps {
   recruiters?: Recruiter[]
   onOpenSubmit?: (reqId?: string) => void
   onUpdateRequirements?: (updated: Requirement[]) => void
+  /** Persist a newly created demand via POST /requirements (not bulk update). */
+  onAddRequirement?: (newReq: Requirement) => void | Promise<void>
   onAddActivityLog?: (log: any) => void
   onNavigateToDashboard?: () => void
 }

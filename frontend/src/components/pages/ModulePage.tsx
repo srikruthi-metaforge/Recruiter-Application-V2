@@ -19,6 +19,7 @@ interface ModulePageProps {
   onOpenFeedback?: (iv: Interview) => void
   onOpenCandidate?: (sub: Submission) => void
   onUpdateRequirements?: (requirements: Requirement[]) => void
+  onAddRequirement?: (newReq: Requirement) => void | Promise<void>
   onSelectRequirement?: (reqId: string | null) => void
   onAddActivityLog?: (log: ActivityLogItem) => void
   onNavigateToDashboard?: () => void
@@ -40,6 +41,7 @@ export function ModulePage({
   onOpenFeedback,
   onOpenCandidate,
   onUpdateRequirements,
+  onAddRequirement,
   onSelectRequirement,
   onAddActivityLog,
   onNavigateToDashboard,
@@ -99,6 +101,24 @@ export function ModulePage({
     }
   }, [pageKey, selectedReqId])
 
+  // Open candidate repository when arriving from a notification click
+  React.useEffect(() => {
+    const applyPendingCandidate = () => {
+      try {
+        const pending = sessionStorage.getItem('pending_open_candidate')
+        if (!pending) return
+        setCandidateViewMode('repository')
+        setAddOpenedFromRepository(false)
+        sessionStorage.removeItem('pending_open_candidate')
+      } catch {
+        // ignore
+      }
+    }
+    applyPendingCandidate()
+    window.addEventListener('notification_navigate', applyPendingCandidate as EventListener)
+    return () => window.removeEventListener('notification_navigate', applyPendingCandidate as EventListener)
+  }, [])
+
   return renderModulePage({
     pageKey,
     role,
@@ -116,6 +136,7 @@ export function ModulePage({
     onOpenFeedback,
     onOpenCandidate,
     onUpdateRequirements,
+    onAddRequirement,
     onSelectRequirement,
     onAddActivityLog,
     onNavigateToDashboard,

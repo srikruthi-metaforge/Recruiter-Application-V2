@@ -40,7 +40,7 @@ import {
   Crown,
   Plus,
 } from 'lucide-react'
-import { Role, Requirement, Submission, Interview, Recruiter } from '../../types'
+import { Role, Requirement, Submission, Interview, Recruiter, Candidate } from '../../types'
 import { PaginationFooter } from '../ui/PaginationFooter'
 import {
   RecruiterDetailAnalyticsPage,
@@ -205,8 +205,35 @@ const fmtStamp = (v?: string | Date | null) => {
 
 const ownersOf = (r: Requirement) => (r.owner || '').split(',').map(n => n.trim()).filter(n => n && n !== 'Unassigned')
 const isOwnedBy = (r: Requirement, name: string) => ownersOf(r).includes(name)
-const subsFor = (r: Requirement, submissions: Submission[]) =>
-  submissions.filter(s => s.req === r.id || s.reqCode === r.id || s.requirementId === (r as any)._id || s.reqCode === (r as any).reqCode)
+
+/** Normalize display ids like "2026-10-23-011 (JD-1)" → "2026-10-23-011". */
+const stripReqDisplay = (value?: string | null) =>
+  String(value || '')
+    .replace(/\s*\([^()]*\)\s*$/, '')
+    .trim()
+    .toLowerCase()
+
+/** Match a submission to a requirement by Mongo id, reqCode, or display id. */
+const subsFor = (r: Requirement, submissions: Submission[]) => {
+  const mongoId = String((r as any)._id || '').trim().toLowerCase()
+  const code = stripReqDisplay((r as any).reqCode || r.id)
+  const display = stripReqDisplay(r.id)
+  return submissions.filter(s => {
+    const sReqId = String(s.requirementId || '').trim().toLowerCase()
+    const sCode = stripReqDisplay(s.reqCode || s.req)
+    if (mongoId && sReqId && mongoId === sReqId) return true
+    if (code && sCode && code === sCode) return true
+    if (display && sCode && display === sCode) return true
+    return false
+  })
+}
+
+/** Prefer live submission rows; fall back to denormalized requirement.submissions. */
+const liveSubCount = (r: Requirement, submissions: Submission[]) => {
+  const live = subsFor(r, submissions).length
+  if (live > 0) return live
+  return Number(r.submissions || 0)
+}
 
 /** One row per requirement and submitting recruiter: received time, first submission and TAT. */
 function buildReqSubmissionDashboard(requirements: Requirement[], submissions: Submission[], recruiters: Recruiter[]): RecruiterReqDashboardItem[] {
@@ -242,11 +269,26 @@ function buildReqSubmissionDashboard(requirements: Requirement[], submissions: S
 }
 
 /** Per-recruiter performance from recorded counts and assigned requirements. */
-function buildRecruiterPerformance(recruiters: Recruiter[], requirements: Requirement[]): RecruiterDetailData[] {
+function buildRecruiterPerformance(
+  recruiters: Recruiter[],
+  requirements: Requirement[],
+  submissions: Submission[] = [],
+): RecruiterDetailData[] {
   return recruiters.map(r => {
     const reqs = requirements.filter(q => isOwnedBy(q, r.name))
-    const worked = reqs.filter(q => (q.submissions || 0) > 0)
-    const subs = r.submissions || 0
+    const reqCounts = reqs.map(q => ({ q, count: liveSubCount(q, submissions) }))
+    const worked = reqCounts.filter(x => x.count > 0)
+    // Prefer recruiter's own submission rows; fall back to workspace recruiter.submissions.
+    const liveSubs = submissions.filter(s => {
+      const by = String(s.recruiter || '').trim().toLowerCase()
+      const name = String(r.name || '').trim().toLowerCase()
+      const email = String((s as any).recruiterEmail || '').trim().toLowerCase()
+      const recEmail = String(r.email || '').trim().toLowerCase()
+      if (name && by && (by === name || by.includes(name) || name.includes(by))) return true
+      if (recEmail && email && email === recEmail) return true
+      return false
+    }).length
+    const subs = liveSubs > 0 ? liveSubs : r.submissions || 0
     return {
       id: r.id,
       name: r.name,
@@ -268,12 +310,12 @@ function buildRecruiterPerformance(recruiters: Recruiter[], requirements: Requir
       teamLead: r.lead || '—',
       primaryClient: (r as any).primaryClient || '—',
       status: reqs.length > 0 && worked.length === 0 ? 'Critical' : 'On Track',
-      requirementsList: reqs.map(q => ({
+      requirementsList: reqCounts.map(({ q, count }) => ({
         id: q.id,
         title: q.title,
         client: q.client,
-        status: ((q.submissions || 0) > 0 ? 'Worked' : 'Non-Worked') as 'Worked' | 'Non-Worked',
-        submissions: q.submissions || 0,
+        status: (count > 0 ? 'Worked' : 'Non-Worked') as 'Worked' | 'Non-Worked',
+        submissions: count,
         interviews: q.interviews || 0,
         positions: q.openings,
       })),
@@ -281,12 +323,16 @@ function buildRecruiterPerformance(recruiters: Recruiter[], requirements: Requir
   })
 }
 
-/** Per-client performance from the live requirements. */
-function buildClientPerformance(requirements: Requirement[]): ClientPerformanceData[] {
+/** Per-client performance from the live requirements + submission rows. */
+function buildClientPerformance(
+  requirements: Requirement[],
+  submissions: Submission[] = [],
+): ClientPerformanceData[] {
   const byClient = new Map<string, Requirement[]>()
   for (const r of requirements) byClient.set(r.client || '—', [...(byClient.get(r.client || '—') || []), r])
   return [...byClient.entries()].map(([clientName, reqs], i) => {
-    const subs = reqs.reduce((n, r) => n + (r.submissions || 0), 0)
+    const withCounts = reqs.map(r => ({ r, count: liveSubCount(r, submissions) }))
+    const subs = withCounts.reduce((n, x) => n + x.count, 0)
     const assigned = reqs.filter(r => ownersOf(r).length > 0)
     const closed = reqs.filter(r => r.status === 'Closed')
     return {
@@ -299,12 +345,12 @@ function buildClientPerformance(requirements: Requirement[]): ClientPerformanceD
       openReqs: reqs.length - closed.length,
       closedReqs: closed.length,
       activeRecruiters: new Set(reqs.flatMap(ownersOf)).size,
-      requirementsList: reqs.map(r => ({
+      requirementsList: withCounts.map(({ r, count }) => ({
         id: r.id,
         title: r.title,
         assignedRecruiter: ownersOf(r).join(', ') || 'Unassigned',
-        submissions: r.submissions || 0,
-        status: (r.status === 'Closed' ? 'Closed' : (r.submissions || 0) > 0 ? 'In Progress' : 'Open') as 'Open' | 'Closed' | 'In Progress',
+        submissions: count,
+        status: (r.status === 'Closed' ? 'Closed' : count > 0 ? 'In Progress' : 'Open') as 'Open' | 'Closed' | 'In Progress',
         createdDate: r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '',
       })),
     }
@@ -320,6 +366,9 @@ export interface ReportsPageProps {
   submissions?: Submission[]
   interviews?: Interview[]
   recruiters?: Recruiter[]
+  candidates?: Candidate[]
+  currentUserName?: string
+  currentUserEmail?: string
   onOpenSubmit?: (reqId?: string) => void
   onOpenFeedback?: (iv: Interview) => void
   onUpdateRequirements?: (requirements: Requirement[]) => void
@@ -644,14 +693,27 @@ export function ReportsPage({
   submissions = [],
   interviews = [],
   recruiters = [],
+  candidates = [],
+  currentUserName,
+  currentUserEmail,
   onOpenSubmit,
   onOpenFeedback,
   onUpdateRequirements,
 }: ReportsPageProps) {
+  const session = getSessionUser()
+  const meName = currentUserName || session?.name || ''
+  const meEmail = currentUserEmail || session?.email || ''
+  const meId = session?.id || ''
   const [reportsTopTab, setReportsTopTab] = useState<'reports' | 'submissions' | 'interviews'>(initialReportsTab)
   const RECRUITER_REQ_SUBMISSION_DASHBOARD_DATA = useMemo(() => buildReqSubmissionDashboard(requirements, submissions, recruiters), [requirements, submissions, recruiters])
-  const recruitersPerformanceList = useMemo(() => buildRecruiterPerformance(recruiters, requirements), [recruiters, requirements])
-  const clientPerformanceList = useMemo(() => buildClientPerformance(requirements), [requirements])
+  const recruitersPerformanceList = useMemo(
+    () => buildRecruiterPerformance(recruiters, requirements, submissions),
+    [recruiters, requirements, submissions],
+  )
+  const clientPerformanceList = useMemo(
+    () => buildClientPerformance(requirements, submissions),
+    [requirements, submissions],
+  )
   const [selectedReqForDetail, setSelectedReqForDetail] = useState<Requirement | null>(null)
 
   React.useEffect(() => {
@@ -659,6 +721,26 @@ export function ReportsPage({
       setReportsTopTab(initialReportsTab)
     }
   }, [initialReportsTab])
+
+  // Apply reports tab when arriving from a notification click
+  React.useEffect(() => {
+    const applyPendingReportsTab = () => {
+      try {
+        const tab = sessionStorage.getItem('pending_reports_tab')
+        if (tab === 'submissions' || tab === 'interviews' || tab === 'reports') {
+          setReportsTopTab(tab)
+          sessionStorage.removeItem('pending_reports_tab')
+        }
+        sessionStorage.removeItem('pending_open_submission')
+        sessionStorage.removeItem('pending_open_interview')
+      } catch {
+        // ignore
+      }
+    }
+    applyPendingReportsTab()
+    window.addEventListener('notification_navigate', applyPendingReportsTab as EventListener)
+    return () => window.removeEventListener('notification_navigate', applyPendingReportsTab as EventListener)
+  }, [])
 
   const [mainTab, setMainTab] = useState<'performance' | 'history' | 'audit' | 'client_performance'>(() => {
     if (role === 'recruiter' && initialMainTab === 'client_performance') return 'history'
@@ -761,7 +843,8 @@ export function ReportsPage({
     // A lead's own figures: the requirements assigned to the lead plus the team's recorded totals.
     const team = recruitersPerformanceList.filter(r => r.teamLead === sessionName)
     const reqs = requirements.filter(q => isOwnedBy(q, sessionName) || (q as any).assignedLead === sessionName)
-    const worked = reqs.filter(q => (q.submissions || 0) > 0)
+    const reqCounts = reqs.map(q => ({ q, count: liveSubCount(q, submissions) }))
+    const worked = reqCounts.filter(x => x.count > 0)
     const sum = (f: (r: RecruiterDetailData) => number) => team.reduce((n, r) => n + f(r), 0)
     return {
       id: 'me',
@@ -782,17 +865,17 @@ export function ReportsPage({
       weeklyProgress: '—',
       weeklyProgressPct: 0,
       status: 'On Track',
-      requirementsList: reqs.map(q => ({
+      requirementsList: reqCounts.map(({ q, count }) => ({
         id: q.id,
         title: q.title,
         client: q.client,
-        status: ((q.submissions || 0) > 0 ? 'Worked' : 'Non-Worked') as 'Worked' | 'Non-Worked',
-        submissions: q.submissions || 0,
+        status: (count > 0 ? 'Worked' : 'Non-Worked') as 'Worked' | 'Non-Worked',
+        submissions: count,
         interviews: q.interviews || 0,
         positions: q.openings,
       })),
     }
-  }, [recruitersPerformanceList, requirements, sessionName, role])
+  }, [recruitersPerformanceList, requirements, submissions, sessionName, role])
   const [myPersonalProfile, setMyPersonalProfile] = useState<RecruiterDetailData>(ownProfile)
   React.useEffect(() => setMyPersonalProfile(ownProfile), [ownProfile])
 
@@ -1576,7 +1659,16 @@ export function ReportsPage({
           ) : mainTab === 'audit' && role !== 'recruiter' ? (
             <ActivityLogsPage role={role} />
           ) : (
-            <HistoryPage role={role} recruiters={recruiters} requirements={requirements} submissions={submissions} />
+            <HistoryPage
+              role={role}
+              recruiters={recruiters}
+              requirements={requirements}
+              submissions={submissions}
+              candidates={candidates}
+              currentUserName={meName}
+              currentUserEmail={meEmail}
+              currentUserId={meId}
+            />
           )}
         </>
       )}

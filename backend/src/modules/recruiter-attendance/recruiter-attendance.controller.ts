@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   PaginatedLoginHistoryResult,
   RecruiterAttendanceService,
@@ -53,6 +54,7 @@ export class RecruiterAttendanceController {
    * Keep recruiter session active while browser tab is open
    */
   @Post('heartbeat')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   async heartbeat(@Req() req: any, @Body('sessionId') sessionId?: string) {
     const userObjectId = req.user?._id || req.user?.id || req.user?.sub;

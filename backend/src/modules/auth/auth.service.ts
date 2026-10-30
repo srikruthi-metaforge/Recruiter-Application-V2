@@ -82,7 +82,15 @@ export class AuthService {
     const filter: Record<string, any> = { roleCode: role };
     if (orgId) filter.orgId = new Types.ObjectId(orgId.toString());
     const doc = await this.roleModel.findOne(filter).exec();
-    return doc?.permissions?.length ? doc.permissions : [];
+    const fromDb = Array.isArray(doc?.permissions) ? doc.permissions : [];
+    // Always union with code defaults so portal create keeps working even if Mongo role rows are stale.
+    const defaults: Record<string, string[]> = {
+      admin: ['req_view_all', 'req_create', 'req_edit', 'req_assign'],
+      lead: ['req_view_all', 'req_create', 'req_edit', 'req_assign'],
+      recruiter: ['req_create', 'req_edit', 'req_assign'],
+      client: ['req_view_my'],
+    };
+    return Array.from(new Set([...(defaults[role] || []), ...fromDb]));
   }
 
   private normalizeRole(role?: string): string {

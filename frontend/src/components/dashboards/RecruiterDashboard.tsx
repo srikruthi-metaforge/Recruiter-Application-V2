@@ -204,6 +204,90 @@ export function RecruiterDashboard({
   const activeReqsRef = useScrollReveal<HTMLElement>({ y: 20, duration: 0.6 })
   const kpiGridRef = useStaggerEnter<HTMLDivElement>({ y: 16, duration: 0.4, stagger: 0.07 })
 
+  const myUserId = String(session?.id || '').trim()
+  const meName = (currentUserName || '').trim().toLowerCase()
+  const meEmail = (currentUserEmail || '').trim().toLowerCase()
+
+  const assignedRequirements = useMemo(() => {
+    return requirements.filter(r => {
+      const ids = Array.isArray((r as any).assignedRecruiterIds)
+        ? (r as any).assignedRecruiterIds.map((id: unknown) => String(id))
+        : []
+      const names = String((r as any).assignedRecruiterNames || r.owner || '')
+        .split(',')
+        .map(name => name.trim().toLowerCase())
+        .filter(Boolean)
+      const isUnassigned =
+        r.assignmentStatus === 'Unassigned' ||
+        ((!r.owner || r.owner === 'Unassigned') && ids.length === 0)
+      if (isUnassigned) return false
+
+      // Lead / admin My Workspace: team work I own + anything assigned to me
+      if (isLeadOrAdmin) {
+        const leadId = String((r as any).assignedLeadId || '')
+        if (myUserId && leadId && leadId === myUserId) return true
+        if (myUserId && ids.some((id: string) => id === myUserId)) return true
+        const leadName = String((r as any).assignedLead || '').trim().toLowerCase()
+        if (meName && leadName && (leadName === meName || leadName.includes(meName) || meName.includes(leadName))) {
+          return true
+        }
+        // Legacy rows with recruiters but no lead stamped — still show for leads
+        if (sessionRole === 'lead' && ids.length > 0 && !leadId) return true
+        if (['admin', 'superadmin', 'devteam'].includes(sessionRole) && ids.length > 0) return true
+        return false
+      }
+
+      // Recruiter My Work: only requirements assigned to this recruiter
+      if (myUserId && ids.some((id: string) => id === myUserId)) return true
+      return names.some(name => meName && (name === meName || name.includes(meName) || meName.includes(name)))
+    })
+  }, [requirements, myUserId, meName, isLeadOrAdmin, sessionRole])
+
+  const mySubmissions = useMemo(
+    () =>
+      submissions.filter(s => {
+        const recId = String((s as any).recruiterId || '').trim()
+        if (myUserId && recId && recId === myUserId) return true
+        const email = String((s as any).recruiterEmail || '').trim().toLowerCase()
+        if (meEmail && email && email === meEmail) return true
+        const by = String(s.recruiter || '').trim().toLowerCase()
+        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
+      }),
+    [submissions, myUserId, meName, meEmail],
+  )
+
+  const myInterviews = useMemo(
+    () =>
+      interviews.filter(i => {
+        const recId = String((i as any).recruiterId || '').trim()
+        if (myUserId && recId && recId === myUserId) return true
+        const by = String(i.recruiter || '').trim().toLowerCase()
+        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
+      }),
+    [interviews, myUserId, meName],
+  )
+
+  const kpiAssignedCount = assignedRequirements.length
+  const kpiSubmissionsCount = mySubmissions.length
+  const kpiInterviewsCount = myInterviews.length
+  const kpiOnboardingCount = useMemo(
+    () =>
+      mySubmissions.filter(s =>
+        /offered|placed|onboard|joined|selected/i.test(String(s.stage || '')),
+      ).length,
+    [mySubmissions],
+  )
+  const myRepositoryCount = useMemo(
+    () =>
+      (candidates || []).filter(c => {
+        const sourcedId = String((c as any).sourcedByRecruiterId || '').trim()
+        if (myUserId && sourcedId && sourcedId === myUserId) return true
+        const by = String((c as any).createdByName || '').trim().toLowerCase()
+        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
+      }).length,
+    [candidates, myUserId, meName],
+  )
+
   const handleOpenInlineCandidateRepo = (reqId: string) => {
     setInlineReqId(reqId)
     setTimeout(() => {
@@ -272,7 +356,10 @@ export function RecruiterDashboard({
 
     const reqKey = selectedReqForDetail._id || selectedReqForDetail.id
     try {
-      await workspaceService.assignRequirement(reqKey, { recruiterIds })
+      await workspaceService.assignRequirement(reqKey, {
+        recruiterIds,
+        ...(isLeadOrAdmin && activeSession?.id ? { leadId: activeSession.id } : {}),
+      })
     } catch (err: any) {
       console.error('Failed to reassign requirement:', err)
       showToast(err?.message || 'Failed to reassign requirement')
@@ -284,6 +371,11 @@ export function RecruiterDashboard({
     const updatedReq: Requirement = {
       ...selectedReqForDetail,
       owner: ownersText,
+      assignedRecruiterNames: ownersText,
+      assignedRecruiterIds: recruiterIds,
+      ...(isLeadOrAdmin && activeSession?.id
+        ? { assignedLeadId: activeSession.id, assignedLead: activeName }
+        : {}),
       assignmentStatus: 'Assigned',
       status: 'Assigned',
       submissions: selectedReqForDetail.submissions || 0,
@@ -393,7 +485,7 @@ export function RecruiterDashboard({
       <>
         <RequirementDetailOverview
           requirement={selectedReqForDetail}
-          role="recruiter"
+          role={(isLeadOrAdmin ? sessionRole : 'recruiter') as Role}
           onBack={() => setSelectedReqForDetail(null)}
           onOpenAssignModal={() => {
             setIsAssignMyselfChecked(!isLeadOrAdmin)
@@ -402,7 +494,13 @@ export function RecruiterDashboard({
             setIsAssignModalOpen(true)
           }}
           onRevokeRequirement={() => setIsRevokeModalOpen(true)}
-          onAddCandidate={() => onOpenSubmitCandidate?.(selectedReqForDetail.id)}
+          onAddCandidate={() =>
+            onOpenSubmitCandidate?.(
+              (selectedReqForDetail as any)._id ||
+                (selectedReqForDetail as any).reqCode ||
+                selectedReqForDetail.id,
+            )
+          }
           onRequirementUpdated={updated => {
             setSelectedReqForDetail(updated)
           }}
@@ -538,19 +636,6 @@ export function RecruiterDashboard({
     )
   }
 
-  const assignedToMe = (owner?: string) => {
-    const me = (currentUserName || '').trim().toLowerCase()
-    if (!me) return false
-    return (owner || '')
-      .split(',')
-      .map(name => name.trim().toLowerCase())
-      .includes(me)
-  }
-
-  const assignedRequirements = requirements.filter(
-    r => r.assignmentStatus !== 'Unassigned' && assignedToMe(r.owner)
-  )
-
   const activeReqRows: ActiveReqRow[] = [...assignedRequirements]
     .sort((a, b) => {
       const rawDateA = (a as any).updatedAt || a.emailArrivedTime || (a as any).createdAt || a.dueDate
@@ -628,8 +713,8 @@ export function RecruiterDashboard({
 
   const paginatedReqs = filteredReqs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
-  // Submissions filtered by recentSubmissionsFilter
-  const filteredSubmissions = submissions.filter(sub => {
+  // Submissions filtered by recentSubmissionsFilter (already scoped to this recruiter)
+  const filteredSubmissions = mySubmissions.filter(sub => {
     if (recentSubmissionsFilter === 'All Status' || recentSubmissionsFilter === 'All') return true
     return sub.stage.toLowerCase() === recentSubmissionsFilter.toLowerCase()
   })
@@ -655,7 +740,7 @@ export function RecruiterDashboard({
         </div>
 
         <RequirementsPage
-          role="recruiter"
+          role={(isLeadOrAdmin ? sessionRole : 'recruiter') as Role}
           requirements={assignedRequirements}
           submissions={submissions}
           interviews={interviews}
@@ -692,8 +777,8 @@ export function RecruiterDashboard({
         <SubmissionsPage
           role="recruiter"
           currentUserName={currentUserName}
-          submissions={submissions}
-          requirements={requirements}
+          submissions={mySubmissions}
+          requirements={assignedRequirements}
           onOpenSubmitCandidate={onOpenSubmitCandidate}
         />
       </div>
@@ -722,9 +807,9 @@ export function RecruiterDashboard({
 
         <InterviewTrackingPage
           role="recruiter"
-          interviews={interviews}
+          interviews={myInterviews}
           onOpenFeedbackModal={onOpenFeedbackModal}
-          requirements={requirements}
+          requirements={assignedRequirements}
         />
       </div>
     )
@@ -752,9 +837,9 @@ export function RecruiterDashboard({
 
         <InterviewTrackingPage
           role="recruiter"
-          interviews={interviews}
+          interviews={myInterviews}
           onOpenFeedbackModal={onOpenFeedbackModal}
-          requirements={requirements}
+          requirements={assignedRequirements}
           initialStatusToggle="onboarding"
         />
       </div>
@@ -805,9 +890,11 @@ export function RecruiterDashboard({
                 <ExternalLink className="w-3.5 h-3.5 text-blue-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
               </div>
               <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
-                {filteredReqs.length > 0 ? filteredReqs.length : 8}
+                {kpiAssignedCount}
               </p>
-              <p className="text-[11px] font-medium text-blue-700 mt-1">Click to view active requirements</p>
+              <p className="text-[11px] font-medium text-blue-700 mt-1">
+                {kpiAssignedCount === 1 ? '1 requirement assigned to you' : `${kpiAssignedCount} requirements assigned to you`}
+              </p>
             </div>
             <div className="w-10 h-10 rounded-full bg-[#2F80ED] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
               <ClipboardList className="w-5 h-5" />
@@ -826,9 +913,13 @@ export function RecruiterDashboard({
                 <ExternalLink className="w-3.5 h-3.5 text-emerald-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
               </div>
               <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
-                {submissions.length > 0 ? submissions.length : 6}
+                {kpiSubmissionsCount}
               </p>
-              <p className="text-[11px] font-medium text-emerald-700 mt-1">Click to view Total Submissions data</p>
+              <p className="text-[11px] font-medium text-emerald-700 mt-1">
+                {myRepositoryCount > 0
+                  ? `${kpiSubmissionsCount} submitted · ${myRepositoryCount} in repository`
+                  : 'Your candidate submissions for assigned requirements'}
+              </p>
             </div>
             <div className="w-10 h-10 rounded-full bg-[#00BA7C] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
               <Send className="w-5 h-5" />
@@ -847,9 +938,9 @@ export function RecruiterDashboard({
                 <ExternalLink className="w-3.5 h-3.5 text-[#5B51D8] opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
               </div>
               <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
-                {interviews.length}
+                {kpiInterviewsCount}
               </p>
-              <p className="text-[11px] font-medium text-[#5B51D8] mt-1">Click to view Interview Tracker data</p>
+              <p className="text-[11px] font-medium text-[#5B51D8] mt-1">Interviews on your submissions</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-[#5B51D8] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
               <MessageSquare className="w-5 h-5" />
@@ -867,8 +958,12 @@ export function RecruiterDashboard({
                 <p className="text-xs sm:text-sm font-semibold text-slate-700">Onboarding</p>
                 <ExternalLink className="w-3.5 h-3.5 text-purple-600 opacity-75 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
               </div>
-              <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">0</p>
-              <p className="text-[11px] font-medium text-purple-700 mt-1">Click to view candidate selections & onboarding</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-2 tabular-nums">
+                {kpiOnboardingCount}
+              </p>
+              <p className="text-[11px] font-medium text-purple-700 mt-1">
+                Offered / placed / selected candidates
+              </p>
             </div>
             <div className="w-10 h-10 rounded-full bg-[#8B5CF6] text-white flex items-center justify-center shadow-sm shrink-0 group-hover:scale-105 transition-transform">
               <CheckCircle2 className="w-5 h-5" />

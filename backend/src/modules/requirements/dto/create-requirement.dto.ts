@@ -39,6 +39,15 @@ export class CreateRequirementDto {
     currency: string;
   };
 
+  /** Portal yearly budget text, e.g. "₹1400000" or "INR 1400000". */
+  @IsOptional()
+  @IsString()
+  budget?: string;
+
+  @IsOptional()
+  @IsString()
+  budgetText?: string;
+
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

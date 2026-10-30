@@ -319,8 +319,8 @@ export class SeedService implements OnModuleInit {
       await this.roleModel.insertMany([
         { orgId, roleCode: 'superadmin', roleName: 'Super Admin', permissions: ['*'] },
         { orgId, roleCode: 'admin', roleName: 'Admin', permissions: ['req_view_all', 'req_create', 'req_edit', 'req_assign', 'cand_search', 'cand_add', 'sub_create', 'sub_view_all', 'int_schedule', 'int_feedback', 'user_manage'] },
-        { orgId, roleCode: 'lead', roleName: 'Team Lead', permissions: ['req_view_all', 'req_assign', 'req_edit', 'cand_search', 'cand_add', 'sub_create', 'sub_view_all', 'sub_move_stage', 'int_schedule', 'int_feedback'] },
-        { orgId, roleCode: 'recruiter', roleName: 'Recruiter', permissions: ['req_assign', 'req_edit', 'cand_search', 'cand_add', 'sub_create', 'sub_move_stage', 'int_schedule', 'int_feedback'] },
+        { orgId, roleCode: 'lead', roleName: 'Team Lead', permissions: ['req_view_all', 'req_create', 'req_assign', 'req_edit', 'cand_search', 'cand_add', 'sub_create', 'sub_view_all', 'sub_move_stage', 'int_schedule', 'int_feedback'] },
+        { orgId, roleCode: 'recruiter', roleName: 'Recruiter', permissions: ['req_create', 'req_assign', 'req_edit', 'cand_search', 'cand_add', 'sub_create', 'sub_move_stage', 'int_schedule', 'int_feedback'] },
         { orgId, roleCode: 'devteam', roleName: 'Dev Team', permissions: ['*'] },
         { orgId, roleCode: 'client', roleName: 'Client', permissions: ['req_view_own', 'sub_view_client', 'int_feedback'] },
       ]);

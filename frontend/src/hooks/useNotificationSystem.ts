@@ -8,6 +8,8 @@ export interface NotificationItem {
   message: string
   time: string
   type: string
+  entityType?: string
+  entityId?: string
   read: boolean
   createdAt?: string
 }
@@ -44,11 +46,27 @@ export function useNotificationSystem() {
       : 0
   )
 
-  const triggerToast = useCallback((item: { id: string; title: string; message: string; type: string; createdAt?: string }) => {
+  const triggerToast = useCallback((item: {
+    id: string
+    title: string
+    message: string
+    type: string
+    entityType?: string
+    entityId?: string
+    createdAt?: string
+  }) => {
     const toastId = item.id
     setToasts(prev => {
       if (prev.some(t => t.id === toastId)) return prev
-      return [...prev, { id: toastId, title: item.title, message: item.message, type: item.type, createdAt: item.createdAt }]
+      return [...prev, {
+        id: toastId,
+        title: item.title,
+        message: item.message,
+        type: item.type,
+        entityType: item.entityType,
+        entityId: item.entityId,
+        createdAt: item.createdAt,
+      }]
     })
 
     // Auto-dismiss toast popup after 5 seconds without altering permanent MongoDB storage status
@@ -83,6 +101,8 @@ export function useNotificationSystem() {
         message: n.message || n.body || '',
         time: formatTimeAgo(n.createdAt || n.updatedAt),
         type: n.type || 'system',
+        entityType: n.entityType ? String(n.entityType) : undefined,
+        entityId: n.entityId ? String(n.entityId) : undefined,
         read: Boolean(n.read || n.readAt),
         createdAt: n.createdAt,
       }))
@@ -146,11 +166,17 @@ export function useNotificationSystem() {
       }
     }
 
+    const handleNotificationsUpdated = () => {
+      fetchNotifications(true)
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('notifications_updated', handleNotificationsUpdated)
 
     return () => {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('notifications_updated', handleNotificationsUpdated)
     }
   }, [fetchNotifications])
 

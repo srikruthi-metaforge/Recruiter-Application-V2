@@ -64,7 +64,7 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
         const mapped = data.map(s => mapBackendSubmission(s))
         setSubmissionsList(mapped)
         if (mapped.length > 0) {
-          saveSubmissionsStore(mapped as any)
+          saveSubmissionsStore(mapped as any, { silent: true })
         }
         if (selectedSub) {
           const updatedSelected = mapped.find(m => m.id === selectedSub.id || m.submissionId === selectedSub.id)
@@ -89,7 +89,7 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
           const mapped = data.map(s => mapBackendSubmission(s))
           if (mapped.length > 0) {
             setSubmissionsList(mapped)
-            saveSubmissionsStore(mapped as any)
+            saveSubmissionsStore(mapped as any, { silent: true })
           }
         }
       } catch (err) {
@@ -122,26 +122,46 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
     }
   }
 
-  // Action: Lead Approval
+  const leadActionInFlight = React.useRef(false)
+
+  // Action: Lead Approval (Approve / Reject) — recruiter is notified by the backend.
   const handleLeadApproval = async (id: string, approved: boolean, status?: string, reason?: string) => {
+    if (leadActionInFlight.current) return
+    leadActionInFlight.current = true
     try {
-      await submissionsService.leadApproval(id, { approved, status, reason })
+      await submissionsService.leadApproval(id, { approved, status, reason, notes: reason })
       const statusText = status || (approved ? 'Approved' : 'Rejected')
-      showToast(`Lead approval updated: ${statusText}`)
+      showToast(
+        approved || statusText === 'Approved'
+          ? 'Lead approved — recruiter has been notified'
+          : `Lead rejected — recruiter has been notified${reason ? ` (${reason})` : ''}`,
+      )
       await reloadSubmissions()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notifications_updated'))
+      }
     } catch (err) {
       showToast(apiErrorMessage(err))
+    } finally {
+      leadActionInFlight.current = false
     }
   }
 
-  // Action: Forward to Client
+  // Action: Forward to Client — recruiter is notified by the backend.
   const handleForwardClient = async (id: string, notes?: string) => {
+    if (leadActionInFlight.current) return
+    leadActionInFlight.current = true
     try {
       await submissionsService.forwardClient(id, { notes })
-      showToast('Submission successfully forwarded to client')
+      showToast('Approved & forwarded to client — recruiter has been notified')
       await reloadSubmissions()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notifications_updated'))
+      }
     } catch (err) {
       showToast(apiErrorMessage(err))
+    } finally {
+      leadActionInFlight.current = false
     }
   }
 

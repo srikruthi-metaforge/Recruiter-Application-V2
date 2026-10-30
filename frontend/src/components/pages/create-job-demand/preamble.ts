@@ -4,7 +4,7 @@ import { Requirement } from '../../../types'
 
 export interface CreateJobDemandFormProps {
   onCancel: () => void
-  onSubmit: (newReq: Requirement) => void
+  onSubmit: (newReq: Requirement) => void | Promise<void>
   userRole?: string
   mode?: 'create' | 'edit'
   initialData?: Requirement | null

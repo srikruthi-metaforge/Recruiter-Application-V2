@@ -15,6 +15,7 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
   recruiters = [],
   onOpenSubmit,
   onUpdateRequirements,
+  onAddRequirement,
   onAddActivityLog,
   onNavigateToDashboard,
 }: RequirementsPageProps = props as RequirementsPageProps & Record<string, never>
@@ -166,6 +167,38 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
     }, 5000)
   }
 
+  // Open requirement detail when arriving from a notification click
+  React.useEffect(() => {
+    const tryOpenPendingRequirement = () => {
+      let pendingId: string | null = null
+      try {
+        pendingId = sessionStorage.getItem('pending_open_requirement')
+      } catch {
+        pendingId = null
+      }
+      if (!pendingId) return
+      const id = String(pendingId)
+      const found = localRequirements.find(r => {
+        const candidates = [r.id, (r as any)._id, (r as any).reqCode, (r as any).displayId]
+        return candidates.some(v => v != null && String(v) === id)
+      })
+      if (!found) return
+      setSelectedReqForDetail(found)
+      try {
+        sessionStorage.removeItem('pending_open_requirement')
+      } catch {
+        // ignore
+      }
+    }
+
+    tryOpenPendingRequirement()
+    const onNavigate = () => {
+      window.setTimeout(tryOpenPendingRequirement, 0)
+    }
+    window.addEventListener('notification_navigate', onNavigate as EventListener)
+    return () => window.removeEventListener('notification_navigate', onNavigate as EventListener)
+  }, [localRequirements])
+
   // Single Self Assign handler
   return {
     role,
@@ -175,6 +208,7 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
     recruiters,
     onOpenSubmit,
     onUpdateRequirements,
+    onAddRequirement,
     onAddActivityLog,
     onNavigateToDashboard,
     localRequirements,

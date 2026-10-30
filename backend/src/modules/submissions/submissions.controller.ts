@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { SubmissionsService } from './submissions.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -26,8 +27,9 @@ import { ForwardClientDto } from './dto/forward-client.dto';
 export class SubmissionsController {
   constructor(private readonly submissionsService: SubmissionsService) {}
 
-  /** GET /api/v1/submissions */
+  /** GET /api/v1/submissions — SPA requirement history polls this; skip global throttle. */
   @Get()
+  @SkipThrottle()
   async findAll(
     @Req() req: any,
     @Query('stage') stage?: string,
@@ -77,6 +79,7 @@ export class SubmissionsController {
 
   /** POST /api/v1/submissions/:id/lead-approval */
   @Post(':id/lead-approval')
+  @SkipThrottle()
   @Roles('superadmin', 'admin', 'lead', 'devteam')
   @RequirePermission('sub_view_all')
   @HttpCode(HttpStatus.OK)
@@ -90,6 +93,7 @@ export class SubmissionsController {
 
   /** POST /api/v1/submissions/:id/forward-client */
   @Post(':id/forward-client')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   async forwardClient(
     @Param('id') id: string,

@@ -9,4 +9,6 @@ export interface CandidateRepoItem {
   totalExperience: string
   currentCompany: string
   status: string
+  createdDate?: string
+  createdBy?: string
 }

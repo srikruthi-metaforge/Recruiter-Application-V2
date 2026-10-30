@@ -30,7 +30,7 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
         interviews={interviews}
         activeCardFilter={activeCardFilter}
         onSelectFilter={setActiveCardFilter}
-        onCreateNewJobDemand={role === 'admin' ? undefined : () => setIsCreatingDemand(true)}
+        onCreateNewJobDemand={() => setIsCreatingDemand(true)}
         onSyncEmails={handleSyncEmails}
         isSyncingMail={isSyncingMail}
         mailSyncStatus={mailSyncStatus}

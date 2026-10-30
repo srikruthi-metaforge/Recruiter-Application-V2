@@ -3,8 +3,12 @@ import { Bell } from 'lucide-react'
 import { Role } from '../../types'
 import { brand } from '../../theme'
 import { NotificationPopover } from '../ui/NotificationPopover'
-import { NotificationToast } from '../ui/NotificationToast'
-import { useNotificationSystem } from '../../hooks/useNotificationSystem'
+import { NotificationToast, ToastItem } from '../ui/NotificationToast'
+import { useNotificationSystem, NotificationItem } from '../../hooks/useNotificationSystem'
+import {
+  dispatchNotificationNavigate,
+  resolveNotificationNavigation,
+} from '../../utils/notificationNavigation'
 
 interface TopbarProps {
   title: string
@@ -50,10 +54,23 @@ export function Topbar({
     }
   }
 
+  const openNotificationTarget = (n: Pick<NotificationItem, 'type' | 'entityType' | 'entityId'> | ToastItem) => {
+    const target = resolveNotificationNavigation(n)
+    dispatchNotificationNavigate(target)
+    setIsNotifOpen(false)
+  }
+
   return (
     <>
       {/* Temporary 5-Second Right-Side Toast Popups */}
-      <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+      <NotificationToast
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onOpen={(toast) => {
+          dismissToast(toast.id)
+          openNotificationTarget(toast)
+        }}
+      />
 
       <header
         className="h-14 px-6 flex items-center justify-between flex-shrink-0 border-b"
@@ -96,6 +113,7 @@ export function Topbar({
               onMarkAllAsRead={markAllAsRead}
               onMarkRead={markRead}
               onDelete={removeNotification}
+              onOpenNotification={openNotificationTarget}
             />
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from './types'
 import { brand } from './theme'
 import { logoutRemote, restoreSession } from './data/authService'
@@ -88,9 +88,10 @@ export default function App() {
     void workspaceService.addActivityLog(newLog).catch(() => undefined)
   }
 
+  // Sync React state only. Do NOT call PUT /requirements/bulk here —
+  // assign/create/edit already hit dedicated APIs; bulk is lead/admin-only and 403s for recruiters.
   const persistRequirements = (next: Requirement[]) => {
     setRequirements(next)
-    void workspaceService.updateRequirements(next).catch(() => undefined)
   }
 
   const [isNewReqOpen, setIsNewReqOpen] = useState(false)
@@ -100,12 +101,16 @@ export default function App() {
   const [selectedInterviewForFeedback, setSelectedInterviewForFeedback] = useState<Interview | null>(null)
   const [isCandidateDetailOpen, setIsCandidateDetailOpen] = useState(false)
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
+  // Ignore stale workspace responses when login + restoreSession + nav refresh overlap.
+  const workspaceLoadSeq = useRef(0)
 
   const loadWorkspace = async () => {
+    const seq = ++workspaceLoadSeq.current
     const payload = await workspaceService.load()
+    if (seq !== workspaceLoadSeq.current) return
     setRequirements(payload.requirements || [])
     setSubmissions(payload.submissions || [])
-    saveSubmissionsStore(payload.submissions || [])
+    saveSubmissionsStore(payload.submissions || [], { silent: true })
     setInterviews(payload.interviews || [])
     setRecruiters(payload.recruiters || [])
     setLeads(payload.leads || [])
@@ -221,16 +226,26 @@ export default function App() {
     }
   }
 
+  const handleNavSelectRef = useRef(handleNavSelect)
+  handleNavSelectRef.current = handleNavSelect
+
+  // Navigate when a notification (popover / page / toast) is clicked
+  useEffect(() => {
+    const onNotificationNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ navKey?: string }>).detail
+      if (!detail?.navKey) return
+      handleNavSelectRef.current(detail.navKey)
+    }
+    window.addEventListener('notification_navigate', onNotificationNavigate as EventListener)
+    return () => window.removeEventListener('notification_navigate', onNotificationNavigate as EventListener)
+  }, [])
+
   const handleOpenSubmitCandidateFromDashboard = (reqId?: string) => {
     setSelectedReqIdForSubmit(reqId || null)
-    if (role !== 'recruiter') {
-      setActiveNav('Candidates')
-      saveNav('Candidates')
-      syncBrowserPath('Candidates', 'push')
-    }
+    setIsSubmitCandidateOpen(true)
   }
 
-  const handleAddRequirement = (newReq: Requirement) => {
+  const handleAddRequirement = async (newReq: Requirement) => {
     const nowIso = new Date().toISOString()
     const enrichedReq: Requirement = {
       ...newReq,
@@ -238,70 +253,120 @@ export default function App() {
       createdAt: (newReq as any).createdAt || nowIso,
       updatedAt: (newReq as any).updatedAt || nowIso,
     }
-    setRequirements([enrichedReq, ...requirements])
-    void workspaceService.createRequirement(enrichedReq)
-      .then((created: any) => {
-        if (created) {
-          setRequirements(prev =>
-            prev.map(r => r.id === enrichedReq.id ? { ...r, ...created, id: created.reqCode || created.id || r.id, _id: created._id || (r as any)._id } : r)
-          )
-        }
-      })
-      .catch(() => undefined)
+    // Optimistic insert, then replace with persisted row (real reqCode) so all users see it after reload.
+    setRequirements(prev => [enrichedReq, ...prev])
+    try {
+      const created: any = await workspaceService.createRequirement(enrichedReq)
+      if (created) {
+        const persistedId = created.reqCode || created.displayId || created.id || enrichedReq.id
+        setRequirements(prev =>
+          prev.map(r =>
+            r.id === enrichedReq.id
+              ? { ...r, ...created, id: persistedId, reqCode: created.reqCode || persistedId, _id: created._id || (r as any)._id }
+              : r,
+          ),
+        )
+      }
+      // Refresh from workspace so list matches DB for every role in the org.
+      await loadWorkspace().catch(() => undefined)
+    } catch (err) {
+      setRequirements(prev => prev.filter(r => r.id !== enrichedReq.id))
+      throw err
+    }
   }
 
-  const handleSubmitCandidate = (newSub: Submission) => {
+  const handleSubmitCandidate = async (newSub: Submission, opts?: { silent?: boolean }) => {
     const nowIso = new Date().toISOString()
+    const hint = String((newSub as any).requirementId || (newSub as any).reqCode || newSub.req || '').trim()
+    const matched = requirements.find(r => {
+      const rid = String((r as any)._id || '')
+      const code = String((r as any).reqCode || '')
+      const display = String(r.id || '')
+      return (
+        (hint && (rid === hint || code === hint || display === hint)) ||
+        display === newSub.req ||
+        code === newSub.req ||
+        rid === (newSub as any).requirementId
+      )
+    })
+    const reqCode =
+      String((newSub as any).reqCode || matched?.reqCode || '').trim() ||
+      String(newSub.req || '').replace(/\s*\([^()]*\)\s*$/, '').trim()
+    const requirementId =
+      String((newSub as any).requirementId || (matched as any)?._id || '').trim() || undefined
+
     const enrichedSub: Submission = {
       ...newSub,
       date: newSub.date || 'Today',
       submittedAt: (newSub as any).submittedAt || nowIso,
       updatedAt: (newSub as any).updatedAt || nowIso,
       createdAt: (newSub as any).createdAt || nowIso,
-    }
-    setSubmissions([enrichedSub, ...submissions])
-    saveSubmissionsStore([enrichedSub, ...submissions])
-    void workspaceService.createSubmission(enrichedSub).then((created: any) => {
-      if (created) {
-        setSubmissions(prev => {
-          const next = prev.map(s => s.id === enrichedSub.id ? { ...s, ...created, id: created.submissionId || created.id || s.id, _id: created._id || (s as any)._id } : s)
-          saveSubmissionsStore(next)
-          return next
-        })
-      }
+      req: reqCode || newSub.req,
+      ...(reqCode ? { reqCode } : {}),
+      ...(requirementId ? { requirementId } : {}),
+    } as Submission
+
+    try {
+      const created: any = await workspaceService.createSubmission(enrichedSub)
+      const saved: Submission = {
+        ...enrichedSub,
+        ...(created || {}),
+        id: created?.submissionId || created?.id || enrichedSub.id,
+        _id: created?._id || (enrichedSub as any)._id,
+        req: matched?.id || reqCode || enrichedSub.req,
+        requirementId: created?.requirementId || requirementId,
+        stage: created?.stage || enrichedSub.stage || 'Submitted',
+      } as Submission
+
+      setSubmissions(prev => {
+        const next = [saved, ...prev.filter(s => s.id !== enrichedSub.id && s.id !== saved.id)]
+        saveSubmissionsStore(next)
+        return next
+      })
+      setRequirements(prev =>
+        prev.map(r =>
+          r.id === matched?.id || (r as any)._id === requirementId || (r as any).reqCode === reqCode
+            ? { ...r, submissions: (r.submissions || 0) + (created?.alreadyExists ? 0 : 1) }
+            : r,
+        ),
+      )
+      setRecruiters(prev =>
+        prev.map(rec =>
+          rec.name === newSub.recruiter
+            ? { ...rec, submissions: rec.submissions + 1, today: rec.today + 1 }
+            : rec,
+        ),
+      )
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('submissions_updated'))
       }
-    }).catch(() => undefined)
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('submissions_updated'))
+      handleAddActivityLog({
+        id: `LOG-${Date.now()}`,
+        timestamp: 'Just now',
+        userName: newSub.recruiter || currentUser.name,
+        userEmail: currentUser.email,
+        userRole: role,
+        userAvatar: (newSub.recruiter || currentUser.name).charAt(0).toUpperCase(),
+        action: `Submitted candidate ${newSub.candidate} for ${reqCode || newSub.req}`,
+        category: 'Submissions',
+        targetEntity: `Candidate ${newSub.candidate}`,
+        targetId: saved.id,
+        clientName: newSub.client,
+        ipAddress: '127.0.0.1',
+        status: 'Success',
+        details: created?.alreadyExists
+          ? `Candidate already linked to requirement ${reqCode || newSub.req}`
+          : `Submitted candidate to requirement ${reqCode || newSub.req}`,
+      })
+      if (!opts?.silent) {
+        await loadWorkspace().catch(() => undefined)
+      }
+    } catch (err: any) {
+      if (!opts?.silent && typeof window !== 'undefined') {
+        window.alert(err?.message || 'Failed to submit candidate to requirement. Please try again.')
+      }
+      throw err
     }
-    setRequirements(prev =>
-      prev.map(r => (r.id === newSub.req ? { ...r, submissions: r.submissions + 1 } : r))
-    )
-    setRecruiters(prev =>
-      prev.map(rec =>
-        rec.name === newSub.recruiter
-          ? { ...rec, submissions: rec.submissions + 1, today: rec.today + 1 }
-          : rec
-      )
-    )
-    handleAddActivityLog({
-      id: `LOG-${Date.now()}`,
-      timestamp: 'Just now',
-      userName: newSub.recruiter || currentUser.name,
-      userEmail: currentUser.email,
-      userRole: role,
-      userAvatar: (newSub.recruiter || currentUser.name).charAt(0).toUpperCase(),
-      action: `Submitted candidate ${newSub.candidate} for ${newSub.req}`,
-      category: 'Submissions',
-      targetEntity: `Candidate ${newSub.candidate}`,
-      targetId: newSub.id,
-      clientName: newSub.client,
-      ipAddress: '127.0.0.1',
-      status: 'Success',
-      details: `Submitted candidate profile to client ${newSub.client}`,
-    })
   }
 
   const handleSaveInterviewFeedback = (interviewId: string, status: InterviewStatus, notes: string) => {
@@ -328,9 +393,7 @@ export default function App() {
 
   const handleOpenSubmitForReq = (reqId?: string) => {
     setSelectedReqIdForSubmit(reqId || null)
-    setActiveNav('Candidates')
-    saveNav('Candidates')
-    syncBrowserPath('Candidates', 'push')
+    setIsSubmitCandidateOpen(true)
   }
 
   const handleOpenFeedbackForInterview = (iv: Interview) => {
@@ -439,6 +502,7 @@ export default function App() {
         onOpenFeedback={handleOpenFeedbackForInterview}
         onOpenCandidate={handleOpenCandidateDetail}
         onUpdateRequirements={persistRequirements}
+        onAddRequirement={handleAddRequirement}
         onSelectRequirement={setSelectedReqIdForSubmit}
         activityLogs={activityLogs}
         onAddActivityLog={handleAddActivityLog}

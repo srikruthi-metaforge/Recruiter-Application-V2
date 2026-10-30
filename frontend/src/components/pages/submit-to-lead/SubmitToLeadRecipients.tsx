@@ -199,10 +199,15 @@ export function SubmitToLeadRecipients({ vm }: { vm: SubmitToLeadVm }) {
         </div>
       )}
 
-      {/* LEAD REVIEW EMAIL SECTION MATCHING SCREENSHOT */}
+      {/* Extra lead notify emails (optional) — primary lead is chosen in the dropdown above */}
       <div className="bg-white rounded-2xl p-5 border border-slate-200/90 space-y-3 shadow-2xs">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-          <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Lead review email</h3>
+          <div>
+            <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Lead review email</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+              Filled from the selected lead. Add extra addresses only if needed.
+            </p>
+          </div>
           <button
             type="button"
             onClick={handleAddLeadEmailField}

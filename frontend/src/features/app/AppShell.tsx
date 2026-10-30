@@ -39,7 +39,7 @@ export interface AppShellProps {
   handleOpenCandidateDetail: (sub: Submission) => void
   handleAddActivityLog: (log: ActivityLogItem) => void
   handleAddRequirement: (req: Requirement) => void
-  handleSubmitCandidate: (sub: Submission) => void
+  handleSubmitCandidate: (sub: Submission, opts?: { silent?: boolean }) => void
   handleSaveInterviewFeedback: (interviewId: string, status: InterviewStatus, notes: string) => void
   setActiveNav: (nav: string) => void
   setSelectedReqIdForSubmit: (id: string | null) => void

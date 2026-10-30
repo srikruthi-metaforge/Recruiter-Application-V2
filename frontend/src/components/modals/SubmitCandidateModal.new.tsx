@@ -180,7 +180,7 @@ export function SubmitCandidateNewPath({
           ) : (
             <>
               <Send className="w-3.5 h-3.5" />
-              <span>Submit to Client</span>
+              <span>Continue to Submit Form</span>
             </>
           )}
         </button>

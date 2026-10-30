@@ -29,7 +29,7 @@ export function AddCandidateBasicFields({ vm }: { vm: AddCandidateVm }) {
                   Candidate ID (optional)
                 </label>
                 <span className="text-[10px] text-slate-400">
-                  Auto-increments after each submit (CAND-YYYY-MM-DD-001, 002, ...); editable
+                  Auto-assigned unique number from the database (continues after dump); editable
                 </span>
               </div>
               <input

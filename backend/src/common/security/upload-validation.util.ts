@@ -109,19 +109,31 @@ function isExecutableOrScript(buf: Buffer): string | null {
 }
 
 function pdfHasActiveContent(buf: Buffer): string | null {
-  // Scan a bounded window for common PDF active-content tokens
+  // Scan a bounded window for PDF tokens that can execute code or launch apps.
+  // Do NOT treat /EmbeddedFile as malware: many Word/Canva/Google Docs resume
+  // exports embed the source file or assets and still parse as normal text PDFs.
+  // /AA is also omitted — printers and viewers set Additional Actions widely.
+  // /OpenAction alone is NOT malware: LaTeX hyperref, Word, and Adobe often set
+  // it to "open on page 1 / fit view". Only reject when OpenAction wires to
+  // JavaScript or Launch (executable).
   const sample = buf.slice(0, Math.min(buf.length, 2 * 1024 * 1024)).toString('latin1');
   const dangerous = [
     /\/JavaScript\b/i,
     /\/JS\b/,
     /\/Launch\b/i,
-    /\/EmbeddedFile\b/i,
-    /\/AA\b/,
-    /\/OpenAction\b/i,
     /\/RichMedia\b/i,
+    /\/AcroForm\b[^>]*\/XFA\b/i,
   ];
   for (const re of dangerous) {
     if (re.test(sample)) return `PDF active content matched ${re}`;
+  }
+  if (/\/OpenAction\b/i.test(sample)) {
+    const openActionExec =
+      /\/OpenAction[\s\S]{0,400}?\/S\s*\/(?:JavaScript|JS|Launch)\b/i.test(sample) ||
+      /\/OpenAction[\s\S]{0,400}?\/(?:JavaScript|JS|Launch)\b/i.test(sample);
+    if (openActionExec) {
+      return 'PDF OpenAction references executable content';
+    }
   }
   return null;
 }

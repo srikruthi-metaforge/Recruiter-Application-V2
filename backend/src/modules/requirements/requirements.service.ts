@@ -99,12 +99,101 @@ export class RequirementsService {
   }
 
 
+  /** Active staff in the org who should receive requirement notifications (not clients). */
+  private async listOrgStaffUserIds(
+    orgId: Types.ObjectId,
+    excludeUserId?: Types.ObjectId | null,
+  ): Promise<Types.ObjectId[]> {
+    const filter: Record<string, any> = {
+      orgId,
+      deletedAt: null,
+      active: { $ne: false },
+      role: { $in: ['superadmin', 'admin', 'lead', 'recruiter', 'devteam'] },
+    };
+    if (excludeUserId) {
+      filter._id = { $ne: excludeUserId };
+    }
+    const users = await this.userModel.find(filter).select('_id').lean().exec();
+    return users.map((u) => u._id as Types.ObjectId);
+  }
+
+  private async notifyRequirementCreated(
+    saved: RequirementDocument,
+    actor?: { id?: string; userId?: string; name?: string } | null,
+  ) {
+    try {
+      const actorIdRaw = actor?.id || actor?.userId;
+      const actorOid =
+        actorIdRaw && Types.ObjectId.isValid(actorIdRaw) ? new Types.ObjectId(actorIdRaw) : null;
+      const recipients = await this.listOrgStaffUserIds(saved.orgId as Types.ObjectId, actorOid);
+      const actorLabel = actor?.name ? ` by ${actor.name}` : '';
+      const label = saved.reqCode || saved.title || 'Requirement';
+      const payloads = recipients.map((userId) => ({
+        orgId: saved.orgId as Types.ObjectId,
+        userId,
+        type: 'requirement_created' as const,
+        title: 'New Job Demand Created',
+        message: `A new requirement (${label}) was created${actorLabel}.`,
+        entityId: saved._id as Types.ObjectId,
+        entityType: 'requirement' as const,
+      }));
+      await this.notificationsService.createNotifications(payloads);
+    } catch (err: any) {
+      this.logger.warn(`Failed to fan-out requirement_created notifications: ${err?.message || err}`);
+    }
+  }
+
+  /** Parse portal budget string into range + display text. */
+  private parseBudgetFields(dto: {
+    budgetRange?: { min?: number; max?: number; currency?: string };
+    budget?: string;
+    budgetText?: string;
+  }): { budgetRange: { min: number; max: number; currency: string }; budgetText: string } {
+    if (dto.budgetRange && (Number(dto.budgetRange.min) > 0 || Number(dto.budgetRange.max) > 0)) {
+      const min = Number(dto.budgetRange.min) || 0;
+      const max = Number(dto.budgetRange.max) || min;
+      const currency = dto.budgetRange.currency || 'INR';
+      const budgetText =
+        (dto.budgetText || dto.budget || '').trim() ||
+        (min === max ? `${currency} ${min}` : `${currency} ${min}-${max}`);
+      return { budgetRange: { min, max, currency }, budgetText };
+    }
+
+    const raw = String(dto.budgetText || dto.budget || '').trim();
+    if (raw) {
+      const match = raw.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+      const val = match ? Number(match[0]) : 0;
+      const currency = /\$|USD/i.test(raw) ? 'USD' : /€|EUR/i.test(raw) ? 'EUR' : 'INR';
+      return {
+        budgetRange: { min: val, max: val, currency },
+        budgetText: raw,
+      };
+    }
+
+    return { budgetRange: { min: 0, max: 0, currency: 'INR' }, budgetText: '' };
+  }
+
+  private formatBudgetDisplay(doc: RequirementDocument | Record<string, any>): string {
+    const text = String((doc as any).budgetText || '').trim();
+    if (text) return text;
+    const range = (doc as any).budgetRange;
+    if (!range) return '';
+    const min = Number(range.min) || 0;
+    const max = Number(range.max) || 0;
+    if (min <= 0 && max <= 0) return '';
+    const currency = range.currency || 'INR';
+    const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '₹';
+    if (max > 0 && max !== min) return `${symbol}${min}-${max}`;
+    return `${symbol}${min || max}`;
+  }
+
   /** Format document for API output */
   private sanitizeRequirement(doc: RequirementDocument) {
     const obj = doc.toObject ? doc.toObject() : doc;
     // reqCode is the stored application ID; id/displayId add the client's reference in brackets.
     const code = doc.reqCode || doc._id.toString();
     const displayId = displayRequirementId(code, doc.sourceClientJdId);
+    const budgetDisplay = this.formatBudgetDisplay(obj);
 
     return {
       ...obj,
@@ -126,7 +215,9 @@ export class RequirementsService {
       mandatorySkills: (obj as any).mandatorySkills || [],
       conversationId: (obj as any).conversationId || undefined,
       inReplyTo: (obj as any).inReplyTo || undefined,
-      budgetText: (obj as any).budgetText || '',
+      budgetText: (obj as any).budgetText || budgetDisplay || '',
+      // Frontend detail cards read `budget` for YEARLY BUDGET.
+      budget: budgetDisplay || (obj as any).budget || '',
       emailArrivedTime: doc.emailArrivedTime || (obj as any).createdAt || null,
       first_detected_at: (doc as any).firstDetectedAt || (obj as any).createdAt || doc.emailArrivedTime || null,
       firstDetectedAt: (doc as any).firstDetectedAt || (obj as any).createdAt || doc.emailArrivedTime || null,
@@ -357,6 +448,7 @@ export class RequirementsService {
     const clientEmail = dto.clientEmail || (emailDefaults ? emailDefaults.requirement.from : null);
     const toEmails = sanitizeEmailList(dto.toEmails?.length ? dto.toEmails : (emailDefaults ? emailDefaults.requirement.to : []));
     const ccEmails = sanitizeEmailList(dto.ccEmails?.length ? dto.ccEmails : (emailDefaults ? emailDefaults.requirement.cc : []));
+    const { budgetRange, budgetText } = this.parseBudgetFields(dto as any);
 
     const newReq = new this.requirementModel({
       orgId,
@@ -367,7 +459,8 @@ export class RequirementsService {
       status: dto.status || 'Open',
       assignmentStatus: assignedRecruiterIds.length > 0 ? 'Assigned' : 'Unassigned',
       openings: dto.openings || 1,
-      budgetRange: dto.budgetRange || { min: 0, max: 0, currency: 'INR' },
+      budgetRange,
+      budgetText: budgetText || undefined,
       assignedLeadId,
       assignedRecruiterIds,
       skillsRequired: dto.skillsRequired || dto.skills || [],
@@ -395,6 +488,11 @@ export class RequirementsService {
       saved.toObject(),
       'Requirement created',
     );
+
+    await this.notifyRequirementCreated(saved, {
+      id: currentUser?.id || currentUser?.userId,
+      name: currentUser?.name,
+    });
 
     return this.sanitizeRequirement(saved);
   }
@@ -612,21 +710,63 @@ export class RequirementsService {
       );
 
       const notifyIds = new Set(resolvedTargets.map((id) => id.toString()));
+      // Always notify the acting recruiter on self-assign (even if already in targets).
+      notifyIds.add(currentMongoId.toString());
+
+      const label = doc.reqCode || doc.title || 'Requirement';
       for (const targetId of Array.from(notifyIds)) {
         try {
+          const isSelf = targetId === currentMongoId.toString();
           await this.notificationsService.createNotification({
             orgId: doc.orgId,
             userId: new Types.ObjectId(targetId),
             type: 'requirement_assigned',
-            title: alreadyAssigned ? 'Requirement Reassigned' : 'Requirement Self-Assigned',
+            title: alreadyAssigned
+              ? 'Requirement Reassigned'
+              : isSelf
+                ? 'Requirement Self-Assigned'
+                : 'Requirement Assigned',
             message: alreadyAssigned
-              ? `Requirement (${doc.reqCode || doc.title || 'Requirement'}) was reassigned to you.`
-              : `You self-assigned requirement (${doc.reqCode || doc.title || 'Requirement'}).`,
+              ? `Requirement (${label}) was reassigned to you.`
+              : isSelf
+                ? `You self-assigned requirement (${label}).`
+                : `Requirement (${label}) was assigned to you.`,
             entityId: doc._id as Types.ObjectId,
             entityType: 'requirement',
           });
         } catch (err) {
           // Notification failure should not abort assignment
+        }
+      }
+
+      // Let leads/admins know a recruiter claimed the demand.
+      if (!alreadyAssigned) {
+        try {
+          const leads = await this.userModel
+            .find({
+              orgId: doc.orgId,
+              deletedAt: null,
+              active: { $ne: false },
+              role: { $in: ['lead', 'admin', 'superadmin', 'devteam'] },
+              _id: { $ne: currentMongoId },
+            })
+            .select('_id')
+            .lean()
+            .exec();
+          const actorName = currentUser?.name || 'A recruiter';
+          await this.notificationsService.createNotifications(
+            leads.map((u) => ({
+              orgId: doc.orgId as Types.ObjectId,
+              userId: u._id as Types.ObjectId,
+              type: 'requirement_assigned' as const,
+              title: 'Requirement Self-Assigned',
+              message: `${actorName} self-assigned requirement (${label}).`,
+              entityId: doc._id as Types.ObjectId,
+              entityType: 'requirement' as const,
+            })),
+          );
+        } catch {
+          // ignore fan-out failures
         }
       }
 
@@ -647,6 +787,16 @@ export class RequirementsService {
         throw new BadRequestException('The selected recruiter could not be found. Choose a recruiter from the list.');
       }
       doc.assignedRecruiterIds = resolvedRecruiters;
+    }
+
+    // Stamp the acting lead/admin as assigned lead when they assign recruiters
+    // (so My Workspace / team views can show real recruiter assignees under that lead).
+    if (
+      !doc.assignedLeadId &&
+      ['lead', 'admin', 'superadmin', 'devteam'].includes(userRole) &&
+      (doc.assignedRecruiterIds || []).length > 0
+    ) {
+      doc.assignedLeadId = performedBy;
     }
 
     doc.assignmentStatus = (doc.assignedRecruiterIds || []).length > 0 || doc.assignedLeadId ? 'Assigned' : 'Unassigned';
@@ -1531,6 +1681,9 @@ export class RequirementsService {
       const saved = await this.saveNewRequirement(draft, arrived);
 
       this.syncState.totalSynced += 1;
+
+      // Mail-extracted JD: notify org staff so the new demand appears in Notifications.
+      await this.notifyRequirementCreated(saved, { name: 'Email extraction' });
 
       return {
         data: {

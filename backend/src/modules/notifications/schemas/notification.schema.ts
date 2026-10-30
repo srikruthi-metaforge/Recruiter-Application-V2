@@ -6,11 +6,13 @@ export type NotificationDocument = Notification & Document;
 export type NotificationType =
   | 'submission_approved'
   | 'submission_rejected'
+  | 'submission_forwarded'
   | 'interview_scheduled'
   | 'interview_reminder'
   | 'offer_released'
   | 'candidate_placed'
   | 'requirement_assigned'
+  | 'requirement_created'
   | 'lead_approval_requested'
   | 'candidate_created'
   | 'candidate_updated'
@@ -32,11 +34,13 @@ export class Notification {
     enum: [
       'submission_approved',
       'submission_rejected',
+      'submission_forwarded',
       'interview_scheduled',
       'interview_reminder',
       'offer_released',
       'candidate_placed',
       'requirement_assigned',
+      'requirement_created',
       'lead_approval_requested',
       'candidate_created',
       'candidate_updated',

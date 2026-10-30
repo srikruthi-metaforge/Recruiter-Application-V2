@@ -57,6 +57,8 @@ export interface ApiCandidate {
   resumeFileId?: string | null
   resumeFileName?: string | null
   resumeUrl?: string | null
+  sourcedByRecruiterId?: string | null
+  createdByName?: string | null
 }
 
 export type UiCandidate = Candidate & { _id?: string }
@@ -149,13 +151,17 @@ export function apiErrorMessage(err: unknown): string {
 
 export function apiCandidateToUi(doc: ApiCandidate): UiCandidate {
   const skills = Array.isArray(doc.skills) ? doc.skills.filter(Boolean).join(', ') : String(doc.skills || '')
-  const mongoId = typeof doc.id === 'string' && /^[a-f\d]{24}$/i.test(doc.id) ? doc.id : undefined
-  const businessId = doc.candidateId || mongoId || doc.id || ''
+  const mongoId =
+    (typeof doc.id === 'string' && /^[a-f\d]{24}$/i.test(doc.id) ? doc.id : undefined) ||
+    (typeof doc._id === 'string' && /^[a-f\d]{24}$/i.test(doc._id) ? doc._id : undefined)
+  const businessId = String(doc.candidateId || '').replace(/^CAND-/i, '') || mongoId || String(doc.id || '')
   const offer = doc.offerInHand === 'Yes' || doc.offerInHand === 'In Pipeline' ? doc.offerInHand : 'No'
   const status = doc.status === 'Interviewing' ? 'In Review' : doc.status || 'New'
   return {
-    id: businessId,
+    // Mongo id for API updates/submissions; business number lives in candidateId-like fields via mapping.
+    id: mongoId || businessId,
     _id: mongoId,
+    candidateId: businessId,
     submissionDate: doc.createdAt ? String(doc.createdAt).slice(0, 10) : undefined,
     name: doc.name || '',
     company: blankToEmpty(doc.currentCompany),
@@ -179,6 +185,8 @@ export function apiCandidateToUi(doc: ApiCandidate): UiCandidate {
     status: status as Candidate['status'],
     resumeName: blankToEmpty(doc.resumeFileName) || undefined,
     resumeFileId: doc.resumeFileId ? String(doc.resumeFileId) : undefined,
+    sourcedByRecruiterId: doc.sourcedByRecruiterId ? String(doc.sourcedByRecruiterId) : undefined,
+    createdByName: blankToEmpty(doc.createdByName) || undefined,
   }
 }
 
@@ -194,7 +202,7 @@ export function uiCandidateToRepo(candidate: UiCandidate): CandidateRepoItem {
     totalExperience: candidate.totalExperience || '',
     relevantExperience: candidate.relevantExperience || '',
     createdDate: candidate.submissionDate || '',
-    createdBy: '',
+    createdBy: candidate.createdByName || (candidate as any).createdBy || '',
     status: candidate.status,
     qualification: candidate.qualification,
     skills: candidate.skills,

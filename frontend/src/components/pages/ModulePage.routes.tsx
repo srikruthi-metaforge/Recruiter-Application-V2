@@ -36,6 +36,7 @@ export interface ModulePageRouteProps {
   onOpenFeedback?: (iv: Interview) => void
   onOpenCandidate?: (sub: Submission) => void
   onUpdateRequirements?: (requirements: Requirement[]) => void
+  onAddRequirement?: (newReq: Requirement) => void | Promise<void>
   onSelectRequirement?: (reqId: string | null) => void
   onAddActivityLog?: (log: ActivityLogItem) => void
   onNavigateToDashboard?: () => void
@@ -62,6 +63,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
     onOpenSubmit,
     onOpenFeedback,
     onUpdateRequirements,
+    onAddRequirement,
     onSelectRequirement,
     onAddActivityLog,
     onNavigateToDashboard,
@@ -87,6 +89,9 @@ export function renderModulePage(props: ModulePageRouteProps) {
         submissions={submissions}
         interviews={interviews}
         recruiters={recruiters}
+        candidates={candidatesList}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}
@@ -125,13 +130,26 @@ export function renderModulePage(props: ModulePageRouteProps) {
           submissions={submissions}
           interviews={interviews}
           recruiters={recruiters}
+          candidates={candidatesList}
+          currentUserName={currentUserName}
+          currentUserEmail={currentUserEmail}
           onOpenSubmit={onOpenSubmit}
           onOpenFeedback={onOpenFeedback}
           onUpdateRequirements={onUpdateRequirements}
         />
       )
     }
-    return <HistoryPage role={role} currentUserName={currentUserName} currentUserEmail={currentUserEmail} recruiters={recruiters} requirements={requirements} submissions={submissions} />
+    return (
+      <HistoryPage
+        role={role}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
+        recruiters={recruiters}
+        requirements={requirements}
+        submissions={submissions}
+        candidates={candidatesList}
+      />
+    )
   }
 
   if (pageKey === 'My Team') {
@@ -148,6 +166,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         recruiters={recruiters}
         onOpenSubmit={onOpenSubmit}
         onUpdateRequirements={onUpdateRequirements}
+        onAddRequirement={onAddRequirement}
         onAddActivityLog={onAddActivityLog}
       />
     )
@@ -193,6 +212,9 @@ export function renderModulePage(props: ModulePageRouteProps) {
         submissions={submissions}
         interviews={interviews}
         recruiters={recruiters}
+        candidates={candidatesList}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}
@@ -209,6 +231,9 @@ export function renderModulePage(props: ModulePageRouteProps) {
         submissions={submissions}
         interviews={interviews}
         recruiters={recruiters}
+        candidates={candidatesList}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}

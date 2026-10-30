@@ -92,12 +92,21 @@ export function ReqDetailOverviewA({ vm }: { vm: RequirementDetailVm }) {
 
               <div>
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">BUDGET CURRENCY</div>
-                <div className="font-bold text-gray-900 mt-1">{requirement.budget ? requirement.budget.split(' ')[0] : 'INR'}</div>
+                <div className="font-bold text-gray-900 mt-1">
+                  {(requirement as any).budgetRange?.currency
+                    || (requirement.budget?.includes('$') ? 'USD' : requirement.budget?.includes('€') ? 'EUR' : 'INR')}
+                </div>
               </div>
 
               <div>
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">YEARLY BUDGET</div>
-                <div className="font-bold text-gray-900 mt-1">{requirement.budget || 'Not specified'}</div>
+                <div className="font-bold text-gray-900 mt-1">
+                  {requirement.budget
+                    || (requirement as any).budgetText
+                    || ((requirement as any).budgetRange?.min
+                      ? `${(requirement as any).budgetRange.currency === 'USD' ? '$' : (requirement as any).budgetRange.currency === 'EUR' ? '€' : '₹'}${(requirement as any).budgetRange.min}`
+                      : 'Not specified')}
+                </div>
               </div>
 
               <div>

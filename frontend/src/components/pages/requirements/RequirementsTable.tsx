@@ -109,21 +109,26 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                 </tr>
               ) : (
                 paginatedRequirements.map((req, reqIndex) => {
+                  const assigneeLabel = String(
+                    (req as any).assignedRecruiterNames || req.owner || '',
+                  ).trim() || 'Unassigned'
+                  const hasRecruiterIds = Array.isArray((req as any).assignedRecruiterIds) && (req as any).assignedRecruiterIds.length > 0
                   const isUnassigned =
-                    !req.owner || req.owner === 'Unassigned' || req.assignmentStatus === 'Unassigned'
+                    req.assignmentStatus === 'Unassigned' ||
+                    ((assigneeLabel === 'Unassigned' || !assigneeLabel) && !hasRecruiterIds)
                   const rawStatus = (req.status || 'Open') as string
                   const isHold = rawStatus === 'Hold' || rawStatus === 'On Hold'
                   const isSelected = !isHold && selectedReqIds.has(req.id)
                   const isCustomStatus = rawStatus.startsWith('Custom:')
                   const workflowStatus = isHold ? 'Hold' : (isCustomStatus ? 'Custom' : (rawStatus === 'Assigned' || req.assignmentStatus === 'Assigned' ? 'Assigned' : (rawStatus === 'Reopen' ? 'Reopen' : (rawStatus === 'Active' || rawStatus === 'In Progress' ? 'Open' : rawStatus))))
                   const displaySelectVal = isCustomStatus ? 'Custom' : (isHold ? 'Hold' : workflowStatus)
-                  const ownerNames = (req.owner || '').split(',').map(name => name.trim()).filter(Boolean)
+                  const ownerNames = assigneeLabel.split(',').map(name => name.trim()).filter(Boolean)
                   const matchedRecruiter = recruiterList.find(rec =>
                     rec.id === req.owner ||
-                    rec.name.toLowerCase() === (req.owner || '').toLowerCase() ||
+                    rec.name.toLowerCase() === assigneeLabel.toLowerCase() ||
                     ownerNames.some(name => name.toLowerCase() === rec.name.toLowerCase() || name.toLowerCase() === rec.id.toLowerCase())
                   )
-                  const selectedRecruiterId = matchedRecruiter ? matchedRecruiter.id : (isUnassigned ? 'Unassigned' : req.owner || 'Unassigned')
+                  const selectedRecruiterId = matchedRecruiter ? matchedRecruiter.id : (isUnassigned ? 'Unassigned' : assigneeLabel)
 
                   const clientKey = req.client
                     ? (Object.keys(CLIENT_EMAIL_DEFAULTS).find(k => k.toLowerCase() === req.client.toLowerCase()) || req.client)
@@ -226,11 +231,11 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                           <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
                             isUnassigned ? 'bg-slate-100 text-slate-500 border border-slate-200' : 'bg-purple-100 text-[#6B3BF6] border border-purple-200 shadow-2xs'
                           }`}>
-                            {isUnassigned ? '?' : (req.owner || 'R').charAt(0).toUpperCase()}
+                            {isUnassigned ? '?' : (assigneeLabel || 'R').charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <div className={`text-xs ${isUnassigned ? 'text-slate-400 italic font-medium' : 'text-slate-900 font-extrabold'}`}>
-                              {req.owner || 'Unassigned'}
+                              {assigneeLabel}
                             </div>
                             <div className="text-[10px] text-slate-400 font-normal">
                               {isUnassigned ? 'Pending assignment' : 'Assigned Recruiter'}

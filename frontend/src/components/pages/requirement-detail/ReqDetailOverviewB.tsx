@@ -1,6 +1,28 @@
-import React from 'react'
-import { Users, ChevronDown, Search } from 'lucide-react'
+import React, { useMemo } from 'react'
+import { Search } from 'lucide-react'
 import { RequirementDetailVm } from './useRequirementDetailOverview'
+
+type AssignPerson = { name: string; label: string; status: 'active' | 'revoked' }
+
+function buildAssignmentPeople(requirement: RequirementDetailVm['requirement']): AssignPerson[] {
+  const leadName = String(requirement.assignedLead || '').trim()
+  const recruiterSource = String(
+    (requirement as any).assignedRecruiterNames || requirement.owner || '',
+  )
+  const recruiterNames = recruiterSource
+    .split(',')
+    .map(n => n.trim())
+    .filter(n => n && n !== 'Unassigned' && (!leadName || n.toLowerCase() !== leadName.toLowerCase()))
+
+  const people: AssignPerson[] = []
+  if (leadName) {
+    people.push({ name: leadName, label: 'Team Lead', status: 'active' })
+  }
+  for (const name of recruiterNames) {
+    people.push({ name, label: 'Recruiter', status: 'active' })
+  }
+  return people
+}
 
 export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
   const {
@@ -12,6 +34,22 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
     isRecruiter,
     activeTab,
   } = vm
+
+  const assignmentPeople = useMemo(() => buildAssignmentPeople(requirement), [requirement])
+  const activeCount = assignmentPeople.filter(p => p.status === 'active').length
+  const revokedCount = assignmentPeople.filter(p => p.status === 'revoked').length
+  const allCount = assignmentPeople.length
+
+  const visiblePeople = useMemo(() => {
+    const q = assignSearchQuery.trim().toLowerCase()
+    return assignmentPeople.filter(p => {
+      if (assignTabFilter === 'active' && p.status !== 'active') return false
+      if (assignTabFilter === 'revoked' && p.status !== 'revoked') return false
+      if (q && !p.name.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [assignmentPeople, assignTabFilter, assignSearchQuery])
+
   return (
     <>
       {activeTab === 'Overview' && (
@@ -28,7 +66,7 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
                 </div>
                 <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-full border border-emerald-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>4 active</span>
+                  <span>{activeCount} active</span>
                 </span>
               </div>
 
@@ -44,7 +82,7 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
                     }`}
                   >
                     <span>All</span>
-                    <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">4</span>
+                    <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">{allCount}</span>
                   </button>
 
                   <button
@@ -56,7 +94,7 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
                     }`}
                   >
                     <span>Active</span>
-                    <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">4</span>
+                    <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">{activeCount}</span>
                   </button>
 
                   <button
@@ -68,7 +106,7 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
                     }`}
                   >
                     <span>Revoked</span>
-                    <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">0</span>
+                    <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">{revokedCount}</span>
                   </button>
                 </div>
 
@@ -87,19 +125,16 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
 
               {/* Assignment list: the requirement's lead and recruiters as recorded */}
               <div className="space-y-3 pt-2">
-                {(() => {
-                  const people = [
-                    ...(requirement.assignedLead ? [{ name: requirement.assignedLead, label: 'Team Lead' }] : []),
-                    ...String(requirement.owner || '')
-                      .split(',')
-                      .map(n => n.trim())
-                      .filter(n => n && n !== 'Unassigned')
-                      .map(n => ({ name: n, label: 'Recruiter' })),
-                  ].filter(p => !assignSearchQuery.trim() || p.name.toLowerCase().includes(assignSearchQuery.trim().toLowerCase()))
-                  if (!people.length) {
-                    return <p className="text-xs text-gray-400">Not assigned yet.</p>
-                  }
-                  return people.map(p => (
+                {!visiblePeople.length ? (
+                  <p className="text-xs text-gray-400">
+                    {assignTabFilter === 'revoked'
+                      ? 'No revoked assignments recorded.'
+                      : assignSearchQuery.trim()
+                        ? 'No matching assignees.'
+                        : 'Not assigned yet.'}
+                  </p>
+                ) : (
+                  visiblePeople.map(p => (
                     <div
                       key={`${p.label}-${p.name}`}
                       className="border border-slate-200/80 rounded-2xl p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
@@ -118,12 +153,18 @@ export function ReqDetailOverviewB({ vm }: { vm: RequirementDetailVm }) {
                           <div className="text-[11px] text-gray-400 font-normal">{p.label}</div>
                         </div>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-md text-[10px] font-extrabold uppercase">
-                        ACTIVE
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase border ${
+                          p.status === 'revoked'
+                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}
+                      >
+                        {p.status === 'revoked' ? 'REVOKED' : 'ACTIVE'}
                       </span>
                     </div>
                   ))
-                })()}
+                )}
               </div>
             </div>
           )}

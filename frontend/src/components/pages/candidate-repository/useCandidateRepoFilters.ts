@@ -31,7 +31,7 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
         const matchName = item.name.toLowerCase().includes(q)
         const matchId = item.candidateId.toLowerCase().includes(q)
         const matchTech = item.technology.toLowerCase().includes(q)
-        const matchCreator = item.createdBy.toLowerCase().includes(q)
+        const matchCreator = String(item.createdBy || '').toLowerCase().includes(q)
         const matchSkills = (item.skills || '').toLowerCase().includes(q)
         const matchCompany = (item.currentCompany || '').toLowerCase().includes(q)
         if (!matchName && !matchId && !matchTech && !matchCreator && !matchSkills && !matchCompany) return false

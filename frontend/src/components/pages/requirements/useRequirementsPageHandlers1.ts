@@ -33,6 +33,10 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
         setLocalRequirements(payload.requirements)
         onUpdateRequirements?.(payload.requirements)
       }
+      // Refresh App-level workspace so recruiter KPI cards update after assign.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace_refresh'))
+      }
     } catch {
       // The assignment is already saved. Keep the optimistic list if refresh fails.
     }
@@ -146,7 +150,15 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
       const targetId = req._id || req.id
       const isUnassigning = !recruiterId || recruiterId === 'Unassigned'
       const selected = recruiterList.find(rec => rec.id === recruiterId)
-      const payload = isUnassigning ? { recruiterIds: [] } : { recruiterIds: [selected?.id || recruiterId] }
+      const session = getSessionUser()
+      const isLeadOrAdminRole = ['lead', 'admin', 'superadmin', 'devteam'].includes(String(role || '').toLowerCase())
+      const resolvedRecruiterId = selected?.id || recruiterId
+      const payload = isUnassigning
+        ? { recruiterIds: [] as string[] }
+        : {
+            recruiterIds: [resolvedRecruiterId],
+            ...(isLeadOrAdminRole && session?.id ? { leadId: session.id } : {}),
+          }
 
       await workspaceService.assignRequirement(targetId, payload)
 
@@ -160,6 +172,11 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
           ? {
               ...r,
               owner: updatedOwner,
+              assignedRecruiterNames: isUnassigning ? '' : updatedOwner,
+              assignedRecruiterIds: isUnassigning ? [] : [resolvedRecruiterId],
+              ...(isLeadOrAdminRole && session?.id && !isUnassigning
+                ? { assignedLeadId: session.id, assignedLead: session.name || '' }
+                : {}),
               assignmentStatus: updatedAssignmentStatus,
               status: updatedStatus,
               updatedAt: nowIso,
@@ -176,6 +193,11 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
         setSelectedReqForDetail({
           ...selectedReqForDetail,
           owner: updatedOwner,
+          assignedRecruiterNames: isUnassigning ? '' : updatedOwner,
+          assignedRecruiterIds: isUnassigning ? [] : [resolvedRecruiterId],
+          ...(isLeadOrAdminRole && session?.id && !isUnassigning
+            ? { assignedLeadId: session.id, assignedLead: session.name || '' }
+            : {}),
           assignmentStatus: updatedAssignmentStatus,
           status: updatedStatus,
         })
@@ -311,9 +333,13 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
       allTargetReqs.push(selectedReqForDetail)
     }
 
+    const isLeadOrAdminRole = ['lead', 'admin', 'superadmin', 'devteam'].includes(String(role || '').toLowerCase())
     try {
       for (const r of allTargetReqs) {
-        await workspaceService.assignRequirement(r._id || r.id, { recruiterIds: assignees })
+        await workspaceService.assignRequirement(r._id || r.id, {
+          recruiterIds: assignees,
+          ...(isLeadOrAdminRole && session?.id ? { leadId: session.id } : {}),
+        })
       }
 
       const assigneesText = assignees
@@ -323,7 +349,18 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
       const nowIso = new Date().toISOString()
       const updated = localRequirements.map(r =>
         targetIds.includes(r.id)
-          ? { ...r, owner: assigneesText, assignmentStatus: 'Assigned' as const, status: 'Assigned' as const, updatedAt: nowIso }
+          ? {
+              ...r,
+              owner: assigneesText,
+              assignedRecruiterNames: assigneesText,
+              assignedRecruiterIds: assignees,
+              ...(isLeadOrAdminRole && session?.id
+                ? { assignedLeadId: session.id, assignedLead: session.name || '' }
+                : {}),
+              assignmentStatus: 'Assigned' as const,
+              status: 'Assigned' as const,
+              updatedAt: nowIso,
+            }
           : r
       )
 
@@ -334,6 +371,11 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
         setSelectedReqForDetail({
           ...selectedReqForDetail,
           owner: assigneesText,
+          assignedRecruiterNames: assigneesText,
+          assignedRecruiterIds: assignees,
+          ...(isLeadOrAdminRole && session?.id
+            ? { assignedLeadId: session.id, assignedLead: session.name || '' }
+            : {}),
           assignmentStatus: 'Assigned',
           status: 'Assigned',
         })
@@ -344,8 +386,7 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
       setSelectedReqIds(new Set())
       setIsAssignModalOpen(false)
       setSelectedRecruiterNames(new Set())
-      const isLeadOrAdmin = ['lead', 'admin', 'superadmin', 'devteam'].includes(String(role || '').toLowerCase())
-      setIsAssignMyselfChecked(!isLeadOrAdmin)
+      setIsAssignMyselfChecked(!isLeadOrAdminRole)
       setRecruiterSearchQuery('')
 
       showToast('Requirement(s) assigned successfully.')

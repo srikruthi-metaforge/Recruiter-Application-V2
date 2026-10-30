@@ -29,6 +29,9 @@ export interface Requirement {
   openings: number
   budget?: string
   assignedLead?: string
+  assignedLeadId?: string
+  assignedRecruiterIds?: string[]
+  assignedRecruiterNames?: string
   skills?: string[]
   clientEmail?: string
   toEmails?: string[]
@@ -81,6 +84,8 @@ export interface ActivityLogItem {
 
 export interface Recruiter {
   id: string
+  /** Mongo user id when available (matches requirement.assignedRecruiterIds). */
+  _id?: string
   name: string
   lead: string
   admin: string
@@ -172,6 +177,9 @@ export interface Submission {
 
 export interface Candidate {
   id: string
+  /** Business number shown in repository (e.g. "20834"). */
+  candidateId?: string
+  _id?: string
   submissionDate?: string
   name: string
   company?: string
@@ -196,4 +204,6 @@ export interface Candidate {
   resumeFileId?: string
   matchScore?: string
   status?: 'New' | 'Parsed' | 'Submitted' | 'In Review' | 'Placed'
+  sourcedByRecruiterId?: string
+  createdByName?: string
 }

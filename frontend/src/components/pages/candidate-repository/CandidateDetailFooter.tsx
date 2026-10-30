@@ -34,12 +34,16 @@ export function CandidateDetailFooter({ vm, viewingCandidateDetail }: { vm: Cand
                   Edit Profile
                 </button>
                 {!isLeadRole && activeRequirement && (() => {
-                  const modalDup = checkDuplicateSubmission(activeRequirement.id, {
-                    email: viewingCandidateDetail.email,
-                    phone: viewingCandidateDetail.phone,
-                    candidateId: viewingCandidateDetail.candidateId,
-                    name: viewingCandidateDetail.name,
-                  })
+                  const modalDup = checkDuplicateSubmission(
+                    (activeRequirement as any)._id || activeRequirement.id,
+                    {
+                      email: viewingCandidateDetail.email,
+                      phone: viewingCandidateDetail.phone,
+                      candidateId: viewingCandidateDetail.id,
+                      businessCandidateId: viewingCandidateDetail.candidateId,
+                      name: viewingCandidateDetail.name,
+                    },
+                  )
                   if (modalDup.isDuplicate) {
                     return (
                       <button

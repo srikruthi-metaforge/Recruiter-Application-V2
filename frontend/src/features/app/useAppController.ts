@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from '../../types'
 import { workspaceService } from '../../services/workspace.service'
 import { restoreSession } from '../../data/authService'
@@ -32,15 +32,18 @@ export function useAppController() {
   const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [currentUser, setCurrentUser] = useState(emptyUser)
+  // Ignore stale workspace responses when login + restoreSession + nav refresh overlap.
+  const workspaceLoadSeq = useRef(0)
 
   const handleAddActivityLog = (newLog: ActivityLogItem) => {
     setActivityLogs(prev => [newLog, ...prev])
     void workspaceService.addActivityLog(newLog).catch(() => undefined)
   }
 
+  // Sync React state only — dedicated APIs handle persistence (assign/create/update).
+  // Avoid PUT /requirements/bulk (403 for recruiters).
   const persistRequirements = (next: Requirement[]) => {
     setRequirements(next)
-    void workspaceService.updateRequirements(next).catch(() => undefined)
   }
 
   const [isNewReqOpen, setIsNewReqOpen] = useState(false)
@@ -52,10 +55,12 @@ export function useAppController() {
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
 
   const applyWorkspace = async () => {
+    const seq = ++workspaceLoadSeq.current
     const payload = await workspaceService.load()
+    if (seq !== workspaceLoadSeq.current) return
     setRequirements(payload.requirements || [])
     setSubmissions(payload.submissions || [])
-    saveSubmissionsStore(payload.submissions || [])
+    saveSubmissionsStore(payload.submissions || [], { silent: true })
     setInterviews(payload.interviews || [])
     setRecruiters(payload.recruiters || [])
     setLeads(payload.leads || [])
@@ -101,10 +106,25 @@ export function useAppController() {
       const key = navKeyFromPathname(window.location.pathname)
       if (!key) return
       setActiveNav(key)
-      if (key === 'Requirements') applyWorkspace().catch(() => undefined)
+      if (key === 'Requirements' || key === 'Dashboard' || key === 'Reports' || key === 'Reports & Analytics') {
+        applyWorkspace().catch(() => undefined)
+      }
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  // Keep recruiter KPI cards in sync after submit / assign / interview work.
+  useEffect(() => {
+    const refresh = () => {
+      applyWorkspace().catch(() => undefined)
+    }
+    window.addEventListener('submissions_updated', refresh)
+    window.addEventListener('workspace_refresh', refresh)
+    return () => {
+      window.removeEventListener('submissions_updated', refresh)
+      window.removeEventListener('workspace_refresh', refresh)
+    }
   }, [])
 
   const handleLogout = () => {
@@ -135,19 +155,25 @@ export function useAppController() {
   const handleNavSelect = (key: string) => {
     createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)(key)
     syncBrowserPath(key, 'push')
-    if (key === 'Requirements') {
+    if (
+      key === 'Requirements' ||
+      key === 'Dashboard' ||
+      key === 'Reports' ||
+      key === 'Reports & Analytics' ||
+      key === 'Submissions' ||
+      key === 'History' ||
+      key === 'Performance History'
+    ) {
       applyWorkspace().catch(() => undefined)
     }
   }
 
   const handleOpenSubmitCandidateFromDashboard = (reqId?: string) => {
     setSelectedReqIdForSubmit(reqId || null)
-    if (role !== 'recruiter') {
-      handleNavSelect('Candidates')
-    }
+    setIsSubmitCandidateOpen(true)
   }
 
-  const handleAddRequirement = (newReq: Requirement) => {
+  const handleAddRequirement = async (newReq: Requirement) => {
     const nowIso = new Date().toISOString()
     const enrichedReq: Requirement = {
       ...newReq,
@@ -155,8 +181,24 @@ export function useAppController() {
       createdAt: (newReq as any).createdAt || nowIso,
       updatedAt: (newReq as any).updatedAt || nowIso,
     }
-    setRequirements([enrichedReq, ...requirements])
-    void workspaceService.createRequirement(enrichedReq).catch(() => undefined)
+    setRequirements(prev => [enrichedReq, ...prev])
+    try {
+      const created: any = await workspaceService.createRequirement(enrichedReq)
+      if (created) {
+        const persistedId = created.reqCode || created.displayId || created.id || enrichedReq.id
+        setRequirements(prev =>
+          prev.map(r =>
+            r.id === enrichedReq.id
+              ? { ...r, ...created, id: persistedId, reqCode: created.reqCode || persistedId, _id: created._id || (r as any)._id }
+              : r,
+          ),
+        )
+      }
+      await applyWorkspace().catch(() => undefined)
+    } catch (err) {
+      setRequirements(prev => prev.filter(r => r.id !== enrichedReq.id))
+      throw err
+    }
   }
 
   const handleSubmitCandidate = createSubmitCandidateHandler({
@@ -167,6 +209,8 @@ export function useAppController() {
     handleAddActivityLog,
     currentUser,
     role,
+    requirements,
+    reloadWorkspace: applyWorkspace,
   })
 
   const handleSaveInterviewFeedback = createSaveInterviewFeedbackHandler({
@@ -179,7 +223,7 @@ export function useAppController() {
 
   const handleOpenSubmitForReq = (reqId?: string) => {
     setSelectedReqIdForSubmit(reqId || null)
-    handleNavSelect('Candidates')
+    setIsSubmitCandidateOpen(true)
   }
 
   const handleOpenFeedbackForInterview = (iv: Interview) => {

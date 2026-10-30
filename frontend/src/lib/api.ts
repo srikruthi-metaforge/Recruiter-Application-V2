@@ -47,9 +47,13 @@ let csrfBootstrap: Promise<void> | null = null
 let csrfMemory: string | null = null
 
 /** Ensure a readable csrf_token cookie exists (handles sessions created before CSRF). */
-async function ensureCsrfCookie(): Promise<string | null> {
-  const existing = getCsrfToken() || csrfMemory
-  if (existing) return existing
+async function ensureCsrfCookie(forceRefresh = false): Promise<string | null> {
+  // Cookie is source of truth — never send a stale in-memory token after the cookie rotates.
+  const cookie = getCsrfToken()
+  if (cookie && !forceRefresh) {
+    csrfMemory = cookie
+    return cookie
+  }
   if (!csrfBootstrap) {
     csrfBootstrap = fetch(`${API_BASE}/auth/csrf`, { method: 'GET', credentials: 'include' })
       .then(async (res) => {
@@ -66,7 +70,9 @@ async function ensureCsrfCookie(): Promise<string | null> {
       })
   }
   await csrfBootstrap
-  return getCsrfToken() || csrfMemory
+  const next = getCsrfToken() || csrfMemory
+  if (next) csrfMemory = next
+  return next
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
@@ -78,7 +84,13 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   // Double-submit CSRF: cookie (readable) + matching header on mutating calls.
   if (isMutatingMethod(init.method)) {
     const csrf = (await ensureCsrfCookie()) || getCsrfToken()
-    if (csrf) headers.set('X-CSRF-Token', csrf)
+    if (csrf) {
+      headers.set('X-CSRF-Token', csrf)
+    } else {
+      // No CSRF yet — force bootstrap so POST /assign does not 403 after long idle sessions.
+      const bootstrapped = await ensureCsrfCookie(true)
+      if (bootstrapped) headers.set('X-CSRF-Token', bootstrapped)
+    }
   }
 
   // Auth is HttpOnly cookie only — do not attach Bearer tokens from JS storage.
@@ -107,17 +119,15 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   } catch {
     data = text
   }
-  if (
-    !res.ok &&
-    !retried &&
-    res.status === 403 &&
-    isMutatingMethod(init.method) &&
-    String(data?.message || '').toLowerCase().includes('csrf')
-  ) {
-    // Backend may have just minted csrf_token via Set-Cookie — refresh header and retry once.
-    csrfBootstrap = null
-    await ensureCsrfCookie()
-    return request<T>(path, init, true)
+  if (!res.ok && !retried && res.status === 403 && isMutatingMethod(init.method)) {
+    const msg = String(data?.message || '').toLowerCase()
+    // Retry once on CSRF mismatch (common after idle time / cookie rotate / backend restart).
+    if (msg.includes('csrf') || msg.includes('invalid or missing')) {
+      csrfMemory = null
+      csrfBootstrap = null
+      await ensureCsrfCookie(true)
+      return request<T>(path, init, true)
+    }
   }
   if (!res.ok) {
     const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message

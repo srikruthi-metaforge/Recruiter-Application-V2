@@ -91,7 +91,9 @@ export function useCandidateRepoEdit(
         notes: editNotes,
         resumeName: editResumeReference || undefined,
       })
-      setRepoList(prev => prev.map(item => (item.id === editingCandidate.id ? { ...item, ...refreshed, id: item.id } : item)))
+      setRepoList(prev => prev.map(item => (item.id === editingCandidate.id
+        ? { ...item, ...refreshed, id: item.id, createdBy: refreshed.createdBy || item.createdBy }
+        : item)))
       onCandidateUpdated?.({
         ...saved,
         interviewAvailability: editAvailability,

@@ -17,7 +17,13 @@ export function SubmissionsDetail({ vm }: { vm: SubmissionsVm }) {
         requirement={selectedReqDetail}
         role={role}
         onBack={() => setSelectedReqDetail(null)}
-        onAddCandidate={() => onOpenSubmitCandidate?.(selectedReqDetail.id)}
+        onAddCandidate={() =>
+          onOpenSubmitCandidate?.(
+            (selectedReqDetail as any)._id ||
+              (selectedReqDetail as any).reqCode ||
+              selectedReqDetail.id,
+          )
+        }
         onEditRequirement={() => {
           setEditingReq(selectedReqDetail)
           setIsEditingReq(true)

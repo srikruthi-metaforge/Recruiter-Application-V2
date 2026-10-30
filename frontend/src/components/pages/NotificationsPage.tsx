@@ -21,6 +21,10 @@ import { notificationsService } from '../../services/workspace.service'
 import { brand } from '../../theme'
 import { PaginationFooter } from '../ui/PaginationFooter'
 import { isAuditLogNotification, isRequirementNotification } from '../ui/NotificationPopover'
+import {
+  dispatchNotificationNavigate,
+  resolveNotificationNavigation,
+} from '../../utils/notificationNavigation'
 
 interface StoredNotification {
   id: string
@@ -410,7 +414,20 @@ export function NotificationsPage() {
             {paginatedNotifications.map(n => (
               <div
                 key={n.id}
-                className={`p-4 transition-all flex items-start gap-4 hover:bg-slate-50/80 ${
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  void handleMarkRead(n.id, n.read)
+                  dispatchNotificationNavigate(resolveNotificationNavigation(n))
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    void handleMarkRead(n.id, n.read)
+                    dispatchNotificationNavigate(resolveNotificationNavigation(n))
+                  }
+                }}
+                className={`p-4 transition-all flex items-start gap-4 hover:bg-slate-50/80 cursor-pointer ${
                   n.read ? 'bg-white' : 'bg-blue-50/30'
                 }`}
               >
@@ -431,6 +448,10 @@ export function NotificationsPage() {
                   ) : n.type.includes('offer') || n.type.includes('placement') || n.type.includes('placed') ? (
                     <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center border border-emerald-200">
                       <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                  ) : n.type.includes('requirement') ? (
+                    <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center border border-sky-200">
+                      <FileText className="w-4 h-4" />
                     </div>
                   ) : (
                     <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center border border-amber-200">
@@ -486,14 +507,20 @@ export function NotificationsPage() {
                     <div className="flex items-center gap-2">
                       {!n.read && (
                         <button
-                          onClick={() => handleMarkRead(n.id, false)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleMarkRead(n.id, false)
+                          }}
                           className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-medium flex items-center gap-1 transition-colors"
                         >
                           <Check className="w-3 h-3" /> Mark as Read
                         </button>
                       )}
                       <button
-                        onClick={() => handleDelete(n.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handleDelete(n.id)
+                        }}
                         className="px-2.5 py-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 text-xs font-medium flex items-center gap-1 transition-colors"
                         title="Delete notification permanently"
                       >

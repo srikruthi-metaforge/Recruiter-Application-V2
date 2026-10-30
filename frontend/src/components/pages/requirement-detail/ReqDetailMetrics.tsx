@@ -5,7 +5,14 @@ export function ReqDetailMetrics({ vm }: { vm: RequirementDetailVm }) {
   const {
     requirement,
     isUnassigned,
+    reqSubmissions,
+    reqSubmissionsLoaded,
   } = vm
+  // Prefer live list once loaded (matches History). Until then use workspace count.
+  // Never coerce 0 → placeholder (old `|| 7`) or zero just because Unassigned flickered.
+  const submittedCount = reqSubmissionsLoaded
+    ? (Array.isArray(reqSubmissions) ? reqSubmissions.length : 0)
+    : Number(requirement.submissions || 0)
   return (
     <>
       {/* 4. METRICS ROW (7 STAT CARDS MATCHING SCREENSHOT) */}
@@ -16,7 +23,7 @@ export function ReqDetailMetrics({ vm }: { vm: RequirementDetailVm }) {
             TOTAL CANDIDATES
           </div>
           <div className="text-2xl font-extrabold text-gray-900 mt-1">
-            {isUnassigned ? 0 : (requirement.submissions || 7)}
+            {submittedCount}
           </div>
         </div>
 
@@ -26,7 +33,7 @@ export function ReqDetailMetrics({ vm }: { vm: RequirementDetailVm }) {
             SUBMITTED
           </div>
           <div className="text-2xl font-extrabold text-blue-600 mt-1">
-            {isUnassigned ? 0 : (requirement.submissions || 7)}
+            {submittedCount}
           </div>
         </div>
 
@@ -86,7 +93,7 @@ export function ReqDetailMetrics({ vm }: { vm: RequirementDetailVm }) {
         <div className="bg-blue-50/70 border border-blue-200/70 rounded-xl p-3.5 text-xs text-blue-900 space-y-1 shadow-2xs">
           <div className="font-bold text-blue-950">Suggestions</div>
           <div className="flex items-center gap-2 text-blue-800 font-medium">
-            <span>• • {requirement.submissions || 7} candidate(s) idle in Submitted for over 7 days.</span>
+            <span>• • {submittedCount} candidate(s) idle in Submitted for over 7 days.</span>
           </div>
         </div>
       )}

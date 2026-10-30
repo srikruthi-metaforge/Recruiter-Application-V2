@@ -30,7 +30,8 @@ import {
   ArrowLeft,
   X,
 } from 'lucide-react'
-import { Role, Recruiter, Requirement, Submission } from '../../types'
+import { Role, Recruiter, Requirement, Submission, Candidate } from '../../types'
+import { getSessionUser } from '../../store/session'
 import { PaginationFooter } from '../ui/PaginationFooter'
 
 interface SubmittedClientsPillCellProps {
@@ -161,8 +162,168 @@ const fmtDate = (v?: string) => {
 const subStatus = (stage?: string): 'Submitted' | 'Working' | 'On Hold' | 'Sourced' => {
   const v = (stage || '').toLowerCase()
   if (v.includes('hold')) return 'On Hold'
-  if (/interview|shortlist|offer|review|selected/.test(v)) return 'Working'
+  if (/interview|shortlist|offer|placed|review|selected|forward|client/.test(v)) return 'Working'
+  if (/sourced|new|parsed/.test(v)) return 'Sourced'
   return 'Submitted'
+}
+
+const norm = (v?: string | null) => String(v || '').trim().toLowerCase()
+const nameMatch = (a?: string | null, b?: string | null) => {
+  const x = norm(a)
+  const y = norm(b)
+  if (!x || !y) return false
+  return x === y || x.includes(y) || y.includes(x)
+}
+
+const recruiterIdentityKeys = (r: Pick<Recruiter, 'id' | 'name' | 'email'> & { _id?: string }) => {
+  const keys = new Set<string>()
+  if (r._id) keys.add(String(r._id))
+  if (r.id) keys.add(String(r.id))
+  return keys
+}
+
+const reqAssignedTo = (
+  req: Requirement,
+  keys: Set<string>,
+  name: string,
+  email?: string,
+) => {
+  if (req.assignmentStatus === 'Unassigned') return false
+  const ids = Array.isArray((req as any).assignedRecruiterIds)
+    ? (req as any).assignedRecruiterIds.map((id: unknown) => String(id))
+    : []
+  if (ids.some((id: string) => keys.has(id))) return true
+  const names = String((req as any).assignedRecruiterNames || req.owner || '')
+    .split(',')
+    .map(n => n.trim())
+    .filter(Boolean)
+  return names.some(n => nameMatch(n, name))
+}
+
+const submissionOwnedBy = (
+  s: Submission,
+  keys: Set<string>,
+  name: string,
+  email?: string,
+) => {
+  const recId = String((s as any).recruiterId || '').trim()
+  if (recId && keys.has(recId)) return true
+  const recEmail = norm((s as any).recruiterEmail)
+  if (email && recEmail && recEmail === norm(email)) return true
+  return nameMatch(s.recruiter, name)
+}
+
+const candidateOwnedBy = (
+  c: Candidate,
+  keys: Set<string>,
+  name: string,
+) => {
+  const sourcedId = String(c.sourcedByRecruiterId || '').trim()
+  if (sourcedId && keys.has(sourcedId)) return true
+  return nameMatch(c.createdByName, name)
+}
+
+/** Build one recruiter's live performance row from workspace data. */
+export function buildHistoryItemForRecruiter(
+  r: Pick<Recruiter, 'id' | 'name' | 'email' | 'lead' | 'submissions' | 'interviews' | 'placements'> & { _id?: string },
+  requirements: Requirement[],
+  submissions: Submission[],
+  candidates: Candidate[] = [],
+): RecruiterHistoryItem {
+  const keys = recruiterIdentityKeys(r)
+  const name = r.name || ''
+  const email = r.email || ''
+  const reqs = requirements.filter(q => reqAssignedTo(q, keys, name, email))
+  const subs = submissions.filter(s => submissionOwnedBy(s, keys, name, email))
+  const sourced = candidates.filter(c => candidateOwnedBy(c, keys, name))
+
+  // Repo profiles + any submissions not already represented by a sourced candidate.
+  const sourcedRowsFromRepo = sourced.map(c => ({
+    id: String(c._id || c.id),
+    candidateName: c.name,
+    requirementName: 'Candidate Repository',
+    clientName: '—',
+    sourcedDate: fmtDate(c.submissionDate),
+    status: 'Sourced' as const,
+    experience: c.totalExperience || '—',
+    skills: String(c.skills || '')
+      .split(',')
+      .map(x => x.trim())
+      .filter(Boolean),
+    contactEmail: c.email,
+  }))
+  const sourcedRowsFromSubs = subs.map(s => ({
+    id: s.id,
+    candidateName: s.candidate,
+    requirementName:
+      requirements.find(
+        q =>
+          q.id === s.req ||
+          (q as any).reqCode === s.req ||
+          String((q as any)._id || '') === String((s as any).requirementId || ''),
+      )?.title || s.req,
+    clientName: s.client,
+    sourcedDate: fmtDate(s.submittedAt || s.createdAt || s.date),
+    status: subStatus(s.stage),
+    experience: s.experience || '—',
+    contactEmail: s.email,
+  }))
+  // Prefer submission pipeline status when the same person is already in repo.
+  const seen = new Set<string>()
+  const deduped = [...sourcedRowsFromSubs, ...sourcedRowsFromRepo].filter(row => {
+    const key = norm(row.contactEmail) || `name:${norm(row.candidateName)}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  const clients = [
+    ...new Set([...reqs.map(q => q.client), ...subs.map(s => s.client)].filter(Boolean)),
+  ]
+
+  return {
+    id: `HIST-${r.id || r._id || name}`,
+    recruiterName: name,
+    recruiterEmail: email,
+    recruiterAvatar: (name || '?').charAt(0).toUpperCase(),
+    roleTitle: 'Recruiter',
+    userRole: 'recruiter',
+    teamLead: r.lead || '—',
+    clientAccounts: clients,
+    assignedRequirementsCount: reqs.length,
+    sourcedProfilesCount: Math.max(sourced.length, deduped.length),
+    submittedProfilesCount: subs.length || r.submissions || 0,
+    interviewsCount: r.interviews || 0,
+    workingProfilesCount: subs.filter(s => subStatus(s.stage) === 'Working').length,
+    onHoldProfilesCount: subs.filter(s => subStatus(s.stage) === 'On Hold').length,
+    placedCount:
+      r.placements ||
+      subs.filter(s => /offer|placed|joined|selected/i.test(String(s.stage || ''))).length,
+    topSkillsSourced: [],
+    recentSourcedCandidates: deduped,
+    assignedRequirementsList: reqs.map(q => {
+      const reqSubs = subs.filter(
+        s =>
+          s.req === q.id ||
+          (s as any).requirementId === (q as any)._id ||
+          (q as any).reqCode === s.req,
+      )
+      return {
+        id: q.id,
+        reqName: q.title,
+        clientName: q.client,
+        status: (q.status === 'Closed'
+          ? 'Closed'
+          : (q.submissions || reqSubs.length || 0) > 0
+            ? 'In Progress'
+            : 'Open') as 'Open' | 'In Progress' | 'Closed',
+        assignedDate: fmtDate((q as any).createdAt || (q as any).firstDetectedAt),
+        submissionsCount: reqSubs.length || q.submissions || 0,
+        sourcedCount: reqSubs.length,
+        workingCount: reqSubs.filter(s => subStatus(s.stage) === 'Working').length,
+      }
+    }),
+  }
 }
 
 /** History rows built from live recruiters, their assigned requirements and their submissions. */
@@ -170,50 +331,11 @@ export function buildRecruiterHistory(
   recruiters: Recruiter[],
   requirements: Requirement[],
   submissions: Submission[],
+  candidates: Candidate[] = [],
 ): RecruiterHistoryItem[] {
-  const assigned = (name: string) =>
-    requirements.filter(r => (r.owner || '').split(',').map(n => n.trim()).includes(name))
-  const recruiterRows: RecruiterHistoryItem[] = recruiters.map(r => {
-    const reqs = assigned(r.name)
-    const subs = submissions.filter(s => s.recruiter === r.name)
-    const clients = [...new Set([...reqs.map(q => q.client), ...subs.map(s => s.client)].filter(Boolean))]
-    return {
-      id: `HIST-${r.id}`,
-      recruiterName: r.name,
-      recruiterEmail: r.email || '',
-      recruiterAvatar: (r.name || '?').charAt(0).toUpperCase(),
-      roleTitle: 'Recruiter',
-      userRole: 'recruiter',
-      teamLead: r.lead || '—',
-      clientAccounts: clients,
-      assignedRequirementsCount: reqs.length,
-      sourcedProfilesCount: subs.length,
-      submittedProfilesCount: r.submissions || subs.length,
-      interviewsCount: r.interviews || 0,
-      workingProfilesCount: subs.filter(s => subStatus(s.stage) === 'Working').length,
-      onHoldProfilesCount: subs.filter(s => subStatus(s.stage) === 'On Hold').length,
-      placedCount: r.placements || 0,
-      topSkillsSourced: [],
-      recentSourcedCandidates: subs.map(s => ({
-        id: s.id,
-        candidateName: s.candidate,
-        requirementName: requirements.find(q => q.id === s.req || (q as any).reqCode === s.req)?.title || s.req,
-        clientName: s.client,
-        sourcedDate: fmtDate(s.submittedAt || s.createdAt || s.date),
-        status: subStatus(s.stage),
-        experience: s.experience || '—',
-        contactEmail: s.email,
-      })),
-      assignedRequirementsList: reqs.map(q => ({
-        id: q.id,
-        reqName: q.title,
-        clientName: q.client,
-        status: (q.status === 'Closed' ? 'Closed' : (q.submissions || 0) > 0 ? 'In Progress' : 'Open') as 'Open' | 'In Progress' | 'Closed',
-        assignedDate: fmtDate(q.createdAt),
-        submissionsCount: q.submissions || 0,
-      })),
-    }
-  })
+  const recruiterRows: RecruiterHistoryItem[] = recruiters.map(r =>
+    buildHistoryItemForRecruiter(r, requirements, submissions, candidates),
+  )
   // Each lead: the sum of the lead's recruiters.
   const leadNames = [...new Set(recruiters.map(r => r.lead).filter(Boolean))] as string[]
   const leadRows: RecruiterHistoryItem[] = leadNames.map(lead => {
@@ -248,12 +370,31 @@ interface HistoryPageProps {
   recruiters?: Recruiter[]
   requirements?: Requirement[]
   submissions?: Submission[]
+  candidates?: Candidate[]
   currentUserName?: string
   currentUserEmail?: string
+  currentUserId?: string
 }
 
-export function HistoryPage({ role, currentUserName, currentUserEmail, recruiters = [], requirements = [], submissions = [] }: HistoryPageProps) {
-  const RECRUITERS_HISTORY_DATA = useMemo(() => buildRecruiterHistory(recruiters, requirements, submissions), [recruiters, requirements, submissions])
+export function HistoryPage({
+  role,
+  currentUserName,
+  currentUserEmail,
+  currentUserId,
+  recruiters = [],
+  requirements = [],
+  submissions = [],
+  candidates = [],
+}: HistoryPageProps) {
+  const session = getSessionUser()
+  const meName = currentUserName || session?.name || ''
+  const meEmail = currentUserEmail || session?.email || ''
+  const meId = currentUserId || session?.id || ''
+
+  const RECRUITERS_HISTORY_DATA = useMemo(
+    () => buildRecruiterHistory(recruiters, requirements, submissions, candidates),
+    [recruiters, requirements, submissions, candidates],
+  )
   // Determine if viewing as Super Admin / Admin or as a Recruiter / Lead
   const isSuperAdminOrAdmin = role === 'superadmin' || role === 'admin' || role === 'devteam'
   const isAuthorized = isSuperAdminOrAdmin || role === 'recruiter' || role === 'lead'
@@ -284,25 +425,53 @@ export function HistoryPage({ role, currentUserName, currentUserEmail, recruiter
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
 
-  // Identify logged in recruiter item for Recruiter / Lead view
+  // Identify logged in recruiter item for Recruiter / Lead view — always live from workspace.
   const myRecruiterHistory = useMemo(() => {
-    if (currentUserEmail) {
-      const found = RECRUITERS_HISTORY_DATA.find(
-        r => r.recruiterEmail.toLowerCase() === currentUserEmail.toLowerCase()
+    if (role === 'recruiter' || role === 'lead') {
+      const fromDirectory = recruiters.find(
+        r =>
+          (meEmail && norm(r.email) === norm(meEmail)) ||
+          (meId && (String(r._id || '') === meId || String(r.id) === meId)) ||
+          (meName && nameMatch(r.name, meName)),
       )
+      // Always compute from live reqs/subs/candidates so KPIs never stick at 0
+      // when directory metadata is incomplete.
+      return buildHistoryItemForRecruiter(
+        {
+          id: fromDirectory?.id || meId || meEmail || meName || 'me',
+          _id: fromDirectory?._id || meId || undefined,
+          name: fromDirectory?.name || meName || 'Recruiter',
+          email: fromDirectory?.email || meEmail,
+          lead: fromDirectory?.lead || (role === 'lead' ? meName : '—'),
+          submissions: fromDirectory?.submissions || 0,
+          interviews: fromDirectory?.interviews || 0,
+          placements: fromDirectory?.placements || 0,
+        },
+        requirements,
+        submissions,
+        candidates,
+      )
+    }
+    if (meEmail) {
+      const found = RECRUITERS_HISTORY_DATA.find(r => norm(r.recruiterEmail) === norm(meEmail))
       if (found) return found
     }
-    if (currentUserName) {
-      const found = RECRUITERS_HISTORY_DATA.find(
-        r => r.recruiterName.toLowerCase() === currentUserName.toLowerCase()
-      )
+    if (meName) {
+      const found = RECRUITERS_HISTORY_DATA.find(r => nameMatch(r.recruiterName, meName))
       if (found) return found
-    }
-    if (role === 'lead') {
-      return RECRUITERS_HISTORY_DATA.find(r => r.userRole === 'lead') || null
     }
     return null
-  }, [RECRUITERS_HISTORY_DATA, currentUserEmail, currentUserName, role])
+  }, [
+    RECRUITERS_HISTORY_DATA,
+    role,
+    meEmail,
+    meName,
+    meId,
+    recruiters,
+    requirements,
+    submissions,
+    candidates,
+  ])
 
   // Filtered Recruiters List for Super Admin or Team Lead
   const filteredRecruiters = useMemo(() => {

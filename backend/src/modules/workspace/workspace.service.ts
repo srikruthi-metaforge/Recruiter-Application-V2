@@ -79,11 +79,18 @@ export class WorkspaceService {
         .find(base)
         .populate('candidateId', 'name')
         .populate('requirementId', 'title clientName')
+        .populate('submissionId', 'recruiterId submissionId')
         .sort({ dateTime: 1 })
         .lean()
         .exec(),
       this.userModel.find({ ...base }).lean().exec(),
-      this.candidateModel.find(base).sort({ createdAt: -1 }).limit(100).lean().exec(),
+      this.candidateModel
+        .find(base)
+        .populate('sourcedByRecruiterId', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(500)
+        .lean()
+        .exec(),
       this.clientModel.find(base).sort({ clientName: 1 }).lean().exec(),
       this.activityLogModel.find({ orgId: base.orgId }).sort({ createdAt: -1 }).limit(200).lean().exec(),
       this.teamModel.find(base).populate('leadId', 'name email').populate('recruiterIds', 'name email').lean().exec(),
@@ -93,6 +100,35 @@ export class WorkspaceService {
     const subCounts = new Map<string, number>();
     const intCounts = new Map<string, number>();
     const placedCounts = new Map<string, number>();
+    // Live per-requirement counts for reports (do not trust stale submissionsCount fields).
+    const reqSubCounts = new Map<string, number>();
+    const reqIntCounts = new Map<string, number>();
+    const reqPlacedCounts = new Map<string, number>();
+
+    // Org-wide active submissions so requirement.submissions in reports stays accurate
+    // even when the caller's submission list is role-scoped (e.g. recruiter).
+    const allOrgSubs = await this.submissionModel
+      .find({ ...base, deletedAt: null })
+      .select('requirementId recruiterId stage')
+      .lean()
+      .exec();
+    for (const s of allOrgSubs as any[]) {
+      const reqKey = s.requirementId ? String(s.requirementId) : '';
+      if (reqKey) {
+        reqSubCounts.set(reqKey, (reqSubCounts.get(reqKey) || 0) + 1);
+        if (s.stage === 'Placed' || s.stage === 'Offered') {
+          reqPlacedCounts.set(reqKey, (reqPlacedCounts.get(reqKey) || 0) + 1);
+        }
+      }
+    }
+    for (const iv of interviews as any[]) {
+      const reqKey = iv.requirementId?._id
+        ? String(iv.requirementId._id)
+        : iv.requirementId
+          ? String(iv.requirementId)
+          : '';
+      if (reqKey) reqIntCounts.set(reqKey, (reqIntCounts.get(reqKey) || 0) + 1);
+    }
 
     const recruiterBySubmission = new Map<string, string>();
     for (const s of submissions as any[]) {
@@ -102,6 +138,12 @@ export class WorkspaceService {
       if (s.stage === 'Placed') placedCounts.set(recId, (placedCounts.get(recId) || 0) + 1);
     }
     const interviewRecruiterId = (iv: any): string => {
+      // Prefer recruiter on the linked submission doc (populated), then in-memory map.
+      const fromSub =
+        iv.submissionId && typeof iv.submissionId === 'object'
+          ? iv.submissionId.recruiterId?._id || iv.submissionId.recruiterId
+          : null;
+      if (fromSub) return String(fromSub);
       const sid = iv.submissionId?._id || iv.submissionId;
       return sid ? recruiterBySubmission.get(String(sid)) || '' : '';
     };
@@ -128,6 +170,8 @@ export class WorkspaceService {
         const admin = users.find((x: any) => x.role === 'admin');
         return {
           id: u.userId || key,
+          // Mongo id — required so FE can match assignedRecruiterIds / sourcedByRecruiterId.
+          _id: key,
           name: u.name,
           lead: lead?.name || '',
           admin: admin?.name || '',
@@ -215,23 +259,36 @@ export class WorkspaceService {
 
     const mappedReqs = requirements.map((r: any) => {
       const lead = r.assignedLeadId ? usersById.get(String(r.assignedLeadId)) : null;
-      const recNames = (r.assignedRecruiterIds || [])
-        .map((id: any) => usersById.get(String(id))?.name)
+      const assignedUsers = (r.assignedRecruiterIds || [])
+        .map((id: any) => usersById.get(String(id)))
         .filter(Boolean);
+      // Prefer real recruiters for "Assigned to Recruiter"; keep others only if no recruiter role users.
+      const recruiterRoleUsers = assignedUsers.filter(
+        (u: any) => String(u.role || '').toLowerCase() === 'recruiter',
+      );
+      const displayAssignees = recruiterRoleUsers.length > 0 ? recruiterRoleUsers : assignedUsers;
+      const recNames = displayAssignees.map((u: any) => u.name).filter(Boolean);
+      const reqKey = String(r._id);
       return mapRequirement({
         ...r,
         assignedLeadName: lead?.name,
         assignedRecruiterNames: recNames.join(', '),
+        // Prefer live counts so Reports update as soon as candidates are submitted.
+        submissionsCount: reqSubCounts.get(reqKey) || 0,
+        interviewsCount: reqIntCounts.get(reqKey) || 0,
+        placedCount: reqPlacedCounts.get(reqKey) || r.placedCount || 0,
       });
     });
 
     const mappedInterviews = interviews.map((iv: any) => {
-      const recName = usersById.get(interviewRecruiterId(iv))?.name || '';
+      const recId = interviewRecruiterId(iv);
+      const recName = usersById.get(recId)?.name || '';
       return mapInterview(iv, {
         candidateName: iv.candidateId?.name,
         title: iv.requirementId?.title,
         clientName: iv.requirementId?.clientName,
         recruiterName: recName,
+        recruiterId: recId,
       });
     });
 

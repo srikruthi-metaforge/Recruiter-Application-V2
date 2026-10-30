@@ -99,6 +99,9 @@ export function useAddCandidatePageHandlers2(s: AddCandidateVmState) {
         resumeFileId: saved.resumeFileId || d.resumeFileId || resumeFileId || undefined,
         submissionDate: saved.submissionDate || d.submissionDate,
       })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace_refresh'))
+      }
       setDraftsList(removeSavedDraft(draft.id))
       setShowSuccessToast(true)
       setTimeout(() => setShowSuccessToast(false), 3000)

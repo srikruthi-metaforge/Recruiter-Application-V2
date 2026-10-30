@@ -48,6 +48,18 @@ export class NotificationsService {
     return notification.save();
   }
 
+  /** Insert many notifications (best-effort; skips empty lists). */
+  async createNotifications(payloads: CreateNotificationPayload[]): Promise<number> {
+    if (!payloads?.length) return 0;
+    try {
+      const result = await this.notificationModel.insertMany(payloads, { ordered: false });
+      return result.length;
+    } catch {
+      // Partial insert is fine — never block the parent workflow.
+      return 0;
+    }
+  }
+
   /** GET /api/v1/notifications */
   async findAll(
     currentUser: any,

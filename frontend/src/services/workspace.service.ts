@@ -60,12 +60,30 @@ export const workspaceService = {
     api.post('/requirements', {
       title: body.title,
       client: body.client,
-      clientName: body.client,
+      clientName: (body as any).clientName || body.client,
+      clientId: (body as any).clientId,
       priority: body.priority,
       openings: body.openings,
-      skillsRequired: body.skills,
+      skillsRequired: body.skills || (body as any).skillsRequired,
       location: body.location,
-      status: body.status === 'Active' ? 'In Progress' : body.status,
+      // Portal "Active" maps to backend Open so new demands get a real reqCode and appear in the shared list.
+      status:
+        body.status === 'Closed'
+          ? 'Closed'
+          : body.status === 'Active' || !body.status
+            ? 'Open'
+            : body.status === 'In Progress' || body.status === 'Assigned' || body.status === 'On Hold' || body.status === 'Hold'
+              ? body.status
+              : 'Open',
+      clientEmail: body.clientEmail,
+      toEmails: (body as any).toEmails,
+      ccEmails: (body as any).ccEmails,
+      assignedLeadId: (body as any).assignedLeadId,
+      assignedRecruiterIds: (body as any).assignedRecruiterIds,
+      // Persist YEARLY BUDGET from Create Job Demand form.
+      budget: body.budget,
+      budgetText: body.budget || (body as any).budgetText,
+      budgetRange: (body as any).budgetRange,
     }),
   updateRequirements: (body: Requirement[]) => api.put('/requirements/bulk', body),
   updateRequirement: (id: string, body: Partial<Requirement> & Record<string, any>) => {
@@ -83,7 +101,44 @@ export const workspaceService = {
     api.post(`/requirements/${encodeURIComponent(id)}/revoke`, body),
   getOriginalEmail: (id: string) =>
     api.get<OriginalRequirementEmail>(`/requirements/${encodeURIComponent(id)}/original-email`),
-  createSubmission: (body: Submission) => api.post('/submissions', body),
+  createSubmission: (body: Submission & Record<string, any>) => {
+    const rawReq = String(body.reqCode || body.req || '').trim()
+    const reqCode = rawReq.replace(/\s*\([^()]*\)\s*$/, '').trim() || rawReq
+    const asObjectId = (v: unknown) =>
+      v && /^[a-f\d]{24}$/i.test(String(v)) ? String(v) : undefined
+    // Prefer Mongo _id; also accept requirementMongoId aliases from UI payloads.
+    const requirementId =
+      asObjectId(body.requirementId) ||
+      asObjectId(body.requirementMongoId) ||
+      asObjectId((body as any)._requirementId)
+    return api.post('/submissions', {
+      candidateId: asObjectId(body.candidateId) || asObjectId(body.candidateMongoId),
+      requirementId,
+      req: reqCode || undefined,
+      candidate: body.candidate,
+      email: body.email,
+      phone: body.phone,
+      experience: body.experience,
+      client: body.client,
+      recruiter: body.recruiter,
+      match: body.match,
+      stage: body.stage,
+      leadId: asObjectId(body.leadId),
+      clientEmails: body.clientEmails,
+      leadEmail: body.leadEmail,
+      leadEmails: body.leadEmails,
+      candidateIds: body.candidateIds,
+      ccEmails: body.ccEmails,
+      emailSubject: body.emailSubject,
+      trackerColumns: body.trackerColumns,
+      trackerRows: body.trackerRows,
+      trackerHeaderColor: body.trackerHeaderColor,
+      emailGreeting: body.emailGreeting,
+      emailIntroduction: body.emailIntroduction,
+      recruiterName: body.recruiterName,
+      recruiterEmail: body.recruiterEmail,
+    })
+  },
   saveInterviewFeedback: (id: string, status: string, notes: string) =>
     api.post(`/interviews/${encodeURIComponent(id)}/feedback`, {
       recommendation: status === 'Passed' || status === 'Confirmed' || status === 'Completed' ? 'Passed' : status === 'Rejected' || status === 'Cancelled' ? 'Rejected' : 'Hold',

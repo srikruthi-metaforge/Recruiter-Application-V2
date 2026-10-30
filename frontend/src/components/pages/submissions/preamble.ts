@@ -74,7 +74,10 @@ export function mapBackendSubmission(s: any): ScreenshotSubmission {
     submittedBy: recruiterName,
     submittedOn: dateStr,
     status: s.stage || 'Submitted to Client',
-    leadApprovalStatus: s.leadApprovalStatus || 'Forwarded',
+    // Never invent "Forwarded" for lead-review rows — that hid them from the lead inbox.
+    leadApprovalStatus:
+      s.leadApprovalStatus ||
+      (String(s.stage || '').toLowerCase().includes('lead') ? 'Pending' : 'Forwarded'),
     rejectionReason: s.rejectionReason || '',
     email,
     phone,

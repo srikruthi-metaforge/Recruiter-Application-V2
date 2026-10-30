@@ -6,15 +6,18 @@ export interface ToastItem {
   title: string
   message: string
   type: string
+  entityType?: string
+  entityId?: string
   createdAt?: string
 }
 
 interface NotificationToastProps {
   toasts: ToastItem[]
   onDismiss: (id: string) => void
+  onOpen?: (toast: ToastItem) => void
 }
 
-export function NotificationToast({ toasts, onDismiss }: NotificationToastProps) {
+export function NotificationToast({ toasts, onDismiss, onOpen }: NotificationToastProps) {
   if (!toasts || toasts.length === 0) return null
 
   return (
@@ -22,7 +25,19 @@ export function NotificationToast({ toasts, onDismiss }: NotificationToastProps)
       {toasts.map(toast => (
         <div
           key={toast.id}
-          className="pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-4 shadow-2xl border border-slate-700/60 flex items-start gap-3 transform transition-all duration-300 animate-in fade-in slide-in-from-top-4"
+          role={onOpen ? 'button' : undefined}
+          tabIndex={onOpen ? 0 : undefined}
+          onClick={() => onOpen?.(toast)}
+          onKeyDown={(e) => {
+            if (!onOpen) return
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onOpen(toast)
+            }
+          }}
+          className={`pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-4 shadow-2xl border border-slate-700/60 flex items-start gap-3 transform transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${
+            onOpen ? 'cursor-pointer hover:border-slate-500/80' : ''
+          }`}
         >
           <div className="mt-0.5 flex-shrink-0">
             {toast.type === 'interview' || toast.type === 'interview_scheduled' ? (
@@ -48,7 +63,10 @@ export function NotificationToast({ toasts, onDismiss }: NotificationToastProps)
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-bold text-white truncate font-sans">{toast.title}</h4>
               <button
-                onClick={() => onDismiss(toast.id)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDismiss(toast.id)
+                }}
                 className="text-slate-400 hover:text-white transition-colors p-0.5 rounded"
                 title="Dismiss pop-up"
               >

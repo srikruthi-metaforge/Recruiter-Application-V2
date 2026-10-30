@@ -201,7 +201,7 @@ export function ReqDetailActivity({ vm }: { vm: RequirementDetailVm }) {
                       <span className="text-[11px] font-medium text-slate-400">Live System State</span>
                     </div>
                     <p className="text-slate-300 leading-relaxed text-xs">
-                      Requirement <strong className="text-white">{requirement.id}</strong> is currently assigned to <strong className="text-white">{requirement.owner || '—'}</strong> with <strong className="text-white">{requirement.submissions || 7} total submissions</strong> and active client interviews in progress.
+                      Requirement <strong className="text-white">{requirement.id}</strong> is currently assigned to <strong className="text-white">{requirement.owner || '—'}</strong> with <strong className="text-white">{vm.reqSubmissionsLoaded ? reqSubmissions.length : Number(requirement.submissions || 0)} total submissions</strong> and active client interviews in progress.
                     </p>
                   </div>
                 </div>

@@ -36,11 +36,12 @@ export function SubmitToLeadCandidates({ vm }: { vm: SubmitToLeadVm }) {
             className="mt-0.5 w-4 h-4 text-amber-600 rounded cursor-pointer focus:ring-amber-500"
           />
           <span className="text-xs font-bold text-amber-950">
-            I confirm these candidates should be forwarded in the original client requirement email thread.
+            I confirm these candidates are ready to submit for this requirement.
           </span>
         </label>
         <p className="text-[11px] text-slate-500 pl-7">
-          One submission will be recorded; lead email and client thread forward for:{' '}
+          Use <strong>Submit to Lead</strong> for lead review in the app, or <strong>Submit to Client</strong> to
+          email the client thread for:{' '}
           <strong className="text-slate-800">{clientName || requirement?.client || 'the selected client'}</strong>
         </p>
       </div>

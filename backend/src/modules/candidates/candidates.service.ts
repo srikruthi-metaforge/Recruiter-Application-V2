@@ -20,6 +20,11 @@ import { assertCanAccessCandidate, orgScope, requireOrgId } from '../../common/s
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
+import {
+  displayCandidateId,
+  formatCandidateId,
+  parseCandidateSeq,
+} from '../../common/candidate-id.util';
 
 @Injectable()
 export class CandidatesService {
@@ -35,7 +40,7 @@ export class CandidatesService {
   ) {}
 
   /** Format document for API output */
-  private sanitizeCandidate(doc: any) {
+  private sanitizeCandidate(doc: any, fallbackCreatedByName?: string) {
     const obj = doc.toObject ? doc.toObject() : doc;
 
     const skillsList = Array.isArray(obj.skills) && obj.skills.length > 0
@@ -45,11 +50,25 @@ export class CandidatesService {
           : (typeof obj.skills === 'string' ? obj.skills.split(',').map((s: string) => s.trim()) : []));
 
     const nameVal = obj.name || obj.fullName || 'N/A';
+    const sourced =
+      obj.sourcedByRecruiterId && typeof obj.sourcedByRecruiterId === 'object'
+        ? obj.sourcedByRecruiterId
+        : null;
+    const sourcedId = sourced?._id
+      ? String(sourced._id)
+      : obj.sourcedByRecruiterId
+        ? String(obj.sourcedByRecruiterId)
+        : null;
+    const createdByName =
+      (sourced?.name && String(sourced.name).trim()) ||
+      (obj.createdByName && String(obj.createdByName).trim()) ||
+      (fallbackCreatedByName && String(fallbackCreatedByName).trim()) ||
+      '';
 
     return {
       ...obj,
       id: obj._id ? obj._id.toString() : obj.id,
-      candidateId: obj.candidateId || `CAND-${obj._id ? obj._id.toString().substring(18) : '000'}`,
+      candidateId: displayCandidateId(obj.candidateId, '—'),
       name: nameVal,
       fullName: nameVal,
       email: obj.email || '',
@@ -76,34 +95,66 @@ export class CandidatesService {
         ? `/api/v1/files/${String(obj.resumeFileId)}/download`
         : (obj.resumeUrl || obj.resumeFileUrl || null),
       status: obj.status || 'New',
-      sourcedByRecruiterId: obj.sourcedByRecruiterId ? obj.sourcedByRecruiterId.toString() : null,
+      sourcedByRecruiterId: sourcedId,
+      createdByName,
       createdAt: obj.createdAt || new Date(),
       updatedAt: obj.updatedAt || new Date(),
     };
   }
 
-  /** Generate CAND-XXXXX sequence code */
-  async generateCandidateId(orgId: Types.ObjectId): Promise<string> {
-    const regex = /^CAND-(\d+)$/;
-    const latest = await this.candidateModel
-      .find({ orgId, candidateId: regex })
-      .sort({ candidateId: -1 })
-      .limit(1)
-      .exec();
+  private async withSourcedRecruiter(doc: CandidateDocument | null) {
+    if (!doc) return doc;
+    await doc.populate('sourcedByRecruiterId', 'name email');
+    return doc;
+  }
 
-    let seq = 1;
-    if (latest && latest.length > 0) {
-      const parts = latest[0].candidateId.split('-');
-      const lastSeq = parseInt(parts[parts.length - 1], 10);
-      if (!isNaN(lastSeq)) {
-        seq = lastSeq + 1;
+  /**
+   * Next unique candidate number for the org.
+   * Continues from the highest existing id in Mongo (after dump/restore), e.g. 20834 → 20835.
+   * Stored as plain digits to match repository UI (not CAND-xxxxx).
+   */
+  async generateCandidateId(orgId: Types.ObjectId): Promise<string> {
+    const db = this.candidateModel.db;
+    const counters = db.collection('counters');
+    const counterKey = `candidateId:${orgId.toString()}`;
+
+    const existing = await counters.findOne({ _id: counterKey } as any);
+    if (!existing) {
+      const rows = await this.candidateModel
+        .find({ orgId, deletedAt: null })
+        .select('candidateId')
+        .lean()
+        .exec();
+      let maxSeq = 0;
+      for (const row of rows as Array<{ candidateId?: string }>) {
+        const n = parseCandidateSeq(row.candidateId);
+        if (n != null && n > maxSeq) maxSeq = n;
       }
-    } else {
-      const count = await this.candidateModel.countDocuments({ orgId }).exec();
-      seq = count + 1;
+      await counters.updateOne(
+        { _id: counterKey } as any,
+        { $setOnInsert: { seq: maxSeq, orgId } },
+        { upsert: true },
+      );
     }
 
-    return `CAND-${String(seq).padStart(5, '0')}`;
+    const updated: any = await counters.findOneAndUpdate(
+      { _id: counterKey } as any,
+      { $inc: { seq: 1 } },
+      { returnDocument: 'after', upsert: true },
+    );
+    const seq = Number(updated?.seq ?? updated?.value?.seq ?? 0);
+    if (!Number.isFinite(seq) || seq <= 0) {
+      const rows = await this.candidateModel.find({ orgId, deletedAt: null }).select('candidateId').lean().exec();
+      let maxSeq = 0;
+      for (const row of rows as Array<{ candidateId?: string }>) {
+        const n = parseCandidateSeq(row.candidateId);
+        if (n != null && n > maxSeq) maxSeq = n;
+      }
+      const next = maxSeq + 1;
+      await counters.updateOne({ _id: counterKey } as any, { $set: { seq: next, orgId } }, { upsert: true });
+      return formatCandidateId(next);
+    }
+    return formatCandidateId(seq);
   }
 
   /** GET /api/v1/candidates */
@@ -174,6 +225,7 @@ export class CandidatesService {
     if (limit > 0) {
       items = await this.candidateModel
         .find(filter)
+        .populate('sourcedByRecruiterId', 'name email')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -189,7 +241,12 @@ export class CandidatesService {
         totalPages: Math.ceil(total / limit),
       };
     } else {
-      items = await this.candidateModel.find(filter).sort({ createdAt: -1 }).limit(1000).exec();
+      items = await this.candidateModel
+        .find(filter)
+        .populate('sourcedByRecruiterId', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(1000)
+        .exec();
       return items.map((item) => this.sanitizeCandidate(item));
     }
   }
@@ -214,6 +271,7 @@ export class CandidatesService {
   /** GET /api/v1/candidates/:id */
   async findById(id: string, currentUser: any) {
     const doc = await this.loadCandidateForUser(id, currentUser);
+    await this.withSourcedRecruiter(doc);
     return this.sanitizeCandidate(doc);
   }
 
@@ -359,6 +417,7 @@ export class CandidatesService {
     });
 
     const saved = await newCandidate.save();
+    await this.withSourcedRecruiter(saved);
 
     if (resumeFile) {
       await this.recordPrimaryResume(saved, resumeFile._id as Types.ObjectId).catch((err) => {
@@ -382,7 +441,7 @@ export class CandidatesService {
       }
     }
 
-    return this.sanitizeCandidate(saved);
+    return this.sanitizeCandidate(saved, currentUser?.name);
   }
 
   /** PUT /api/v1/candidates/:id */
@@ -483,7 +542,8 @@ export class CandidatesService {
       } catch (e) {}
     }
 
-    return this.sanitizeCandidate(updated);
+    await this.withSourcedRecruiter(updated);
+    return this.sanitizeCandidate(updated, currentUser?.name);
   }
 
   /** POST /api/v1/candidates/bulk-upload */

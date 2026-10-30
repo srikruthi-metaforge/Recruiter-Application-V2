@@ -32,7 +32,7 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
   const [draftsList, setDraftsList] = useState<SavedDraftItem[]>(() => getSavedDrafts())
 
   // Form Fields State (pre-filled with optional defaults matching screenshot)
-  const [candidateId, setCandidateId] = useState(`CAND-${new Date().toISOString().slice(0, 10)}-001`)
+  const [candidateId, setCandidateId] = useState('Auto')
   const [submissionDate, setSubmissionDate] = useState(new Date().toISOString().slice(0, 10))
   const [candidateName, setCandidateName] = useState('')
   const [currentCompany, setCurrentCompany] = useState('')

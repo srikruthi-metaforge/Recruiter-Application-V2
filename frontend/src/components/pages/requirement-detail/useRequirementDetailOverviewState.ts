@@ -210,30 +210,82 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
 
   // Submissions made against this requirement (matched by its code or database id).
   const [reqSubmissions, setReqSubmissions] = useState<ScreenshotSubmission[]>([])
-  useEffect(() => {
-    let active = true
+  const [reqSubmissionsLoaded, setReqSubmissionsLoaded] = useState(false)
+  const reloadReqSubmissions = async () => {
+    const mongoId = String((requirement as any)?._id || '').trim()
+    const reqCode = String((requirement as any)?.reqCode || requirement?.id || '')
+      .replace(/\s*\([^()]*\)\s*$/, '')
+      .trim()
     const keys = new Set(
-      [requirement?.id, (requirement as any)?.reqCode, (requirement as any)?._id, (requirement as any)?.displayId]
+      [requirement?.id, (requirement as any)?.reqCode, mongoId, (requirement as any)?.displayId, reqCode]
         .filter(Boolean)
         .map(String),
     )
-    submissionsService
-      .list()
-      .then((data: any) => {
-        if (!active) return
-        const list: any[] = Array.isArray(data) ? data : data?.items || []
-        setReqSubmissions(
-          list.map(mapBackendSubmission).filter(sub => {
-            const rid = sub.raw?.requirementId
-            return keys.has(String(sub.reqId)) || keys.has(String(rid?._id || rid?.id || rid || ''))
-          }),
-        )
+    const q = mongoId
+      ? `?requirementId=${encodeURIComponent(mongoId)}`
+      : reqCode
+        ? `?requirementId=${encodeURIComponent(reqCode)}`
+        : ''
+    if (!q) return
+
+    const loadOnce = async () => {
+      const data: any = await submissionsService.list(q)
+      const list: any[] = Array.isArray(data) ? data : data?.items || []
+      return list.map(mapBackendSubmission).filter(sub => {
+        if (!q) {
+          const rid = sub.raw?.requirementId
+          return keys.has(String(sub.reqId)) || keys.has(String(rid?._id || rid?.id || rid || ''))
+        }
+        return true
       })
-      .catch(() => active && setReqSubmissions([]))
+    }
+
+    try {
+      // Prefer server filter so Pipeline shows everyone already on this requirement.
+      setReqSubmissions(await loadOnce())
+      setReqSubmissionsLoaded(true)
+    } catch {
+      // One retry — never wipe a good list on a transient 429/network blip
+      // (that was showing 0 resumes until the next login refreshed).
+      try {
+        await new Promise(r => setTimeout(r, 400))
+        setReqSubmissions(await loadOnce())
+        setReqSubmissionsLoaded(true)
+      } catch {
+        /* keep previous reqSubmissions / loaded flag */
+      }
+    }
+  }
+  useEffect(() => {
+    let active = true
+    let seq = 0
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    setReqSubmissionsLoaded(false)
+    const run = () => {
+      const mySeq = ++seq
+      void (async () => {
+        await reloadReqSubmissions()
+        if (!active || mySeq !== seq) return
+      })()
+    }
+    const refresh = () => {
+      // Collapse bursts from submit + workspace + StrictMode into one fetch.
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(run, 250)
+    }
+    run()
+    if (typeof window !== 'undefined') {
+      window.addEventListener('submissions_updated', refresh)
+    }
     return () => {
       active = false
+      if (debounceTimer) clearTimeout(debounceTimer)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('submissions_updated', refresh)
+      }
     }
-  }, [requirement?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requirement?.id, (requirement as any)?._id, (requirement as any)?.reqCode])
 
   useEffect(() => {
     setPipelineCandidates(
@@ -266,7 +318,18 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
         name: sub.candidateName,
         email: sub.email,
         submittedBy: sub.submittedBy,
-        submitterEmail: String(sub.raw?.recruiterId?.email || sub.raw?.recruiterEmail || ''),
+        submitterEmail: String(
+          (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
+            ? sub.raw.recruiterId.email
+            : '') ||
+            sub.raw?.recruiterEmail ||
+            '',
+        ),
+        recruiterMongoId: String(
+          (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
+            ? sub.raw.recruiterId._id || sub.raw.recruiterId.id
+            : sub.raw?.recruiterId) || '',
+        ),
         submittedOn: sub.submittedOn,
         status: sub.status,
         canSchedule: !/interview|offer|placed|rejected/i.test(sub.status || ''),
@@ -275,18 +338,16 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
   )
 
   const filteredHistoryRows = useMemo(() => {
+    // Trust the requirement-scoped API list. A second client-side "own submission"
+    // name filter previously wiped recruiter History when recruiterId was stamped
+    // as the lead (cards stayed 0 while the lead account showed the same rows).
     return rawHistorySubmissions.filter(row => {
-      // For recruiter module, ONLY show their own submissions!
-      if (isRecruiter) {
-        const isOwnSubmission =
-          (currentUserEmail && row.submitterEmail.toLowerCase() === currentUserEmail) ||
-          (currentUserName && row.submittedBy === currentUserName)
-        if (!isOwnSubmission) return false
-      }
-
       if (historyTabFilter !== 'all') {
         if (historyTabFilter === 'submitted_client' && row.status !== 'Submitted to Client') return false
         if (historyTabFilter === 'submitted_lead' && row.status !== 'Submitted to Lead') return false
+        if (historyTabFilter === 'interview' && !/interview/i.test(row.status || '')) return false
+        if (historyTabFilter === 'selected' && !/select|offer|placed/i.test(row.status || '')) return false
+        if (historyTabFilter === 'rejected' && !/reject/i.test(row.status || '')) return false
       }
 
       if (historySearchQuery.trim()) {
@@ -299,7 +360,35 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
 
       return true
     })
-  }, [role, currentUserName, historyTabFilter, historySearchQuery, rawHistorySubmissions])
+  }, [historyTabFilter, historySearchQuery, rawHistorySubmissions])
+
+  const historyStatusCounts = useMemo(() => {
+    // Metric cards ignore the active status tab so totals stay stable while filtering.
+    const scoped = rawHistorySubmissions
+    const assignedNames = String((requirement as any)?.assignedRecruiterNames || requirement.owner || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .filter(n => n.toLowerCase() !== 'unassigned')
+    return {
+      total: scoped.length,
+      leadReview: scoped.filter(r => r.status === 'Submitted to Lead').length,
+      client: scoped.filter(r => r.status === 'Submitted to Client').length,
+      interview: scoped.filter(r => /interview/i.test(r.status || '')).length,
+      selected: scoped.filter(r => /select|offer|placed/i.test(r.status || '')).length,
+      rejected: scoped.filter(r => /reject/i.test(r.status || '')).length,
+      recruitersWorking: isRecruiter
+        ? Math.max(
+            1,
+            new Set(
+              scoped.map(r => r.recruiterMongoId || r.submitterEmail || r.submittedBy).filter(Boolean),
+            ).size,
+          )
+        : new Set(
+            scoped.map(r => r.recruiterMongoId || r.submitterEmail || r.submittedBy).filter(Boolean),
+          ).size || assignedNames.length,
+    }
+  }, [rawHistorySubmissions, isRecruiter, requirement])
 
   const isUnassigned =
     requirement.assignmentStatus === 'Unassigned' || !requirement.owner || requirement.owner === 'Unassigned'
@@ -361,7 +450,9 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     currentUserName,
     rawHistorySubmissions,
     reqSubmissions,
+    reqSubmissionsLoaded,
     filteredHistoryRows,
+    historyStatusCounts,
     isUnassigned,
     showToast,
     mandatorySkills,
@@ -373,6 +464,7 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     handleUpdatePipelineStage,
     handleConfirmRejection,
     handleUpdateOfferLetterStatus,
+    reloadReqSubmissions,
   }
 }
 export type RequirementDetailVmState = ReturnType<typeof useRequirementDetailOverviewState>

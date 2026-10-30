@@ -290,11 +290,12 @@ import {
     WorkspaceModule,
     SeedModule,
     RecruiterAttendanceModule,
+    // SPA polls notifications + attendance; 100/min was too low and blocked lead actions.
     ThrottlerModule.forRoot([
       {
         name: 'default',
         ttl: 60000,
-        limit: 100,
+        limit: 400,
       },
     ]),
   ],

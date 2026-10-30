@@ -50,7 +50,11 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
               showToast(`Cannot add candidate: Requirement ${selectedReqForDetail.id} is On Hold`)
               return
             }
-            onOpenSubmit?.(selectedReqForDetail.id)
+            onOpenSubmit?.(
+              (selectedReqForDetail as any)._id ||
+                (selectedReqForDetail as any).reqCode ||
+                selectedReqForDetail.id,
+            )
           }}
           onEditRequirement={() => {
             if (isHold) {

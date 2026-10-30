@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -19,8 +20,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  /** GET /api/v1/notifications */
+  /** GET /api/v1/notifications — polled by the SPA; do not count against API budget. */
   @Get()
+  @SkipThrottle()
   async findAll(
     @Req() req: any,
     @Query('unreadOnly') unreadOnly?: boolean,

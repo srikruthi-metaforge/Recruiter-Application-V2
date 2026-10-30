@@ -90,7 +90,8 @@ export class RequirementsController {
 
   /** POST /api/v1/requirements */
   @Post()
-  @Roles('superadmin', 'admin', 'lead', 'devteam')
+  // Align with Create Job Demand portal: lead/admin/recruiter/dev can create; list stays org-wide.
+  @Roles('superadmin', 'admin', 'lead', 'devteam', 'recruiter')
   @RequirePermission('req_create')
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() dto: CreateRequirementDto, @Req() req: any) {

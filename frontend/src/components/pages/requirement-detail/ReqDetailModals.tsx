@@ -1,6 +1,8 @@
 import React from 'react'
 import { ScheduleInterviewModal } from '../../modals/ScheduleInterviewModal'
 import { SubmitCandidateModal } from '../../modals/SubmitCandidateModal'
+import { workspaceService } from '../../../services/workspace.service'
+import { apiErrorMessage } from '../../../services/candidatePayload'
 import { RequirementDetailVm } from './useRequirementDetailOverview'
 
 export function ReqDetailModals({ vm }: { vm: RequirementDetailVm }) {
@@ -15,6 +17,7 @@ export function ReqDetailModals({ vm }: { vm: RequirementDetailVm }) {
     setIsAddCandidateModalOpen,
     currentUserName,
     showToast,
+    reloadReqSubmissions,
   } = vm
   return (
     <>
@@ -37,16 +40,31 @@ export function ReqDetailModals({ vm }: { vm: RequirementDetailVm }) {
       />
 
 
-      {/* ADD CANDIDATE MODAL (IN-PLACE RECRUITER WORKFLOW) */}
+      {/* ADD CANDIDATE MODAL (fallback when parent does not open App modal) */}
       <SubmitCandidateModal
         isOpen={isAddCandidateModalOpen}
         onClose={() => setIsAddCandidateModalOpen(false)}
         requirements={[requirement]}
-        selectedReqId={requirement.id}
+        selectedReqId={(requirement as any)._id || requirement.id}
         currentRecruiterName={currentUserName}
-        onSubmit={(newSub) => {
-          showToast(`Candidate ${newSub.candidate} successfully submitted to client for ${requirement.id}!`)
-          setIsAddCandidateModalOpen(false)
+        onSubmit={async (newSub) => {
+          try {
+            await workspaceService.createSubmission({
+              ...newSub,
+              requirementId: (requirement as any)._id || (newSub as any).requirementId,
+              reqCode: (requirement as any).reqCode || (newSub as any).reqCode,
+              req: (requirement as any).reqCode || newSub.req,
+            } as any)
+            showToast(`Candidate ${newSub.candidate} successfully submitted for ${(requirement as any).reqCode || requirement.id}!`)
+            setIsAddCandidateModalOpen(false)
+            await reloadReqSubmissions?.()
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('submissions_updated'))
+            }
+          } catch (err) {
+            showToast(apiErrorMessage(err) || 'Failed to submit candidate')
+            throw err
+          }
         }}
       />
 

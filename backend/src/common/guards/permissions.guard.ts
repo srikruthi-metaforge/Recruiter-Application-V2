@@ -13,13 +13,14 @@ const FALLBACK_PERMISSIONS: Record<string, string[]> = {
     'rep_view_exec', 'rep_view_recruiter', 'user_manage',
   ],
   lead: [
-    'req_view_all', 'req_assign', 'req_edit',
+    'req_view_all', 'req_create', 'req_assign', 'req_edit',
     'cand_search', 'cand_add', 'cand_export',
     'sub_create', 'sub_view_all', 'sub_reassign', 'sub_move_stage',
     'int_schedule', 'int_join_links', 'int_feedback',
     'rep_view_recruiter',
   ],
   recruiter: [
+    'req_create',
     'req_assign',
     'req_edit',
     'cand_search', 'cand_add',

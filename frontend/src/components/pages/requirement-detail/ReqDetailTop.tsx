@@ -83,7 +83,12 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
                   showToast('Cannot add candidate: Requirement is On Hold')
                   return
                 }
-                if (onAddCandidate) onAddCandidate()
+                // Prefer parent handler (App SubmitCandidateModal → POST /submissions).
+                // Only open the in-page modal when no parent handler is wired.
+                if (onAddCandidate) {
+                  onAddCandidate()
+                  return
+                }
                 setIsAddCandidateModalOpen(true)
               }}
               title={isHold ? 'Requirement is On Hold - candidate submissions disabled' : 'Add Candidate'}

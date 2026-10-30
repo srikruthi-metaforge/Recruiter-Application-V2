@@ -29,6 +29,7 @@ interface NotificationPopoverProps {
   onMarkAllAsRead: () => void
   onMarkRead: (id: string, read: boolean) => void
   onDelete: (id: string, wasUnread: boolean) => void
+  onOpenNotification?: (n: NotificationItem) => void
 }
 
 /**
@@ -37,8 +38,13 @@ interface NotificationPopoverProps {
  */
 export function isAuditLogNotification(n: NotificationItem): boolean {
   const type = (n.type || '').toLowerCase()
+  const entityType = String((n as any).entityType || '').toLowerCase()
   const title = (n.title || '').toLowerCase()
   const msg = (n.message || '').toLowerCase()
+
+  if (entityType === 'attendance' || entityType === 'user') {
+    return true
+  }
 
   if (
     type.includes('attendance') ||
@@ -87,6 +93,7 @@ export function NotificationPopover({
   onMarkAllAsRead,
   onMarkRead,
   onDelete,
+  onOpenNotification,
 }: NotificationPopoverProps) {
   // Toggle: 'requirements' | 'audit_logs' | 'all'
   const [activeToggle, setActiveToggle] = useState<'all' | 'requirements' | 'audit_logs'>('all')
@@ -262,7 +269,10 @@ export function NotificationPopover({
               return (
                 <div
                   key={n.id}
-                  onClick={() => onMarkRead(n.id, n.read)}
+                  onClick={() => {
+                    onMarkRead(n.id, n.read)
+                    onOpenNotification?.(n)
+                  }}
                   className={`p-3.5 rounded-2xl border transition-all flex items-start gap-3.5 cursor-pointer group ${
                     isAudit
                       ? n.read

@@ -262,6 +262,10 @@ export function ScheduleInterviewModal({
         notes,
       }
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace_refresh'))
+        window.dispatchEvent(new CustomEvent('submissions_updated'))
+      }
       if (onScheduleSuccess) {
         onScheduleSuccess(scheduleData)
       }

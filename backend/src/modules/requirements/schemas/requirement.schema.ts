@@ -54,6 +54,14 @@ export class Requirement {
   @Prop({ default: 1, min: 1 })
   openings: number;
 
+  /** Denormalized count of active submissions for this requirement (reports / KPI cards). */
+  @Prop({ default: 0, min: 0 })
+  submissionsCount: number;
+
+  /** Denormalized count of interviews linked to this requirement. */
+  @Prop({ default: 0, min: 0 })
+  interviewsCount: number;
+
   @Prop({ default: 0, min: 0 })
   placedCount: number;
 

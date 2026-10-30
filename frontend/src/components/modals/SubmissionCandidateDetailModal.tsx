@@ -114,7 +114,6 @@ export function SubmissionCandidateDetailModal({
               <option value="Submitted">Submitted</option>
               <option value="Submitted to Lead">Submitted to Lead</option>
               <option value="Submitted to Client">Submitted to Client</option>
-              <option value="Approved">Approved</option>
               <option value="Interview Scheduled">Interview Scheduled</option>
               <option value="Selected">Selected</option>
               <option value="Placed">Placed</option>
@@ -124,29 +123,31 @@ export function SubmissionCandidateDetailModal({
 
           <div className="flex items-center gap-2">
             {onLeadApproval && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onLeadApproval(targetId, true, 'Approved')}
-                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs"
-                >
-                  Lead Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onLeadApproval(targetId, false, 'Rejected', 'Rejected by Lead')}
-                  className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg cursor-pointer transition-all text-xs"
-                >
-                  Lead Reject
-                </button>
-              </>
+              <button
+                type="button"
+                disabled={status === 'Rejected' || status === 'Submitted to Client'}
+                onClick={() => {
+                  const reason =
+                    (reasonInput && reasonInput.trim()) ||
+                    (selectedOption && selectedOption !== 'CUSTOM' ? selectedOption : '') ||
+                    'Rejected by Lead'
+                  if (onSaveRejectionReason) onSaveRejectionReason(submission.id, reason)
+                  onLeadApproval(targetId, false, 'Rejected', reason)
+                }}
+                className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Reject and notify the recruiter (uses rejection reason below if set)"
+              >
+                Lead Reject
+              </button>
             )}
 
             {onForwardClient && (
               <button
                 type="button"
-                onClick={() => onForwardClient(targetId, 'Forwarded via Candidate Modal')}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs"
+                disabled={status === 'Submitted to Client' || status === 'Rejected'}
+                onClick={() => onForwardClient(targetId, 'Approved and forwarded to client')}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Approve by forwarding to client — recruiter is notified"
               >
                 Forward to Client
               </button>

@@ -47,7 +47,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, { roleName: string; permissions: 
   lead: {
     roleName: 'Team Lead',
     permissions: [
-      'req_view_all', 'req_assign',
+      'req_view_all', 'req_create', 'req_edit', 'req_assign',
       'cand_search', 'cand_add', 'cand_export',
       'sub_create', 'sub_view_all', 'sub_reassign', 'sub_move_stage',
       'int_schedule', 'int_join_links', 'int_feedback',
@@ -57,6 +57,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, { roleName: string; permissions: 
   recruiter: {
     roleName: 'Recruiter',
     permissions: [
+      'req_create', 'req_edit', 'req_assign',
       'cand_search', 'cand_add',
       'sub_create', 'sub_move_stage',
       'int_schedule', 'int_join_links', 'int_feedback',

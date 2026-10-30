@@ -53,7 +53,7 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
     onSubmit, initialData, reqId, demandDate,
     requirementFrom, customCompany, clientLeadPoc, toEmails, ccEmails, jobTitle,
     setJobTitle, jobStatus, priority, openings,
-    yearlyBudget, locationInput, setLocationInput, locations,
+    yearlyBudget, budgetCurrency, locationInput, setLocationInput, locations,
     setLocations, mandatorySkillInput, setMandatorySkillInput, mandatorySkills,
     setMandatorySkills, skillInput, setSkillInput, skills,
     setSkills, jdText, jdFile, setJdText, setIsExtracting, showToast,
@@ -219,7 +219,7 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!jobTitle.trim()) {
       showToast('Please specify a Job Title.')
@@ -227,6 +227,16 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
     }
 
     const finalClient = requirementFrom === 'Other' ? customCompany || 'Other' : requirementFrom
+    const currencyCode = /USD|\$/i.test(budgetCurrency || '')
+      ? 'USD'
+      : /EUR|€/i.test(budgetCurrency || '')
+        ? 'EUR'
+        : 'INR'
+    const currencySymbol = currencyCode === 'USD' ? '$' : currencyCode === 'EUR' ? '€' : '₹'
+    const budgetAmount = Number(String(yearlyBudget || '').replace(/[^0-9.]/g, '')) || 0
+    const budgetDisplay = budgetAmount > 0
+      ? `${currencySymbol}${budgetAmount}`
+      : (initialData?.budget || '')
 
     const updatedReq: Requirement = {
       ...(initialData || {} as any),
@@ -249,11 +259,22 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
       openings: openings || 1,
       dueDate: demandDate || new Date().toISOString().split('T')[0],
       emailArrivedTime: initialData?.emailArrivedTime || '',
-      budget: yearlyBudget ? `₹${yearlyBudget}` : initialData?.budget || '',
+      budget: budgetDisplay,
       skills: mandatorySkills,
+      ...(budgetAmount > 0
+        ? {
+            budgetRange: { min: budgetAmount, max: budgetAmount, currency: currencyCode },
+            budgetText: budgetDisplay,
+          }
+        : {}),
     }
 
-    onSubmit(updatedReq)
+    try {
+      await onSubmit(updatedReq)
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to create requirement. Please try again.')
+      throw err
+    }
   }
 
   return {

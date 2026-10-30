@@ -19,8 +19,9 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Authenticated role is required for this action');
     }
 
-    if (user.role === 'superadmin' || user.role === 'devteam') return true;
-    if (required.includes(user.role)) return true;
+    const role = String(user.role || '').trim().toLowerCase();
+    if (role === 'superadmin' || role === 'devteam') return true;
+    if (required.map((r) => String(r).toLowerCase()).includes(role)) return true;
 
     throw new ForbiddenException('You do not have permission to perform this action');
   }

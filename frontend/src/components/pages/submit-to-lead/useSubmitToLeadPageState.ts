@@ -1,7 +1,7 @@
 import { CLIENT_TRACKER_PRESETS, columnsForClient, resolveClientPreset, submissionIntroduction } from './trackerPresets.data'
 import type { SubmitToLeadPageProps } from './preamble'
 import { getForwardRequestByReq, ForwardRequest } from '../../../data/forwardRequestsStore'
-import { saveSubmissionsStore, submissionForDuplicateCheck } from '../../../data/submissionsStore'
+import { submissionForDuplicateCheck } from '../../../data/submissionsStore'
 import { getSessionUser } from '../../../store/session'
 import { clientsService, submissionsService, usersService } from '../../../services/workspace.service'
 import { getClientEmailDefaults, sanitizeEmailList } from '../../../config/clientEmailDefaults'
@@ -100,6 +100,10 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
   const isApprovalRequested = forwardReq?.status === 'pending'
 
   const [submissionTick, setSubmissionTick] = useState(0)
+  /** Submissions already on THIS requirement only (never other reqs). */
+  const [existingOnThisRequirement, setExistingOnThisRequirement] = useState<
+    Array<{ candidateMongoId: string; email: string; phone: string; businessCandidateId: string; name: string; stage?: string; date?: string; recruiter?: string }>
+  >([])
 
   useEffect(() => {
     const refresh = () => setSubmissionTick(value => value + 1)
@@ -109,34 +113,48 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
 
   useEffect(() => {
     let cancelled = false
-    submissionsService.list()
+    const mongoReqId = String((requirement as any)?._id || '').trim()
+    const reqCode = String((requirement as any)?.reqCode || currentReqId || '')
+      .replace(/\s*\([^()]*\)\s*$/, '')
+      .trim()
+    const queryId = mongoReqId || reqCode
+    if (!queryId) {
+      setExistingOnThisRequirement([])
+      return
+    }
+    submissionsService
+      .list(`?requirementId=${encodeURIComponent(queryId)}`)
       .then((data) => {
         if (cancelled || !Array.isArray(data)) return
-        saveSubmissionsStore(data.map(submissionForDuplicateCheck))
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [currentReqId])
-
-  useEffect(() => {
-    const leadName = String(requirement?.assignedLead || '').trim().toLowerCase()
-    if (!leadName) return
-    let cancelled = false
-    usersService.list()
-      .then((users) => {
-        if (cancelled || !Array.isArray(users)) return
-        const named = users.filter((user: { name?: string; email?: string }) =>
-          String(user?.name || '').trim().toLowerCase() === leadName && String(user?.email || '').includes('@')
+        // Do NOT replace the global submissions store with a single-req list —
+        // that previously polluted duplicate checks across other requirements.
+        const mapped = data.map(submissionForDuplicateCheck)
+        setExistingOnThisRequirement(
+          mapped.map((s: any) => ({
+            candidateMongoId: String(
+              /^[a-f\d]{24}$/i.test(String(s.candidateId || ''))
+                ? s.candidateId
+                : (s as any).candidateMongoId || '',
+            )
+              .trim()
+              .toLowerCase(),
+            email: String(s.email || '').trim().toLowerCase(),
+            phone: String(s.phone || '').replace(/[^\d]/g, '').slice(-10),
+            businessCandidateId: String(s.businessCandidateId || '').trim().toLowerCase(),
+            name: String(s.candidate || '').trim().toLowerCase(),
+            stage: s.stage,
+            date: s.date,
+            recruiter: s.recruiter,
+          })),
         )
-        const leads = named.filter((user: { role?: string }) => String(user?.role || '').toLowerCase().includes('lead'))
-        const chosen = (leads.length ? leads : named)
-          .map((user: { email?: string }) => String(user.email || '').trim().toLowerCase())
-        const unique = [...new Set(chosen)]
-        if (unique.length) setLeadEmails(unique)
       })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [requirement?.assignedLead])
+      .catch(() => {
+        if (!cancelled) setExistingOnThisRequirement([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentReqId, (requirement as any)?._id, (requirement as any)?.reqCode, submissionTick])
 
   // Thread Subject
   const [threadSubject, setThreadSubject] = useState(
@@ -158,6 +176,63 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
   // Lead Email & Introduction (Multiple Lead emails support)
   const [leadEmails, setLeadEmails] = useState<string[]>([''])
   const leadEmail = leadEmails.filter(Boolean).join(',')
+
+  /** All Team Lead users from DB — for the Submit-to-Lead dropdown. */
+  const [availableLeads, setAvailableLeads] = useState<
+    Array<{ id: string; name: string; email: string }>
+  >([])
+  const [selectedLeadId, setSelectedLeadId] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    usersService
+      .list()
+      .then((users) => {
+        if (cancelled || !Array.isArray(users)) return
+        const leads = users
+          .filter((user: { role?: string; email?: string; deletedAt?: unknown }) => {
+            if (user?.deletedAt) return false
+            const role = String(user?.role || '').toLowerCase()
+            const isLeadRole =
+              role.includes('lead') || role === 'team_lead' || role === 'team lead'
+            return isLeadRole && String(user?.email || '').includes('@')
+          })
+          .map((user: { id?: string; _id?: string; name?: string; email?: string }) => ({
+            id: String(user.id || user._id || ''),
+            name: String(user.name || '').trim() || String(user.email || ''),
+            email: String(user.email || '')
+              .trim()
+              .toLowerCase(),
+          }))
+          .filter(lead => lead.id && lead.email)
+        setAvailableLeads(leads)
+
+        const assignedName = String(requirement?.assignedLead || '')
+          .trim()
+          .toLowerCase()
+        const assignedId = String((requirement as any)?.assignedLeadId || '').trim()
+        const preselect =
+          leads.find(l => assignedId && l.id === assignedId) ||
+          leads.find(l => assignedName && l.name.toLowerCase() === assignedName) ||
+          leads[0]
+        if (preselect) {
+          setSelectedLeadId(preselect.id)
+          setLeadEmails([preselect.email])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableLeads([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [requirement?.assignedLead, (requirement as any)?.assignedLeadId])
+
+  const handleSelectLead = (leadId: string) => {
+    setSelectedLeadId(leadId)
+    const lead = availableLeads.find(l => l.id === leadId)
+    if (lead?.email) setLeadEmails([lead.email])
+  }
 
   const handleAddLeadEmailField = () => {
     setLeadEmails(prev => [...prev, ''])
@@ -239,6 +314,10 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
     setLeadEmail,
     leadEmails,
     setLeadEmails,
+    availableLeads,
+    selectedLeadId,
+    setSelectedLeadId,
+    handleSelectLead,
     handleAddLeadEmailField,
     handleUpdateLeadEmail,
     handleRemoveLeadEmail,

@@ -91,12 +91,43 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
 
     if (role === 'lead') {
       return submissionsList.filter(item => {
-        const by = item.submittedBy.toLowerCase()
+        const by = (item.submittedBy || '').toLowerCase().trim()
+        const rawLead = item.raw?.leadId
+        const leadId = String(
+          (rawLead && typeof rawLead === 'object' ? (rawLead as any)._id || (rawLead as any).id : rawLead) ||
+            '',
+        ).trim()
+        const leadEmail = String(
+          (rawLead && typeof rawLead === 'object' ? (rawLead as any).email : '') ||
+            item.raw?.leadEmail ||
+            item.raw?.leadName ||
+            '',
+        )
+          .toLowerCase()
+          .trim()
+        const assignedToMe =
+          (activeRecruiterId && leadId && leadId === String(activeRecruiterId)) ||
+          (activeRecruiterEmail && leadEmail && leadEmail === activeRecruiterEmail)
+
+        const submittedByMe =
+          (activeRecruiterName && (by === activeRecruiterName || by.includes(activeRecruiterName))) ||
+          (activeRecruiterId &&
+            item.raw?.recruiterId &&
+            String(item.raw.recruiterId) === String(activeRecruiterId))
+
+        const pendingForLead =
+          (item.status || '').toLowerCase().includes('submitted to lead') ||
+          ((item.leadApprovalStatus || '').toLowerCase() === 'pending' &&
+            (item.status || '').toLowerCase().includes('lead'))
+
         if (scopeTab === 'my_submissions') {
-          return by.includes('harish') || by.includes('lead')
+          // Lead review queue: assigned to me, or pending lead review.
+          if (assignedToMe) return true
+          if (pendingForLead) return true
+          return false
         }
         if (scopeTab === 'team_members') {
-          return !by.includes('harish') && !by.includes('lead')
+          return !submittedByMe
         }
         return true
       })

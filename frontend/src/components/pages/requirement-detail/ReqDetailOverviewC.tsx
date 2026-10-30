@@ -4,7 +4,6 @@ import { RequirementDetailVm } from './useRequirementDetailOverview'
 
 export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
   const {
-    requirement,
     historyTabFilter,
     setHistoryTabFilter,
     historySearchQuery,
@@ -15,9 +14,23 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
     setSchedulingCandidateRow,
     isRecruiter,
     filteredHistoryRows,
+    historyStatusCounts,
     showToast,
     activeTab,
   } = vm
+  const counts = historyStatusCounts || {
+    total: filteredHistoryRows.length,
+    leadReview: 0,
+    client: 0,
+    interview: 0,
+    selected: 0,
+    rejected: 0,
+    recruitersWorking: isRecruiter ? 1 : 0,
+  }
+  const tabCountClass = (n: number, active: boolean) =>
+    `px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+      active ? 'bg-blue-200/60 text-blue-800' : n > 0 ? 'bg-blue-200/60 text-blue-800' : 'bg-slate-200 text-slate-700'
+    }`
   return (
     <>
       {activeTab === 'Overview' && (
@@ -35,26 +48,26 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="bg-slate-50/80 border border-gray-200/80 rounded-xl p-4 space-y-1">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">RECRUITERS WORKING</div>
-                <div className="text-2xl font-extrabold text-gray-900">{isRecruiter ? 1 : 4}</div>
+                <div className="text-2xl font-extrabold text-gray-900">{counts.recruitersWorking}</div>
               </div>
 
               <div className="bg-slate-50/80 border border-gray-200/80 rounded-xl p-4 space-y-1">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">RESUMES SUBMITTED</div>
-                <div className="text-2xl font-extrabold text-gray-900">{filteredHistoryRows.length}</div>
+                <div className="text-2xl font-extrabold text-gray-900">{counts.total}</div>
               </div>
 
               <div className="bg-slate-50/80 border border-gray-200/80 rounded-xl p-4 space-y-1">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">BY STATUS</div>
                 <div className="text-xs font-bold text-gray-800 flex flex-wrap gap-x-2 gap-y-1 pt-1">
-                  <span>Lead review: <strong className="text-slate-900">0</strong></span>
+                  <span>Lead review: <strong className="text-slate-900">{counts.leadReview}</strong></span>
                   <span className="text-gray-300">|</span>
-                  <span>Client: <strong className="text-slate-900">{filteredHistoryRows.filter(r => r.status === 'Submitted to Client').length}</strong></span>
+                  <span>Client: <strong className="text-slate-900">{counts.client}</strong></span>
                   <span className="text-gray-300">|</span>
-                  <span>Interview: <strong className="text-slate-900">0</strong></span>
+                  <span>Interview: <strong className="text-slate-900">{counts.interview}</strong></span>
                   <span className="text-gray-300">|</span>
-                  <span>Selected: <strong className="text-slate-900">0</strong></span>
+                  <span>Selected: <strong className="text-slate-900">{counts.selected}</strong></span>
                   <span className="text-gray-300">|</span>
-                  <span>Rejected: <strong className="text-slate-900">0</strong></span>
+                  <span>Rejected: <strong className="text-slate-900">{counts.rejected}</strong></span>
                 </div>
               </div>
             </div>
@@ -71,7 +84,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>All</span>
-                  <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">{filteredHistoryRows.length}</span>
+                  <span className={tabCountClass(counts.total, historyTabFilter === 'all')}>{counts.total}</span>
                 </button>
 
                 <button
@@ -83,7 +96,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>Submitted to Lead</span>
-                  <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">0</span>
+                  <span className={tabCountClass(counts.leadReview, historyTabFilter === 'submitted_lead')}>{counts.leadReview}</span>
                 </button>
 
                 <button
@@ -95,7 +108,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>Submitted to Client</span>
-                  <span className="px-1.5 py-0.2 bg-blue-200/60 text-blue-800 rounded-full text-[10px] font-extrabold">{filteredHistoryRows.filter(r => r.status === 'Submitted to Client').length}</span>
+                  <span className={tabCountClass(counts.client, historyTabFilter === 'submitted_client')}>{counts.client}</span>
                 </button>
 
                 <button
@@ -107,7 +120,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>Interview</span>
-                  <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">0</span>
+                  <span className={tabCountClass(counts.interview, historyTabFilter === 'interview')}>{counts.interview}</span>
                 </button>
 
                 <button
@@ -119,7 +132,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>Selected</span>
-                  <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">0</span>
+                  <span className={tabCountClass(counts.selected, historyTabFilter === 'selected')}>{counts.selected}</span>
                 </button>
 
                 <button
@@ -131,7 +144,7 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   <span>Rejected</span>
-                  <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded-full text-[10px] font-extrabold">0</span>
+                  <span className={tabCountClass(counts.rejected, historyTabFilter === 'rejected')}>{counts.rejected}</span>
                 </button>
               </div>
 
@@ -239,10 +252,14 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
 
             {/* Pagination Controls Footer */}
             <div className="flex items-center justify-between pt-2 text-xs text-gray-500 font-medium">
-              <span>Showing submissions 1-5 on page {historyPage}</span>
+              <span>
+                {filteredHistoryRows.length === 0
+                  ? 'No submissions yet'
+                  : `Showing submissions 1-${filteredHistoryRows.length} on page ${historyPage}`}
+              </span>
               <div className="flex items-center gap-1.5 font-bold">
                 <button
-                  disabled={historyPage === 1}
+                  disabled={historyPage === 1 || filteredHistoryRows.length === 0}
                   onClick={() => setHistoryPage(1)}
                   className="px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
                 >
@@ -255,21 +272,6 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   }`}
                 >
                   1
-                </button>
-                <button
-                  onClick={() => setHistoryPage(2)}
-                  className={`w-7 h-7 rounded-lg border text-xs cursor-pointer ${
-                    historyPage === 2 ? 'border-blue-600 bg-blue-50 text-blue-700 font-extrabold' : 'border-gray-200 text-gray-600'
-                  }`}
-                >
-                  2
-                </button>
-                <button
-                  disabled={historyPage === 2}
-                  onClick={() => setHistoryPage(2)}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                >
-                  Next &gt;
                 </button>
               </div>
             </div>

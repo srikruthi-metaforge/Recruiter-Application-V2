@@ -99,9 +99,16 @@ function formatBudgetDisplay(budgetRange?: { min?: number; max?: number; currenc
 }
 
 export function mapRequirement(r: any) {
-  const recruiterNames = r.assignedRecruiterNames || '';
-  const fallbackOwner = recruiterNames || r.assignedLeadName || 'Unassigned';
-  const assignmentStatus = r.assignmentStatus || (fallbackOwner !== 'Unassigned' ? 'Assigned' : 'Unassigned');
+  const recruiterNames = String(r.assignedRecruiterNames || '').trim();
+  // "Assigned to Recruiter" must show recruiter assignees — do not fall back to lead name.
+  const fallbackOwner = recruiterNames || 'Unassigned';
+  const hasAssignees =
+    Boolean(recruiterNames) ||
+    (Array.isArray(r.assignedRecruiterIds) && r.assignedRecruiterIds.length > 0) ||
+    Boolean(r.assignedLeadId || r.assignedLeadName);
+  const assignmentStatus =
+    r.assignmentStatus ||
+    (hasAssignees ? 'Assigned' : 'Unassigned');
   const owner = assignmentStatus === 'Unassigned' ? 'Unassigned' : fallbackOwner;
   const status = r.status === 'In Progress' ? 'Active' : (r.status || (assignmentStatus === 'Assigned' ? 'Assigned' : 'Open'));
   // reqCode is the stored application ID; id/displayId add the client's reference in brackets.
@@ -130,6 +137,10 @@ export function mapRequirement(r: any) {
     location: r.location,
     assignmentStatus,
     assignedLead: r.assignedLeadName,
+    assignedLeadId: r.assignedLeadId ? String(r.assignedLeadId) : undefined,
+    assignedRecruiterIds: Array.isArray(r.assignedRecruiterIds)
+      ? r.assignedRecruiterIds.map((id: any) => String(id))
+      : [],
     assignedRecruiterNames: recruiterNames,
     revokeRequested: r.revokeRequested,
     revokeReason: r.revokeReason,
@@ -180,12 +191,19 @@ export function mapSubmission(s: any) {
     id: s.submissionId || idOf(s),
     _id: idOf(s),
     candidate: cand?.name || s.candidateName || 'Candidate',
+    // Mongo id for duplicate checks; business code kept separately (CAND-* can collide).
+    candidateId: cand?._id ? String(cand._id) : (s.candidateId && typeof s.candidateId !== 'object' ? String(s.candidateId) : ''),
+    businessCandidateId: cand?.candidateId || null,
     req: req?.reqCode || s.req || '',
+    reqCode: req?.reqCode || s.req || '',
+    requirementId: req?._id ? String(req._id) : (s.requirementId && typeof s.requirementId !== 'object' ? String(s.requirementId) : ''),
     client: client?.clientName || req?.clientName || s.clientName || '',
     date: formatDate(s.submittedAt || s.createdAt),
     stage: s.stage || 'Submitted',
     match: `${score}%`,
     recruiter: rec?.name || s.recruiterName || '',
+    recruiterId: rec?._id ? String(rec._id) : (s.recruiterId && typeof s.recruiterId !== 'object' ? String(s.recruiterId) : ''),
+    recruiterEmail: rec?.email || s.recruiterEmail || '',
     email: cand?.email,
     phone: cand?.phone,
     experience: cand?.totalExperienceYears != null ? `${cand.totalExperienceYears} years` : undefined,
@@ -195,9 +213,10 @@ export function mapSubmission(s: any) {
   };
 }
 
-export function mapInterview(iv: any, extras?: { candidateName?: string; title?: string; clientName?: string; recruiterName?: string }) {
+export function mapInterview(iv: any, extras?: { candidateName?: string; title?: string; clientName?: string; recruiterName?: string; recruiterId?: string }) {
   const cand = iv.candidateId && typeof iv.candidateId === 'object' ? iv.candidateId : null;
   const req = iv.requirementId && typeof iv.requirementId === 'object' ? iv.requirementId : null;
+  const sub = iv.submissionId && typeof iv.submissionId === 'object' ? iv.submissionId : null;
   return {
     id: iv.interviewId || idOf(iv),
     _id: idOf(iv),
@@ -207,6 +226,8 @@ export function mapInterview(iv: any, extras?: { candidateName?: string; title?:
     stage: ROUND_MAP[iv.round] || iv.round || 'Screening',
     date: formatDateTime(iv.dateTime),
     recruiter: extras?.recruiterName || '',
+    recruiterId: extras?.recruiterId || '',
+    submissionId: sub?._id ? String(sub._id) : (iv.submissionId && typeof iv.submissionId !== 'object' ? String(iv.submissionId) : ''),
     status: INTERVIEW_STATUS_MAP[iv.status] || iv.status || 'Scheduled',
     notes: iv.notes || '',
   };
@@ -239,6 +260,10 @@ export function mapActivityLog(log: any) {
 }
 
 export function mapCandidate(c: any) {
+  const sourced =
+    c.sourcedByRecruiterId && typeof c.sourcedByRecruiterId === 'object'
+      ? c.sourcedByRecruiterId
+      : null;
   return {
     id: c.candidateId || idOf(c),
     _id: idOf(c),
@@ -261,6 +286,12 @@ export function mapCandidate(c: any) {
     offerInHand: c.offerInHand === 'Yes' || c.offerInHand === 'In Pipeline' ? c.offerInHand : 'No',
     notes: '',
     status: c.status === 'Interviewing' ? 'In Review' : c.status || 'New',
+    sourcedByRecruiterId: sourced?._id
+      ? String(sourced._id)
+      : c.sourcedByRecruiterId && typeof c.sourcedByRecruiterId !== 'object'
+        ? String(c.sourcedByRecruiterId)
+        : '',
+    createdByName: sourced?.name || c.createdByName || c.sourcedByRecruiterName || '',
   };
 }
 

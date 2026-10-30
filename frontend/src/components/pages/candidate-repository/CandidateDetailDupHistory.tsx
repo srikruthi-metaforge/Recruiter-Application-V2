@@ -19,7 +19,8 @@ export function CandidateDetailDupHistory({ vm, viewingCandidateDetail }: { vm: 
                 const modalDupCheck = checkDuplicateSubmission(activeReqId, {
                   email: viewingCandidateDetail.email,
                   phone: viewingCandidateDetail.phone,
-                  candidateId: viewingCandidateDetail.candidateId,
+                  candidateId: viewingCandidateDetail.id,
+                  businessCandidateId: viewingCandidateDetail.candidateId,
                   name: viewingCandidateDetail.name,
                 })
                 if (!modalDupCheck.isDuplicate) return null

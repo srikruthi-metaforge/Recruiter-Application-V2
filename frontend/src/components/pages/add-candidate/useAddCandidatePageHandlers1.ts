@@ -7,7 +7,7 @@ import type { AddCandidateVmState } from './useAddCandidatePageState'
 
 export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
   const {
-    onAddCandidate, setIsParsing, parsedFileName, setParsedFileName,
+    onAddCandidate, onOpenRepository, setIsParsing, parsedFileName, setParsedFileName,
     resumeFileId, setResumeFileId,
     setShowSuccessToast, setShowSaveDraftToast, setToastMsg, setDraftsList,
     isSaving, setIsSaving, selectedFile, setSelectedFile,
@@ -178,14 +178,14 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
         resumeFileId: saved.resumeFileId || fileId || undefined,
         submissionDate: saved.submissionDate || submissionDate,
       })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace_refresh'))
+      }
       setShowSuccessToast(true)
       setTimeout(() => setShowSuccessToast(false), 3000)
 
-      const match = candidateId.match(/(\d+)$/)
-      if (match) {
-        const nextNum = (parseInt(match[1], 10) + 1).toString().padStart(3, '0')
-        setCandidateId(`CAND-${new Date().toISOString().slice(0, 10)}-${nextNum}`)
-      }
+      // Backend assigns the next unique numeric id from Mongo; keep form on Auto.
+      setCandidateId('Auto')
 
       setCandidateName('')
       setCurrentCompany('')
@@ -220,8 +220,12 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
           applyParsedToForm(next.data)
           setSelectedFile(next.file)
           setResumeFileId(next.resumeFileId || null)
+          return
         }
       }
+
+      // Single (or last bulk) save → leave Search & Entry and open Candidate Repository.
+      onOpenRepository?.()
     } catch (err) {
       showError(apiErrorMessage(err))
     } finally {

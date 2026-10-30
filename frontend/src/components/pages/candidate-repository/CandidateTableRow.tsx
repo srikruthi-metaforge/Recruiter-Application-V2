@@ -22,12 +22,15 @@ export function CandidateTableRow({ item, vm }: { item: CandidateRepoItem; vm: C
     ? checkDuplicateSubmission(activeReqId, {
         email: item.email,
         phone: item.phone,
-        candidateId: item.candidateId,
+        candidateId: item.id,
+        businessCandidateId: item.candidateId,
         name: item.name,
       })
     : { isDuplicate: false }
 
-  const candidateDisplayId = item.candidateId || '19799'
+  const candidateDisplayId = String(item.candidateId || '')
+    .trim()
+    .replace(/^CAND-/i, '') || '—'
 
   return (
     <tr
@@ -107,12 +110,12 @@ export function CandidateTableRow({ item, vm }: { item: CandidateRepoItem; vm: C
 
       {/* CREATED */}
       <td className="px-4 py-4 whitespace-nowrap text-slate-700 text-xs font-normal">
-        {item.createdDate || '08 Oct 2026'}
+        {item.createdDate || '—'}
       </td>
 
       {/* CREATED BY */}
       <td className="px-4 py-4 whitespace-nowrap text-slate-700 text-xs font-normal">
-        {item.createdBy || 'Kalavathi Mallepogu'}
+        {item.createdBy || '—'}
       </td>
 
       {/* EDIT Action Button */}
