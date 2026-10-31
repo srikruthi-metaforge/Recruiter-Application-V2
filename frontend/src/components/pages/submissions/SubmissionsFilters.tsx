@@ -17,13 +17,18 @@ export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
     setStatusFilter,
     clientFilter,
     setClientFilter,
+    recruiterFilter,
+    setRecruiterFilter,
     scopeTab,
     setScopeTab,
     scopeSubmissions,
     clientOptions,
     clientCounts,
+    recruiterOptions,
+    recruiterCounts,
     filteredData,
   } = vm
+  const showRecruiterFilter = role === 'admin' || role === 'superadmin' || role === 'devteam'
   return (
     <>
       {/* 3. Scope Filter Toggle Controls Bar for Team Lead */}
@@ -97,7 +102,12 @@ export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
             <div className="px-3.5 py-2 rounded-xl bg-purple-50 text-[#6B3BF6] border border-purple-200 text-xs font-extrabold flex items-center gap-2 shrink-0 shadow-2xs animate-in fade-in duration-150">
               <FileText className="w-3.5 h-3.5 text-[#6B3BF6]" />
               <span>
-                {filteredData.length} {clientFilter !== 'All' ? `Submissions (${clientFilter})` : 'Total Submissions'}
+                {filteredData.length}{' '}
+                {recruiterFilter !== 'All'
+                  ? `Submissions (${recruiterFilter})`
+                  : clientFilter !== 'All'
+                    ? `Submissions (${clientFilter})`
+                    : 'Total Submissions'}
               </span>
             </div>
           </div>
@@ -120,6 +130,25 @@ export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
               </select>
               <ChevronDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
+
+            {/* Recruiter filter (Admin / Super Admin) — filters SUBMITTED BY */}
+            {showRecruiterFilter && (
+              <div className="relative w-full sm:w-48">
+                <select
+                  value={recruiterFilter}
+                  onChange={e => setRecruiterFilter(e.target.value)}
+                  className="w-full appearance-none pl-3.5 pr-8 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] text-slate-700 bg-white font-bold cursor-pointer"
+                >
+                  <option value="All">All Recruiters ({scopeSubmissions.length})</option>
+                  {(recruiterOptions || []).map(name => (
+                    <option key={name} value={name}>
+                      Recruiter: {name} ({recruiterCounts?.[name] || 0})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            )}
 
             {/* Date filter dropdown */}
             <div className="relative w-full sm:w-44">

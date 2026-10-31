@@ -4,14 +4,14 @@ import type { SubmissionsVmState } from './useSubmissionsPageState'
 export function useSubmissionsPageHandlers2(s: SubmissionsVmState & Record<string, any>) {
   const {
     searchQuery, dateFilter, customStartDate, customEndDate,
-    statusFilter, clientFilter, filteredData, scopeTab
+    statusFilter, clientFilter, recruiterFilter, filteredData, scopeTab
   } = s
 
   const [currentPage, setCurrentPage] = useState(1)
 
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, dateFilter, customStartDate, customEndDate, clientFilter, statusFilter, scopeTab])
+  }, [searchQuery, dateFilter, customStartDate, customEndDate, clientFilter, statusFilter, recruiterFilter, scopeTab])
 
   const [pageSize, setPageSize] = useState(5)
 

@@ -27,6 +27,11 @@ import {
 import { PaginationFooter } from '../ui/PaginationFooter'
 import { PageHeader } from '../layout/PageHeader'
 import { useScrollReveal, useStaggerEnter } from '../../lib/animations'
+import {
+  isOnboardingStage,
+  ownsByRecruiter,
+  requirementAssignedToRecruiter,
+} from '../../utils/recruiterOwnership'
 
 interface Props {
   candidates?: Candidate[]
@@ -102,9 +107,20 @@ export function RecruiterDashboard({
       return matchName || matchEmail
     })
 
+    const me = {
+      id: String(session?.id || '').trim(),
+      email: currentUserEmail || session?.email || '',
+      name: currentUserName || session?.name || '',
+    }
+
     // 2. Synthesize log items from candidate submissions performed by this recruiter
     const submissionLogs: ActivityLogItem[] = submissions
-      .filter(s => !targetName || s.recruiter.toLowerCase().includes(targetName))
+      .filter(s =>
+        ownsByRecruiter(
+          { id: (s as any).recruiterId, email: (s as any).recruiterEmail, name: s.recruiter },
+          me,
+        ),
+      )
       .map(s => ({
         id: `sub-activity-${s.id}`,
         timestamp: s.date || 'Recently',
@@ -124,7 +140,12 @@ export function RecruiterDashboard({
 
     // 3. Synthesize log items from interview tracking
     const interviewLogs: ActivityLogItem[] = interviews
-      .filter(i => !targetName || (i.recruiter && i.recruiter.toLowerCase().includes(targetName)))
+      .filter(i =>
+        ownsByRecruiter(
+          { id: (i as any).recruiterId, email: (i as any).recruiterEmail, name: i.recruiter },
+          me,
+        ),
+      )
       .map(i => ({
         id: `iv-activity-${i.id}`,
         timestamp: i.date || 'Recently',
@@ -205,18 +226,18 @@ export function RecruiterDashboard({
   const kpiGridRef = useStaggerEnter<HTMLDivElement>({ y: 16, duration: 0.4, stagger: 0.07 })
 
   const myUserId = String(session?.id || '').trim()
-  const meName = (currentUserName || '').trim().toLowerCase()
-  const meEmail = (currentUserEmail || '').trim().toLowerCase()
+  const meName = (currentUserName || '').trim()
+  const meEmail = (currentUserEmail || '').trim()
+  const meIdentity = useMemo(
+    () => ({ id: myUserId, email: meEmail, name: meName }),
+    [myUserId, meEmail, meName],
+  )
 
   const assignedRequirements = useMemo(() => {
     return requirements.filter(r => {
       const ids = Array.isArray((r as any).assignedRecruiterIds)
         ? (r as any).assignedRecruiterIds.map((id: unknown) => String(id))
         : []
-      const names = String((r as any).assignedRecruiterNames || r.owner || '')
-        .split(',')
-        .map(name => name.trim().toLowerCase())
-        .filter(Boolean)
       const isUnassigned =
         r.assignmentStatus === 'Unassigned' ||
         ((!r.owner || r.owner === 'Unassigned') && ids.length === 0)
@@ -228,7 +249,8 @@ export function RecruiterDashboard({
         if (myUserId && leadId && leadId === myUserId) return true
         if (myUserId && ids.some((id: string) => id === myUserId)) return true
         const leadName = String((r as any).assignedLead || '').trim().toLowerCase()
-        if (meName && leadName && (leadName === meName || leadName.includes(meName) || meName.includes(leadName))) {
+        const meLower = meName.toLowerCase()
+        if (meLower && leadName && (leadName === meLower || leadName.includes(meLower) || meLower.includes(leadName))) {
           return true
         }
         // Legacy rows with recruiters but no lead stamped — still show for leads
@@ -238,54 +260,61 @@ export function RecruiterDashboard({
       }
 
       // Recruiter My Work: only requirements assigned to this recruiter
-      if (myUserId && ids.some((id: string) => id === myUserId)) return true
-      return names.some(name => meName && (name === meName || name.includes(meName) || meName.includes(name)))
+      return requirementAssignedToRecruiter(r as any, meIdentity)
     })
-  }, [requirements, myUserId, meName, isLeadOrAdmin, sessionRole])
+  }, [requirements, myUserId, meName, meIdentity, isLeadOrAdmin, sessionRole])
 
   const mySubmissions = useMemo(
     () =>
-      submissions.filter(s => {
-        const recId = String((s as any).recruiterId || '').trim()
-        if (myUserId && recId && recId === myUserId) return true
-        const email = String((s as any).recruiterEmail || '').trim().toLowerCase()
-        if (meEmail && email && email === meEmail) return true
-        const by = String(s.recruiter || '').trim().toLowerCase()
-        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
-      }),
-    [submissions, myUserId, meName, meEmail],
+      submissions.filter(s =>
+        ownsByRecruiter(
+          {
+            id: (s as any).recruiterId,
+            email: (s as any).recruiterEmail,
+            name: s.recruiter,
+          },
+          meIdentity,
+        ),
+      ),
+    [submissions, meIdentity],
   )
 
   const myInterviews = useMemo(
     () =>
-      interviews.filter(i => {
-        const recId = String((i as any).recruiterId || '').trim()
-        if (myUserId && recId && recId === myUserId) return true
-        const by = String(i.recruiter || '').trim().toLowerCase()
-        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
-      }),
-    [interviews, myUserId, meName],
+      interviews.filter(i =>
+        ownsByRecruiter(
+          {
+            id: (i as any).recruiterId,
+            email: (i as any).recruiterEmail,
+            name: i.recruiter,
+          },
+          meIdentity,
+        ),
+      ),
+    [interviews, meIdentity],
+  )
+
+  const myOnboardingSubmissions = useMemo(
+    () => mySubmissions.filter(s => isOnboardingStage(s.stage)),
+    [mySubmissions],
   )
 
   const kpiAssignedCount = assignedRequirements.length
   const kpiSubmissionsCount = mySubmissions.length
   const kpiInterviewsCount = myInterviews.length
-  const kpiOnboardingCount = useMemo(
-    () =>
-      mySubmissions.filter(s =>
-        /offered|placed|onboard|joined|selected/i.test(String(s.stage || '')),
-      ).length,
-    [mySubmissions],
-  )
+  const kpiOnboardingCount = myOnboardingSubmissions.length
   const myRepositoryCount = useMemo(
     () =>
-      (candidates || []).filter(c => {
-        const sourcedId = String((c as any).sourcedByRecruiterId || '').trim()
-        if (myUserId && sourcedId && sourcedId === myUserId) return true
-        const by = String((c as any).createdByName || '').trim().toLowerCase()
-        return Boolean(meName && by && (by === meName || by.includes(meName) || meName.includes(by)))
-      }).length,
-    [candidates, myUserId, meName],
+      (candidates || []).filter(c =>
+        ownsByRecruiter(
+          {
+            id: (c as any).sourcedByRecruiterId,
+            name: (c as any).createdByName,
+          },
+          meIdentity,
+        ),
+      ).length,
+    [candidates, meIdentity],
   )
 
   const handleOpenInlineCandidateRepo = (reqId: string) => {
@@ -744,6 +773,7 @@ export function RecruiterDashboard({
           requirements={assignedRequirements}
           submissions={submissions}
           interviews={interviews}
+          initialStatusFilter="Assigned"
           onOpenSubmit={onOpenSubmitCandidate}
           onNavigateToDashboard={() => {
             handleSetInlineView(null)
@@ -779,6 +809,7 @@ export function RecruiterDashboard({
           currentUserName={currentUserName}
           submissions={mySubmissions}
           requirements={assignedRequirements}
+          includeAllMySubmissions
           onOpenSubmitCandidate={onOpenSubmitCandidate}
         />
       </div>
@@ -808,6 +839,7 @@ export function RecruiterDashboard({
         <InterviewTrackingPage
           role="recruiter"
           interviews={myInterviews}
+          lockToPropInterviews
           onOpenFeedbackModal={onOpenFeedbackModal}
           requirements={assignedRequirements}
         />
@@ -835,12 +867,14 @@ export function RecruiterDashboard({
           </div>
         </div>
 
-        <InterviewTrackingPage
+        {/* Same rows as Onboarding KPI (offered / placed / selected submissions). */}
+        <SubmissionsPage
           role="recruiter"
-          interviews={myInterviews}
-          onOpenFeedbackModal={onOpenFeedbackModal}
+          currentUserName={currentUserName}
+          submissions={myOnboardingSubmissions}
           requirements={assignedRequirements}
-          initialStatusToggle="onboarding"
+          includeAllMySubmissions
+          onOpenSubmitCandidate={onOpenSubmitCandidate}
         />
       </div>
     )

@@ -66,7 +66,7 @@ export class WorkspaceService {
         .exec(),
       this.submissionModel
         .find(role === 'recruiter' && userObjectId
-          ? { ...base, $or: [{ recruiterId: userObjectId }, { leadId: userObjectId }] }
+          ? { ...base, recruiterId: userObjectId }
           : base)
         .populate('candidateId', 'name email phone totalExperienceYears')
         .populate('requirementId', 'title reqCode clientName')

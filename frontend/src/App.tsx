@@ -308,6 +308,7 @@ export default function App() {
 
     try {
       const created: any = await workspaceService.createSubmission(enrichedSub)
+      const sessionId = getSessionUser()?.id
       const saved: Submission = {
         ...enrichedSub,
         ...(created || {}),
@@ -316,6 +317,12 @@ export default function App() {
         req: matched?.id || reqCode || enrichedSub.req,
         requirementId: created?.requirementId || requirementId,
         stage: created?.stage || enrichedSub.stage || 'Submitted',
+        recruiter: created?.recruiter || enrichedSub.recruiter || currentUser.name,
+        recruiterId:
+          created?.recruiterId ||
+          (enrichedSub as any).recruiterId ||
+          sessionId ||
+          undefined,
       } as Submission
 
       setSubmissions(prev => {

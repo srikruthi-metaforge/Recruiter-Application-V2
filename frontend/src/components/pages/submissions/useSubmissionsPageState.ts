@@ -14,6 +14,7 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
     requirements = [],
     onOpenSubmitCandidate,
     onUpdateRequirements,
+    includeAllMySubmissions = false,
   }: SubmissionsPageProps = props as SubmissionsPageProps & Record<string, never>
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -22,6 +23,7 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
   const [customEndDate, setCustomEndDate] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [clientFilter, setClientFilter] = useState('All')
+  const [recruiterFilter, setRecruiterFilter] = useState('All')
   const [selectedSub, setSelectedSub] = useState<ScreenshotSubmission | null>(null)
 
   const [selectedReqDetail, setSelectedReqDetail] = useState<Requirement | null>(null)
@@ -44,11 +46,12 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
   })
 
   useEffect(() => {
-    if (submissions && submissions.length > 0) {
-      const mapped = submissions.map(s => mapBackendSubmission(s))
-      setSubmissionsList(mapped)
+    if (!Array.isArray(submissions)) return
+    // Keep My Workspace list in sync with the KPI-scoped props (including lead submissions).
+    if (includeAllMySubmissions || submissions.length > 0) {
+      setSubmissionsList(submissions.map(s => mapBackendSubmission(s)))
     }
-  }, [submissions])
+  }, [submissions, includeAllMySubmissions])
 
   const showToast = (msg: string) => {
     setToastMsg(msg)
@@ -172,6 +175,7 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
     requirements,
     onOpenSubmitCandidate,
     onUpdateRequirements,
+    includeAllMySubmissions,
     searchQuery,
     setSearchQuery,
     dateFilter,
@@ -184,6 +188,8 @@ export function useSubmissionsPageState(props: SubmissionsPageProps) {
     setStatusFilter,
     clientFilter,
     setClientFilter,
+    recruiterFilter,
+    setRecruiterFilter,
     selectedSub,
     setSelectedSub,
     selectedReqDetail,

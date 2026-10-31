@@ -216,9 +216,9 @@ export class SubmissionsService {
     // unscoped lead lists.
     // Recruiter assigned to the requirement + requirementId: ALL submissions on
     // that requirement (lead cards and recruiter cards stay in sync). Unscoped
-    // recruiter lists stay personal (recruiterId / leadId).
+    // recruiter lists stay personal (owned recruiterId only — not leadId rows).
     if (role === 'recruiter' && userObjectId && !(scopedRequirementId && isAssignedRecruiter)) {
-      filter.$or = [{ recruiterId: userObjectId }, { leadId: userObjectId }];
+      filter.recruiterId = userObjectId;
     } else if (isLeadRole && userObjectId && !scopedRequirementId) {
       const teamRecruiterIds: Types.ObjectId[] = [userObjectId];
       const teams = await this.teamModel.find({ orgId, leadId: userObjectId, deletedAt: null }).exec();

@@ -1,6 +1,13 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Requirement } from '../../../types'
 import type { RequirementsVmState } from './useRequirementsPageState'
+import {
+  isRequirementUnassigned,
+  isRequirementAssigned,
+  isRequirementInProgress,
+  requirementHasSelections,
+  requirementHasRejection,
+} from '../../ui/requirementAssignment'
 
 /**
  * Safely extracts a canonical Date object representing when a requirement was created/received.
@@ -94,6 +101,8 @@ export function compareRequirementsDescending(a: Requirement, b: Requirement): n
 export function useRequirementsPageHandlers3(s: RequirementsVmState) {
   const {
     role, localRequirements,
+    submissions = [],
+    interviews = [],
     globalSearch, setGlobalSearch, statusDropdown, setStatusDropdown,
     clientDropdown, setClientDropdown,
     dateFilter, setDateFilter,
@@ -206,49 +215,41 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
         if (clientVal !== clientDropdown.toLowerCase()) return false
       }
 
-      // Status dropdown filter: When actively searching in the global search bar, show all matching client/req records
-      // unless the user has explicitly selected a specific status filter (e.g. 'Assigned', 'Closed')
-      if (statusDropdown !== 'All') {
+      // KPI card filter takes precedence over the status dropdown so counts match the list.
+      // Status dropdown still applies when Total (ALL) is selected.
+      if (activeCardFilter !== 'ALL') {
+        if (activeCardFilter === 'UNASSIGNED') return isRequirementUnassigned(r)
+        if (activeCardFilter === 'ASSIGNED') return isRequirementAssigned(r)
+        if (activeCardFilter === 'IN_PROGRESS') return isRequirementInProgress(r)
+        if (activeCardFilter === 'SUBMISSIONS') return (r.submissions || 0) > 0
+        if (activeCardFilter === 'INTERVIEWS') return (r.interviews || 0) > 0
+        if (activeCardFilter === 'SELECTIONS') return requirementHasSelections(r)
+        if (activeCardFilter === 'REJECTIONS') {
+          return requirementHasRejection(r, interviews, submissions)
+        }
+      } else if (statusDropdown !== 'All') {
+        // Status dropdown filter (Total card / no KPI card active)
         const isDefaultUnassigned = statusDropdown === 'Unassigned'
         const hasSearch = Boolean(globalSearch.trim())
 
         if (!hasSearch || !isDefaultUnassigned) {
           if (statusDropdown === 'Unassigned') {
-            if (r.owner && r.owner !== 'Unassigned' && r.assignmentStatus !== 'Unassigned') return false
+            if (!isRequirementUnassigned(r)) return false
           } else if (statusDropdown === 'Assigned') {
-            if (!r.owner || r.owner === 'Unassigned' || r.assignmentStatus === 'Unassigned') return false
+            if (!isRequirementAssigned(r)) return false
           } else if (statusDropdown === 'Submitted' || statusDropdown === 'Submitted to Lead' || statusDropdown === 'Submitted to Client') {
             if ((r.submissions || 0) === 0) return false
           } else if (statusDropdown === 'Interview') {
             if ((r.interviews || 0) === 0) return false
           } else if (statusDropdown === 'Selected') {
-            if ((r.placed || r.selections || 0) === 0) return false
+            if (!requirementHasSelections(r)) return false
           } else if (statusDropdown === 'Rejected') {
-            if ((r.rejections || 0) === 0) return false
+            if (!requirementHasRejection(r, interviews, submissions)) return false
           } else if (statusDropdown === 'Closed') {
             if (r.status !== 'Closed' && r.assignmentStatus !== 'Closed') return false
           } else if (statusDropdown === 'Custom') {
             if (r.status === 'Closed' || r.assignmentStatus === 'Closed') return false
           }
-        }
-      }
-
-      // Card filters: active when not overridden by global search query
-      if (!globalSearch.trim()) {
-        if (activeCardFilter === 'UNASSIGNED') {
-          return !r.owner || r.owner === 'Unassigned'
-        } else if (activeCardFilter === 'ASSIGNED') {
-          return r.owner && r.owner !== 'Unassigned'
-        } else if (activeCardFilter === 'IN_PROGRESS') {
-          return r.status === 'Active' || r.assignmentStatus === 'In Progress'
-        } else if (activeCardFilter === 'SUBMISSIONS') {
-          return r.submissions > 0
-        } else if (activeCardFilter === 'INTERVIEWS') {
-          return r.interviews > 0
-        } else if (activeCardFilter === 'SELECTIONS') {
-          return (r.placed || r.selections || 0) > 0
-        } else if (activeCardFilter === 'REJECTIONS') {
-          return (r.rejections || 0) > 0
         }
       }
 
@@ -280,7 +281,7 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
       }
       return compareRequirementsDescending(a, b) * mult
     })
-  }, [localRequirements, globalSearch, statusDropdown, clientDropdown, dateFilter, customStartDate, customEndDate, activeCardFilter, sortField, sortOrder])
+  }, [localRequirements, globalSearch, statusDropdown, clientDropdown, dateFilter, customStartDate, customEndDate, activeCardFilter, sortField, sortOrder, submissions, interviews])
 
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)

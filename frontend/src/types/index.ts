@@ -150,6 +150,11 @@ export interface Interview {
   recruiter: string
   status: InterviewStatus
   notes?: string
+  requirementId?: string
+  reqCode?: string
+  recruiterId?: string
+  recruiterEmail?: string
+  submissionId?: string
 }
 
 export type SubmissionStage = 'Submitted' | 'Submitted to Client' | 'Submitted to Lead' | 'Client Review' | 'Interview Scheduled' | 'Offered' | 'Placed' | 'Rejected'
@@ -163,6 +168,7 @@ export interface Submission {
   stage: SubmissionStage
   match: string
   recruiter: string
+  recruiterId?: string
   resumeUrl?: string
   email?: string
   phone?: string

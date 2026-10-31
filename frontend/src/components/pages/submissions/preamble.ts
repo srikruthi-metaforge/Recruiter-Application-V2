@@ -7,6 +7,11 @@ export interface SubmissionsPageProps {
   requirements?: Requirement[]
   onOpenSubmitCandidate?: (reqId?: string) => void
   onUpdateRequirements?: (updated: Requirement[]) => void
+  /**
+   * When true, recruiter Total Submissions includes every owned row (incl. Submitted to Lead).
+   * Recruiter Reports and My Workspace both use this so counts stay aligned.
+   */
+  includeAllMySubmissions?: boolean
 }
 
 export interface ScreenshotSubmission {

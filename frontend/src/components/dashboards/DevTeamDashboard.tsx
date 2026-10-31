@@ -122,6 +122,7 @@ export function DevTeamDashboard({
           requirements={requirements}
           interviews={interviews}
           recruiters={recruiters}
+          initialStatusFilter="All"
           onOpenSubmit={onOpenSubmit}
           onUpdateRequirements={onUpdateRequirements}
         />

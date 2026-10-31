@@ -9,6 +9,13 @@ import {
   XCircle,
 } from 'lucide-react'
 import { Requirement, Submission, Interview } from '../../types'
+import {
+  isRequirementUnassigned,
+  isRequirementAssigned,
+  isRequirementInProgress,
+  requirementHasSelections,
+  requirementHasRejection,
+} from './requirementAssignment'
 
 export type CardFilterType =
   | 'ALL'
@@ -25,38 +32,17 @@ export function buildRequirementCards(
   submissions: Submission[],
   interviews: Interview[],
 ) {
+  // Every KPI value = number of requirement rows shown when that card is clicked
   const totalReqs = requirements.length
-  const totalSubmissionsCount = requirements.reduce(
-    (acc, r) => acc + (r.submissions || 0),
-    submissions.length
-  )
-  const unassignedCount = requirements.filter(
-    r =>
-      !r.owner ||
-      r.owner === 'Unassigned' ||
-      r.assignmentStatus === 'Unassigned'
+  const submissionsReqCount = requirements.filter(r => (r.submissions || 0) > 0).length
+  const unassignedCount = requirements.filter(isRequirementUnassigned).length
+  const assignedCount = requirements.filter(isRequirementAssigned).length
+  const inProgressCount = requirements.filter(isRequirementInProgress).length
+  const interviewsReqCount = requirements.filter(r => (r.interviews || 0) > 0).length
+  const selectionsReqCount = requirements.filter(requirementHasSelections).length
+  const rejectionsReqCount = requirements.filter(r =>
+    requirementHasRejection(r, interviews, submissions),
   ).length
-  const assignedCount = requirements.filter(
-    r =>
-      r.owner &&
-      r.owner !== 'Unassigned' &&
-      r.assignmentStatus !== 'Unassigned'
-  ).length
-  const inProgressCount = requirements.filter(
-    r => r.status === 'Active' || r.assignmentStatus === 'In Progress'
-  ).length
-  const totalInterviewsCount = requirements.reduce(
-    (acc, r) => acc + (r.interviews || 0),
-    interviews.length
-  )
-  const totalSelectionsCount = requirements.reduce(
-    (acc, r) => acc + (r.placed || r.selections || 0),
-    0
-  )
-  const totalRejectionsCount = requirements.reduce(
-    (acc, r) => acc + (r.rejections || 0),
-    interviews.filter(i => i.status === 'Rejected').length
-  )
 
   return [
     {
@@ -71,7 +57,7 @@ export function buildRequirementCards(
     {
       key: 'SUBMISSIONS' as CardFilterType,
       label: 'Submissions',
-      value: totalSubmissionsCount,
+      value: submissionsReqCount,
       icon: Send,
       bg: '#E6F8F0',
       borderColor: '#A7F3D0',
@@ -107,7 +93,7 @@ export function buildRequirementCards(
     {
       key: 'INTERVIEWS' as CardFilterType,
       label: 'Interviews',
-      value: totalInterviewsCount,
+      value: interviewsReqCount,
       icon: Video,
       bg: '#EEF2FF',
       borderColor: '#C7D2FE',
@@ -116,7 +102,7 @@ export function buildRequirementCards(
     {
       key: 'SELECTIONS' as CardFilterType,
       label: 'Selected',
-      value: totalSelectionsCount,
+      value: selectionsReqCount,
       icon: CheckCircle2,
       bg: '#E6F8F0',
       borderColor: '#A7F3D0',
@@ -125,7 +111,7 @@ export function buildRequirementCards(
     {
       key: 'REJECTIONS' as CardFilterType,
       label: 'Rejected',
-      value: totalRejectionsCount,
+      value: rejectionsReqCount,
       icon: XCircle,
       bg: '#FDE8EC',
       borderColor: '#FECDD3',
