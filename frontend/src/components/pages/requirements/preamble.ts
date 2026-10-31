@@ -36,6 +36,8 @@ export interface RequirementsPageProps {
   submissions?: Submission[]
   interviews?: Interview[]
   recruiters?: Recruiter[]
+  /** Initial value for the assignment status filter dropdown (e.g. Assigned / Unassigned). */
+  initialStatusFilter?: string
   onOpenSubmit?: (reqId?: string) => void
   onUpdateRequirements?: (updated: Requirement[]) => void
   /** Persist a newly created demand via POST /requirements (not bulk update). */

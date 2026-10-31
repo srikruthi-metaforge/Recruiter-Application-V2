@@ -13,6 +13,8 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
     setIsCreatingDemand,
     activeCardFilter,
     setActiveCardFilter,
+    setStatusDropdown,
+    setGlobalSearch,
     handleGrantRevokeApproval,
     handleDeclineRevokeRequest,
     roleLabel,
@@ -21,6 +23,16 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
     mailSyncStatus,
     handleSyncEmails,
   } = vm
+
+  const handleSelectCardFilter = (key: typeof activeCardFilter) => {
+    setActiveCardFilter(key)
+    setGlobalSearch('')
+    // Keep status dropdown in sync so the table matches the KPI card
+    if (key === 'UNASSIGNED') setStatusDropdown('Unassigned')
+    else if (key === 'ASSIGNED') setStatusDropdown('Assigned')
+    else setStatusDropdown('All')
+  }
+
   return (
     <>
       {/* 8 TOP CARDS GRID */}
@@ -29,7 +41,7 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
         submissions={submissions}
         interviews={interviews}
         activeCardFilter={activeCardFilter}
-        onSelectFilter={setActiveCardFilter}
+        onSelectFilter={handleSelectCardFilter}
         onCreateNewJobDemand={() => setIsCreatingDemand(true)}
         onSyncEmails={handleSyncEmails}
         isSyncingMail={isSyncingMail}

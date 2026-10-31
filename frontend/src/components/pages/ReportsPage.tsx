@@ -1591,8 +1591,10 @@ export function ReportsPage({
       {reportsTopTab === 'submissions' ? (
         <SubmissionsPage
           role={role}
+          currentUserName={meName}
           submissions={submissions}
           requirements={requirements}
+          includeAllMySubmissions={role === 'recruiter'}
           onOpenSubmitCandidate={onOpenSubmit ? (reqId?: string) => onOpenSubmit(reqId) : undefined}
           onUpdateRequirements={onUpdateRequirements}
         />
@@ -1665,6 +1667,7 @@ export function ReportsPage({
               requirements={requirements}
               submissions={submissions}
               candidates={candidates}
+              interviews={interviews}
               currentUserName={meName}
               currentUserEmail={meEmail}
               currentUserId={meId}

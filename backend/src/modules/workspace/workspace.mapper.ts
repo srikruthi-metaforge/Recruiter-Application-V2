@@ -227,6 +227,10 @@ export function mapInterview(iv: any, extras?: { candidateName?: string; title?:
     date: formatDateTime(iv.dateTime),
     recruiter: extras?.recruiterName || '',
     recruiterId: extras?.recruiterId || '',
+    requirementId: req?._id
+      ? String(req._id)
+      : (iv.requirementId && typeof iv.requirementId !== 'object' ? String(iv.requirementId) : ''),
+    reqCode: req?.reqCode || '',
     submissionId: sub?._id ? String(sub._id) : (iv.submissionId && typeof iv.submissionId !== 'object' ? String(iv.submissionId) : ''),
     status: INTERVIEW_STATUS_MAP[iv.status] || iv.status || 'Scheduled',
     notes: iv.notes || '',

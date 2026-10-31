@@ -1,8 +1,25 @@
 import React, { useMemo, useState } from 'react'
 import { Requirement } from '../../../types'
 import { getSessionUser } from '../../../store/session'
+import { ownsByRecruiter } from '../../../utils/recruiterOwnership'
 import type { ScreenshotSubmission } from './preamble'
 import type { SubmissionsVmState } from './useSubmissionsPageState'
+
+function submissionOwnerFields(item: ScreenshotSubmission) {
+  const raw = item.raw || {}
+  const recruiterId =
+    typeof raw.recruiterId === 'object' && raw.recruiterId
+      ? String(raw.recruiterId._id || raw.recruiterId.id || '')
+      : String(raw.recruiterId || '')
+  const recruiterEmail =
+    String(raw.recruiterEmail || (typeof raw.recruiterId === 'object' ? raw.recruiterId?.email : '') || '')
+      .trim()
+  return {
+    id: recruiterId,
+    email: recruiterEmail,
+    name: item.submittedBy || raw.recruiter || raw.recruiterName || '',
+  }
+}
 
 export function getSubmissionTimestamp(item: ScreenshotSubmission): number {
   const raw = item.raw || {}
@@ -24,7 +41,8 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     role, submissions, requirements, onUpdateRequirements,
     searchQuery, dateFilter, customStartDate, customEndDate,
     setSelectedReqDetail, targetSubForInterview, setTargetSubForInterview, submissionsList,
-    setSubmissionsList, showToast, clientFilter, statusFilter
+    setSubmissionsList, showToast, clientFilter, statusFilter, recruiterFilter,
+    includeAllMySubmissions,
   } = s
   const handleScheduleSuccess = (data: any) => {
     const scheduledStatus = data.interviewRound ? `${data.interviewRound} Scheduled` : 'Interview Scheduled'
@@ -134,47 +152,18 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     }
 
     if (role === 'recruiter') {
-      const matchRecruiter = (item: ScreenshotSubmission) => {
-        const by = (item.submittedBy || '').toLowerCase().trim()
-        if (activeRecruiterId && item.raw?.recruiterId && String(item.raw.recruiterId) === String(activeRecruiterId)) return true
-        if (activeRecruiterEmail && item.raw?.recruiterEmail && String(item.raw.recruiterEmail).toLowerCase() === activeRecruiterEmail) return true
-        if (activeRecruiterName) {
-          if (by === activeRecruiterName || by.includes(activeRecruiterName) || activeRecruiterName.includes(by)) return true
-          const activeTokens = activeRecruiterName.split(/\s+/).filter(t => t.length >= 3)
-          const byTokens = by.split(/\s+/).filter(t => t.length >= 3)
-          if (activeTokens.some(t => byTokens.includes(t))) return true
-          return false
-        }
-        return true
+      // Same ownership rule as My Workspace Total Submissions KPI (id → email → name).
+      // Do not include leadId-only rows from the API list — those inflate Reports vs My Work.
+      const me = {
+        id: activeRecruiterId,
+        email: activeRecruiterEmail,
+        name: activeRecruiterName,
       }
-
-      const isClientSubmission = (item: ScreenshotSubmission) => {
-        const st = (item.status || '').toLowerCase().trim()
-        const leadStatus = (item.leadApprovalStatus || '').toLowerCase().trim()
-
-        // Exclude internal-only draft or submitted to lead
-        if (st === 'submitted to lead' || st === 'draft' || leadStatus === 'pending') {
-          return false
-        }
-
-        return (
-          st === 'submitted to client' ||
-          st.includes('client') ||
-          st.includes('interview') ||
-          st.includes('select') ||
-          st.includes('offer') ||
-          st.includes('place') ||
-          leadStatus === 'forwarded' ||
-          leadStatus === 'approved' ||
-          (st === 'rejected' && !leadStatus.includes('lead') && !(item.rejectionReason || '').toLowerCase().includes('lead'))
-        )
-      }
-
-      return submissionsList.filter(item => matchRecruiter(item) && isClientSubmission(item))
+      return submissionsList.filter(item => ownsByRecruiter(submissionOwnerFields(item), me))
     }
 
     return submissionsList
-  }, [submissionsList, role, scopeTab, s.currentUserName])
+  }, [submissionsList, role, scopeTab, s.currentUserName, includeAllMySubmissions])
 
   // Extract unique client names dynamically for the client-wise filter dropdown
   const clientOptions = useMemo(() => {
@@ -193,6 +182,25 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     scopeSubmissions.forEach(item => {
       const client = item.clientName || 'Unknown Client'
       counts[client] = (counts[client] || 0) + 1
+    })
+    return counts
+  }, [scopeSubmissions])
+
+  // Unique recruiters from SUBMITTED BY for admin/superadmin filter
+  const recruiterOptions = useMemo(() => {
+    const names = new Set<string>()
+    scopeSubmissions.forEach(item => {
+      const name = String(item.submittedBy || '').trim()
+      if (name) names.add(name)
+    })
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [scopeSubmissions])
+
+  const recruiterCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    scopeSubmissions.forEach(item => {
+      const name = String(item.submittedBy || '').trim() || 'Unknown'
+      counts[name] = (counts[name] || 0) + 1
     })
     return counts
   }, [scopeSubmissions])
@@ -256,6 +264,12 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
         }
       }
 
+      if (recruiterFilter !== 'All') {
+        if ((item.submittedBy || '').trim().toLowerCase() !== recruiterFilter.trim().toLowerCase()) {
+          return false
+        }
+      }
+
       const itemStatus = item.status.toLowerCase().trim()
       const filterVal = statusFilter.toLowerCase().trim()
 
@@ -292,10 +306,11 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     customEndDate,
     clientFilter,
     statusFilter,
+    recruiterFilter,
   ])
 
   return {
     handleScheduleSuccess, handleOpenReqOverview, scopeSubmissions, clientOptions,
-    clientCounts, filteredData, reasons, setReasons, scopeTab, setScopeTab
+    clientCounts, recruiterOptions, recruiterCounts, filteredData, reasons, setReasons, scopeTab, setScopeTab
   }
 }

@@ -148,6 +148,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         requirements={requirements}
         submissions={submissions}
         candidates={candidatesList}
+        interviews={interviews}
       />
     )
   }
@@ -164,6 +165,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         submissions={submissions}
         interviews={interviews}
         recruiters={recruiters}
+        initialStatusFilter="All"
         onOpenSubmit={onOpenSubmit}
         onUpdateRequirements={onUpdateRequirements}
         onAddRequirement={onAddRequirement}

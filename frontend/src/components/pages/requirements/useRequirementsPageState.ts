@@ -13,6 +13,7 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
   submissions = [],
   interviews = [],
   recruiters = [],
+  initialStatusFilter = 'Unassigned',
   onOpenSubmit,
   onUpdateRequirements,
   onAddRequirement,
@@ -34,7 +35,7 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
 
   // Search and Filter states
   const [globalSearch, setGlobalSearch] = useState('')
-  const [statusDropdown, setStatusDropdown] = useState<string>('Unassigned')
+  const [statusDropdown, setStatusDropdown] = useState<string>(initialStatusFilter || 'Unassigned')
   const [clientDropdown, setClientDropdown] = useState<string>('All')
   const [dateFilter, setDateFilter] = useState<string>('All')
   const [customStartDate, setCustomStartDate] = useState<string>('')

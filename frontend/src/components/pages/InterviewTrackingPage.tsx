@@ -95,6 +95,17 @@ export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
     status = 'Upcoming'
   }
 
+  const recruiterId =
+    typeof item.recruiterId === 'object' && item.recruiterId
+      ? String(item.recruiterId._id || item.recruiterId.id || '')
+      : String(item.recruiterId || '')
+  const recruiterName =
+    item.recruiter ||
+    item.recruiterName ||
+    (typeof item.recruiterId === 'object' ? item.recruiterId?.name : '') ||
+    item.interviewerName ||
+    ''
+
   return {
     id: item.id || item._id || item.interviewId,
     interviewId: item.interviewId || item.id || item._id,
@@ -108,13 +119,17 @@ export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
     requirementId: typeof item.requirementId === 'string' ? item.requirementId : item.requirementId?.reqCode || item.requirementId?._id || '',
     submissionId: typeof item.submissionId === 'string' ? item.submissionId : item.submissionId?._id || item.submissionId?.submissionId,
     candidateId: typeof item.candidateId === 'string' ? item.candidateId : item.candidateId?._id,
-    submittedBy: item.recruiter || item.interviewerName || 'Recruiter',
+    submittedBy: recruiterName,
     candidateEmail: item.candidateId?.email || item.candidateEmail || '',
     candidatePhone: item.candidateId?.phone || item.candidatePhone || '',
     meetingUrl: item.meetingUrl,
     interviewerName: item.interviewerName,
     rejectionReason: item.status === 'Cancelled' ? 'Interview Cancelled' : item.rejectionReason,
-    raw: item,
+    raw: {
+      ...item,
+      recruiterId: recruiterId || item.recruiterId,
+      recruiterEmail: item.recruiterEmail || (typeof item.recruiterId === 'object' ? item.recruiterId?.email : undefined),
+    },
   }
 }
 
@@ -202,6 +217,11 @@ interface InterviewTrackingPageProps {
   onUpdateRequirements?: (requirements: Requirement[]) => void
   /** Live requirements, used to open the real requirement behind an interview row. */
   requirements?: Requirement[]
+  /**
+   * My Work → Interviews Handled: only show the interviews passed in `interviews`
+   * (same set as the KPI count). Do not merge the org-wide API schedule list.
+   */
+  lockToPropInterviews?: boolean
 }
 
 export function InterviewTrackingPage({
@@ -211,12 +231,15 @@ export function InterviewTrackingPage({
   onOpenFeedbackModal,
   initialStatusToggle,
   onUpdateRequirements,
+  lockToPropInterviews = false,
 }: InterviewTrackingPageProps) {
   const normalizedRole = (role || '').toLowerCase()
   const isLead = normalizedRole === 'lead'
   const isRecruiter = normalizedRole === 'recruiter'
   const sessionUser = getSessionUser()
   const activeUserName = (sessionUser?.name || '').toLowerCase().trim()
+  const activeUserId = String(sessionUser?.id || '').trim()
+  const activeUserEmail = (sessionUser?.email || '').toLowerCase().trim()
 
   // Scope filter for Team Lead: 'my_interviews' (lead only), 'team_members' (members only), 'all' (members + lead)
   const [scopeTab, setScopeTab] = useState<'my_interviews' | 'team_members' | 'all'>('my_interviews')
@@ -322,6 +345,7 @@ export function InterviewTrackingPage({
   }
 
   const reloadInterviews = React.useCallback(async () => {
+    if (lockToPropInterviews) return
     try {
       const data = await interviewsService.list()
       if (Array.isArray(data)) {
@@ -330,7 +354,7 @@ export function InterviewTrackingPage({
     } catch (err) {
       showToast(apiErrorMessage(err))
     }
-  }, [])
+  }, [lockToPropInterviews])
 
   const reloadOffers = React.useCallback(async () => {
     try {
@@ -347,6 +371,13 @@ export function InterviewTrackingPage({
     let active = true
     const fetchInit = async () => {
       try {
+        if (lockToPropInterviews) {
+          const offerData = await offersService.list().catch(() => [])
+          if (active && Array.isArray(offerData)) {
+            setOfferLetters(offerData.map(mapBackendOfferToOfferRow))
+          }
+          return
+        }
         const [intData, offerData] = await Promise.all([
           interviewsService.list().catch(() => []),
           offersService.list().catch(() => []),
@@ -365,7 +396,7 @@ export function InterviewTrackingPage({
     return () => {
       active = false
     }
-  }, [])
+  }, [lockToPropInterviews])
 
   const handleRescheduleInterview = async (id: string, dateTimeIso: string, reason?: string) => {
     try {
@@ -411,48 +442,43 @@ export function InterviewTrackingPage({
     setSelectedReqDetail((real || { id: key, title: position, client: company, company }) as any)
   }
 
-  // Map passed interviews prop into ScheduleRowItems
+  // Map passed interviews prop into ScheduleRowItems (preserve ownership fields)
   const mappedPropInterviews: ScheduleRowItem[] = useMemo(() => {
     if (interviews && interviews.length > 0) {
-      return interviews.map((iv, idx) => {
-        const sStr = (iv.status as string) || ''
-        const isUpcoming = sStr === 'Confirmed' || sStr === 'Scheduled'
-        const isCompleted = sStr === 'Passed' || sStr === 'Completed' || sStr === 'Rejected'
-        const isInProgress = sStr === 'In Progress' || sStr === 'Pending'
-
-        const mappedStatus: 'Upcoming' | 'In Progress' | 'Completed' = isUpcoming
-          ? 'Upcoming'
-          : isCompleted
-          ? 'Completed'
-          : isInProgress
-          ? 'In Progress'
-          : 'Upcoming'
-
-        return {
-          id: iv.id || `prop-iv-${idx}`,
-          candidateName: iv.candidate,
-          position: iv.position,
-          company: iv.client,
-          round: iv.stage || 'L1',
-          dateTime: iv.date || '',
-          mode: 'Online',
-          status: mappedStatus,
-          requirementId: (iv as any).requirementId || '',
-        }
-      })
+      return interviews.map((iv, idx) => mapBackendInterviewToScheduleRow({
+        ...iv,
+        id: iv.id || `prop-iv-${idx}`,
+        candidateName: iv.candidate,
+        position: iv.position,
+        client: iv.client,
+        stage: iv.stage,
+        date: iv.date,
+        recruiter: iv.recruiter,
+        recruiterId: (iv as any).recruiterId,
+        recruiterEmail: (iv as any).recruiterEmail,
+        requirementId: (iv as any).requirementId,
+        status: iv.status,
+      }))
     }
     return []
   }, [interviews])
 
   // Combine state scheduleList with mappedPropInterviews
   const combinedScheduleList = useMemo(() => {
+    // My Work KPI drill-down: only the interviews counted on the card
+    if (lockToPropInterviews) {
+      return mappedPropInterviews
+    }
     const existingIds = new Set(scheduleList.map(s => s.id))
     const extras = mappedPropInterviews.filter(m => !existingIds.has(m.id))
     return [...scheduleList, ...extras]
-  }, [scheduleList, mappedPropInterviews])
+  }, [scheduleList, mappedPropInterviews, lockToPropInterviews])
 
   // Scope interviews data by role (single recruiter vs team lead scope)
   const scopeScheduleList = useMemo(() => {
+    if (lockToPropInterviews) {
+      return combinedScheduleList
+    }
     if (isLead) {
       return combinedScheduleList.filter(s => {
         const by = (s.submittedBy || '').toLowerCase()
@@ -462,14 +488,24 @@ export function InterviewTrackingPage({
         return true
       })
     }
-    if (isRecruiter && activeUserName) {
+    if (isRecruiter) {
       return combinedScheduleList.filter(s => {
-        const by = (s.submittedBy || '').toLowerCase()
-        return !by || by.includes(activeUserName) || activeUserName.includes(by)
+        const raw = (s as any).raw || s
+        const recId = String(
+          typeof raw.recruiterId === 'object'
+            ? raw.recruiterId?._id || raw.recruiterId?.id || ''
+            : raw.recruiterId || (s as any).recruiterId || '',
+        ).trim()
+        if (activeUserId && recId && recId === activeUserId) return true
+        const recEmail = String(raw.recruiterEmail || '').toLowerCase().trim()
+        if (activeUserEmail && recEmail && recEmail === activeUserEmail) return true
+        const by = (s.submittedBy || '').toLowerCase().trim()
+        if (!activeUserName || !by) return false
+        return by.includes(activeUserName) || activeUserName.includes(by)
       })
     }
     return combinedScheduleList
-  }, [combinedScheduleList, isLead, isRecruiter, scopeTab, activeUserName])
+  }, [combinedScheduleList, isLead, isRecruiter, scopeTab, activeUserName, activeUserId, activeUserEmail, lockToPropInterviews])
 
   // Scope offer letters by role
   const scopeOfferLetters = useMemo(() => {
@@ -482,14 +518,19 @@ export function InterviewTrackingPage({
         return true
       })
     }
-    if (isRecruiter && activeUserName) {
+    if (isRecruiter) {
       return offerLetters.filter(o => {
+        const recId = String((o as any).recruiterId || '').trim()
+        if (activeUserId && recId && recId === activeUserId) return true
+        const recEmail = String((o as any).recruiterEmail || '').toLowerCase().trim()
+        if (activeUserEmail && recEmail && recEmail === activeUserEmail) return true
         const by = ((o as any).submittedBy || '').toLowerCase()
+        if (!activeUserName) return true
         return !by || by.includes(activeUserName) || activeUserName.includes(by)
       })
     }
     return offerLetters
-  }, [offerLetters, isLead, isRecruiter, scopeTab, activeUserName])
+  }, [offerLetters, isLead, isRecruiter, scopeTab, activeUserName, activeUserId, activeUserEmail])
 
   const checkDateMatch = (
     rawDateStr: string | undefined,
@@ -583,14 +624,17 @@ export function InterviewTrackingPage({
         return true
       })
     }
-    if (isRecruiter && activeUserName) {
+    if (isRecruiter) {
       return finalDecisions.filter(d => {
+        const recId = String((d as any).recruiterId || '').trim()
+        if (activeUserId && recId && recId === activeUserId) return true
         const by = (d.submittedBy || '').toLowerCase()
+        if (!activeUserName) return true
         return !by || by.includes(activeUserName) || activeUserName.includes(by)
       })
     }
     return finalDecisions
-  }, [finalDecisions, isLead, isRecruiter, scopeTab, activeUserName])
+  }, [finalDecisions, isLead, isRecruiter, scopeTab, activeUserName, activeUserId])
 
   // Evaluated Schedule List:
   // 1. Scheduled in future -> Upcoming
@@ -729,14 +773,17 @@ export function InterviewTrackingPage({
         return true
       })
     }
-    if (isRecruiter && activeUserName) {
+    if (isRecruiter) {
       return rejectedList.filter(r => {
+        const recId = String((r as any).recruiterId || '').trim()
+        if (activeUserId && recId && recId === activeUserId) return true
         const by = (r.submittedBy || '').toLowerCase()
+        if (!activeUserName) return true
         return !by || by.includes(activeUserName) || activeUserName.includes(by)
       })
     }
     return rejectedList
-  }, [rejectedList, isLead, isRecruiter, scopeTab, activeUserName])
+  }, [rejectedList, isLead, isRecruiter, scopeTab, activeUserName, activeUserId])
 
   const filteredRejectedList = useMemo(() => {
     return scopeRejectedList.filter(item => {

@@ -30,7 +30,7 @@ import {
   ArrowLeft,
   X,
 } from 'lucide-react'
-import { Role, Recruiter, Requirement, Submission, Candidate } from '../../types'
+import { Role, Recruiter, Requirement, Submission, Candidate, Interview } from '../../types'
 import { getSessionUser } from '../../store/session'
 import { PaginationFooter } from '../ui/PaginationFooter'
 
@@ -223,12 +223,26 @@ const candidateOwnedBy = (
   return nameMatch(c.createdByName, name)
 }
 
+const interviewOwnedBy = (
+  i: Interview,
+  keys: Set<string>,
+  name: string,
+  email?: string,
+) => {
+  const recId = String((i as any).recruiterId || '').trim()
+  if (recId && keys.has(recId)) return true
+  const recEmail = norm((i as any).recruiterEmail)
+  if (email && recEmail && recEmail === norm(email)) return true
+  return nameMatch(i.recruiter, name)
+}
+
 /** Build one recruiter's live performance row from workspace data. */
 export function buildHistoryItemForRecruiter(
   r: Pick<Recruiter, 'id' | 'name' | 'email' | 'lead' | 'submissions' | 'interviews' | 'placements'> & { _id?: string },
   requirements: Requirement[],
   submissions: Submission[],
   candidates: Candidate[] = [],
+  interviews: Interview[] = [],
 ): RecruiterHistoryItem {
   const keys = recruiterIdentityKeys(r)
   const name = r.name || ''
@@ -236,6 +250,7 @@ export function buildHistoryItemForRecruiter(
   const reqs = requirements.filter(q => reqAssignedTo(q, keys, name, email))
   const subs = submissions.filter(s => submissionOwnedBy(s, keys, name, email))
   const sourced = candidates.filter(c => candidateOwnedBy(c, keys, name))
+  const ivs = interviews.filter(i => interviewOwnedBy(i, keys, name, email))
 
   // Repo profiles + any submissions not already represented by a sourced candidate.
   const sourcedRowsFromRepo = sourced.map(c => ({
@@ -293,12 +308,13 @@ export function buildHistoryItemForRecruiter(
     assignedRequirementsCount: reqs.length,
     sourcedProfilesCount: Math.max(sourced.length, deduped.length),
     submittedProfilesCount: subs.length || r.submissions || 0,
-    interviewsCount: r.interviews || 0,
+    interviewsCount: ivs.length || r.interviews || 0,
     workingProfilesCount: subs.filter(s => subStatus(s.stage) === 'Working').length,
     onHoldProfilesCount: subs.filter(s => subStatus(s.stage) === 'On Hold').length,
     placedCount:
+      subs.filter(s => /offer|placed|joined|selected/i.test(String(s.stage || ''))).length ||
       r.placements ||
-      subs.filter(s => /offer|placed|joined|selected/i.test(String(s.stage || ''))).length,
+      0,
     topSkillsSourced: [],
     recentSourcedCandidates: deduped,
     assignedRequirementsList: reqs.map(q => {
@@ -332,9 +348,10 @@ export function buildRecruiterHistory(
   requirements: Requirement[],
   submissions: Submission[],
   candidates: Candidate[] = [],
+  interviews: Interview[] = [],
 ): RecruiterHistoryItem[] {
   const recruiterRows: RecruiterHistoryItem[] = recruiters.map(r =>
-    buildHistoryItemForRecruiter(r, requirements, submissions, candidates),
+    buildHistoryItemForRecruiter(r, requirements, submissions, candidates, interviews),
   )
   // Each lead: the sum of the lead's recruiters.
   const leadNames = [...new Set(recruiters.map(r => r.lead).filter(Boolean))] as string[]
@@ -371,6 +388,7 @@ interface HistoryPageProps {
   requirements?: Requirement[]
   submissions?: Submission[]
   candidates?: Candidate[]
+  interviews?: Interview[]
   currentUserName?: string
   currentUserEmail?: string
   currentUserId?: string
@@ -385,6 +403,7 @@ export function HistoryPage({
   requirements = [],
   submissions = [],
   candidates = [],
+  interviews = [],
 }: HistoryPageProps) {
   const session = getSessionUser()
   const meName = currentUserName || session?.name || ''
@@ -392,8 +411,8 @@ export function HistoryPage({
   const meId = currentUserId || session?.id || ''
 
   const RECRUITERS_HISTORY_DATA = useMemo(
-    () => buildRecruiterHistory(recruiters, requirements, submissions, candidates),
-    [recruiters, requirements, submissions, candidates],
+    () => buildRecruiterHistory(recruiters, requirements, submissions, candidates, interviews),
+    [recruiters, requirements, submissions, candidates, interviews],
   )
   // Determine if viewing as Super Admin / Admin or as a Recruiter / Lead
   const isSuperAdminOrAdmin = role === 'superadmin' || role === 'admin' || role === 'devteam'
@@ -450,6 +469,7 @@ export function HistoryPage({
         requirements,
         submissions,
         candidates,
+        interviews,
       )
     }
     if (meEmail) {
@@ -471,6 +491,7 @@ export function HistoryPage({
     requirements,
     submissions,
     candidates,
+    interviews,
   ])
 
   // Filtered Recruiters List for Super Admin or Team Lead
@@ -1408,7 +1429,7 @@ export function HistoryPage({
                       {/* INTERVIEWS */}
                       <td className="py-4 px-4 whitespace-nowrap text-center">
                         <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-700 border border-slate-200 tabular-nums">
-                          {item.interviewsCount ?? Math.floor(item.submittedProfilesCount * 0.4) ?? 5} Interviews
+                          {item.interviewsCount ?? 0} Interviews
                         </span>
                       </td>
 
