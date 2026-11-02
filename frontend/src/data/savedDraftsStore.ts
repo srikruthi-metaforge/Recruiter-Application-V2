@@ -9,10 +9,46 @@ export interface SavedDraftItem {
   data: any
 }
 
-let draftsMemory: SavedDraftItem[] = []
+const STORAGE_KEY = 'mrap_saved_drafts_v1'
+
+let draftsMemory: SavedDraftItem[] | null = null
+
+function canUseStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+}
+
+function readFromStorage(): SavedDraftItem[] {
+  if (!canUseStorage()) return []
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as SavedDraftItem[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeToStorage(items: SavedDraftItem[]) {
+  if (!canUseStorage()) return
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+  } catch {
+    // Quota / private mode — keep in-memory copy for the session.
+  }
+}
+
+function ensureLoaded(): SavedDraftItem[] {
+  // Don't cache an empty list during SSR — re-read once we are in the browser.
+  if (!canUseStorage()) return draftsMemory ?? []
+  if (draftsMemory === null) {
+    draftsMemory = readFromStorage()
+  }
+  return draftsMemory
+}
 
 export function getSavedDrafts(): SavedDraftItem[] {
-  return draftsMemory
+  return ensureLoaded()
 }
 
 export function saveDraftItem(item: Omit<SavedDraftItem, 'id' | 'savedAt'>): SavedDraftItem {
@@ -29,10 +65,12 @@ export function saveDraftItem(item: Omit<SavedDraftItem, 'id' | 'savedAt'>): Sav
     }),
   }
   draftsMemory = [newItem, ...current]
+  writeToStorage(draftsMemory)
   return newItem
 }
 
 export function removeSavedDraft(id: string): SavedDraftItem[] {
   draftsMemory = getSavedDrafts().filter(item => item.id !== id)
+  writeToStorage(draftsMemory)
   return draftsMemory
 }

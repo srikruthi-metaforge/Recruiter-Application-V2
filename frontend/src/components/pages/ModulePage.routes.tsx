@@ -18,6 +18,7 @@ import { MyTeamPage } from './MyTeamPage'
 import { TeamsRecruitersPage } from './TeamsRecruitersPage'
 import { HistoryPage } from './HistoryPage'
 import { NotificationsPage } from './NotificationsPage'
+import { AnalyticsDashboardPage } from './analytics/AnalyticsDashboardPage'
 
 export interface ModulePageRouteProps {
   pageKey: string
@@ -78,6 +79,15 @@ export function renderModulePage(props: ModulePageRouteProps) {
 
   if (pageKey === 'My Profile' || pageKey === 'Profile') {
     return <MyProfilePage role={role as any} />
+  }
+
+  if (pageKey === 'Analytics') {
+    return (
+      <AnalyticsDashboardPage
+        role={role}
+        onNavigateAway={onNavigateToDashboard}
+      />
+    )
   }
 
   if (pageKey === 'Reports' || pageKey === 'Reports & Analytics') {

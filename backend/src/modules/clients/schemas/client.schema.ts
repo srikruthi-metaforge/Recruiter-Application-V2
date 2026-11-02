@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type ClientDocument = Client & Document;
 
@@ -42,6 +43,14 @@ export class Client {
   @Prop({ type: Date, default: null })
   deletedAt: Date;
 
+  /** V1 Postgres `clients.id` (e.g. CLIENT-109). */
+  @Prop({ type: String, default: null, trim: true })
+  legacyPostgresId: string | null;
+
+  /** V1 leftovers (location, raw industry, …). */
+  @Prop({ type: Object, default: null })
+  legacy: Record<string, any> | null;
+
   @Prop({ default: 1 })
   schemaVersion: number;
 }
@@ -50,5 +59,6 @@ export const ClientSchema = SchemaFactory.createForClass(Client);
 ClientSchema.index({ orgId: 1, clientId: 1, deletedAt: 1 }, { unique: true });
 ClientSchema.index({ orgId: 1, clientName: 1, deletedAt: 1 }, { unique: true });
 ClientSchema.index({ orgId: 1, status: 1, deletedAt: 1 });
+applyOrgLegacyPostgresIdIndex(ClientSchema);
 
 ClientSchema.plugin(DataScopePlugin);

@@ -11,12 +11,12 @@ import type { UserManagementVM } from './useUserManagement'
 export function AssignRoleView({
     role, setViewMode, selectedUser, targetRole,
     setTargetRole, targetClient, setTargetClient, reassignReason,
-    setReassignReason, handleAssignRoleSubmit
+    setReassignReason, handleAssignRoleSubmit, clientOptions,
 }: UserManagementVM) {
   if (!selectedUser) return null
   return (
       <div className="space-y-6 w-full pb-16 font-sans text-slate-800 animate-in fade-in duration-200">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div className="flex items-center border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setViewMode('list')}
@@ -34,24 +34,6 @@ export function AssignRoleView({
                 Update user access permissions, assign leadership scope, and record compliance audit reason.
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              form="assign-role-full-form"
-              type="submit"
-              className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98"
-            >
-              <Save className="w-4 h-4" />
-              <span>Update & Apply New Role</span>
-            </button>
           </div>
         </div>
 
@@ -135,15 +117,10 @@ export function AssignRoleView({
                 onChange={e => setTargetClient(e.target.value)}
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#6B3BF6] cursor-pointer"
               >
-                <option value="Accenture">Accenture</option>
-                <option value="Deloitte">Deloitte</option>
-                <option value="MetaForge">MetaForge IT Solutions</option>
-                <option value="Google">Google</option>
-                <option value="Microsoft">Microsoft</option>
-                <option value="TCS">Tata Consultancy Services (TCS)</option>
-                <option value="Infosys">Infosys</option>
-                <option value="Wipro">Wipro</option>
-                <option value="All Clients">All Clients (Executive Oversight)</option>
+                <option value="">All Clients (Executive Oversight)</option>
+                {clientOptions.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
               </select>
               <p className="text-[10px] text-slate-500 font-medium">
                 Adjusting this client assignment links all requirements, candidate submissions, and delivery SLAs for this {targetRole} to the selected client account.

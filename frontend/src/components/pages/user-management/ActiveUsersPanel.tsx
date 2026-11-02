@@ -4,7 +4,7 @@ import { PaginationFooter } from '../../ui/PaginationFooter'
 import type { UserManagementVM } from './useUserManagement'
 
 export function ActiveUsersPanel({
-    role, canModifyUsers, users, setViewMode,
+    role, canModifyUsers, users, setViewMode, setTempPassword,
     searchQuery, setSearchQuery, filteredUsers, openAdjustClientModal,
     openResetPasswordPage, openAssignRolePage, openManageUserPermissionsModal, promptDeleteUser
 }: UserManagementVM) {
@@ -81,7 +81,10 @@ export function ActiveUsersPanel({
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                   {canModifyUsers && (
                     <button
-                      onClick={() => setViewMode('create_user')}
+                      onClick={() => {
+                        setTempPassword('Pass@' + Math.floor(10000 + Math.random() * 90000))
+                        setViewMode('create_user')
+                      }}
                       className="px-4 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98 whitespace-nowrap"
                     >
                       <UserPlus className="w-4 h-4" />
@@ -137,7 +140,7 @@ export function ActiveUsersPanel({
                           <td className="py-4 px-4 whitespace-nowrap">
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 shadow-2xs">
                               <Building2 className="w-3.5 h-3.5 text-blue-600 inline" />
-                              <span>{user.assignedClient || 'Accenture'}</span>
+                              <span>{user.assignedClient || 'All Clients'}</span>
                             </div>
                           </td>
 

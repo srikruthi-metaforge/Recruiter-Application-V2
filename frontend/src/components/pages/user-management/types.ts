@@ -1,3 +1,8 @@
+export interface ClientOption {
+  id: string
+  name: string
+}
+
 export interface UserAccountData {
   id: string
   name: string
@@ -8,6 +13,8 @@ export interface UserAccountData {
   roleCode: string
   team: string
   supervisor: string
+  /** MongoDB client ObjectId string (users.clientId). Empty = All Clients / unassigned. */
+  clientMongoId?: string
   assignedClient?: string
   status: 'Active' | 'Locked' | 'Pending Invite'
   twoFactorEnabled: boolean

@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type SubmissionDocument = Submission & Document;
 
@@ -54,6 +55,17 @@ export class Submission {
   @Prop({ type: Date, default: null })
   deletedAt: Date;
 
+  /** V1 Postgres `submissions.id`. */
+  @Prop({ type: String, default: null, trim: true })
+  legacyPostgresId: string | null;
+
+  /**
+   * V1 leftovers: soNumber, clientFeedback, interview snapshot fields,
+   * offer-in-hand on submission, forwardedBy, v1 status raw, …
+   */
+  @Prop({ type: Object, default: null })
+  legacy: Record<string, any> | null;
+
   @Prop({ default: 1 })
   schemaVersion: number;
 }
@@ -65,5 +77,6 @@ SubmissionSchema.index({ orgId: 1, candidateId: 1, requirementId: 1, deletedAt: 
 SubmissionSchema.index({ orgId: 1, recruiterId: 1, stage: 1, submittedAt: -1, deletedAt: 1 });
 SubmissionSchema.index({ orgId: 1, leadId: 1, leadApprovalStatus: 1, deletedAt: 1 });
 SubmissionSchema.index({ orgId: 1, clientId: 1, stage: 1, deletedAt: 1 });
+applyOrgLegacyPostgresIdIndex(SubmissionSchema);
 
 SubmissionSchema.plugin(DataScopePlugin);

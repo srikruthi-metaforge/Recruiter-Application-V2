@@ -208,6 +208,7 @@ export class RequirementsService {
       toEmails: doc.toEmails || [],
       ccEmails: doc.ccEmails || [],
       description: (obj as any).description || '',
+      rolesAndResponsibilities: (obj as any).rolesAndResponsibilities || '',
       employmentType: (obj as any).employmentType || '',
       workMode: (obj as any).workMode || '',
       noticePeriod: (obj as any).noticePeriod || '',
@@ -464,6 +465,9 @@ export class RequirementsService {
       assignedLeadId,
       assignedRecruiterIds,
       skillsRequired: dto.skillsRequired || dto.skills || [],
+      mandatorySkills: dto.mandatorySkills || [],
+      description: dto.description?.trim() || null,
+      rolesAndResponsibilities: dto.rolesAndResponsibilities?.trim() || null,
       experienceRange: dto.experienceRange || { min: 0, max: 0 },
       location: dto.location || 'Hybrid',
       clientEmail,
@@ -545,6 +549,11 @@ export class RequirementsService {
     }
     const resolvedSkills = dto.skillsRequired || dto.skills;
     if (resolvedSkills !== undefined) doc.skillsRequired = resolvedSkills;
+    if (dto.mandatorySkills !== undefined) doc.mandatorySkills = dto.mandatorySkills;
+    if (dto.description !== undefined) doc.description = dto.description?.trim() || null;
+    if (dto.rolesAndResponsibilities !== undefined) {
+      doc.rolesAndResponsibilities = dto.rolesAndResponsibilities?.trim() || null;
+    }
     if (dto.experienceRange !== undefined) doc.experienceRange = dto.experienceRange;
     if (dto.location !== undefined) doc.location = dto.location;
     if (dto.clientEmail !== undefined) doc.clientEmail = dto.clientEmail;
@@ -1523,6 +1532,13 @@ export class RequirementsService {
     const employmentType = firstText(payload.employment_type, payload.employmentType, payload.engagement_type) || null;
     const noticePeriod = firstText(payload.notice_period, payload.noticePeriod) || null;
     const description = firstText(payload.description, payload.job_description, payload.bodyText, payload.body_text) || null;
+    const rolesAndResponsibilities = firstText(
+      payload.rolesAndResponsibilities,
+      payload.roles_and_responsibilities,
+      payload.roles_responsibilities,
+      payload.key_responsibilities,
+      payload.responsibilities,
+    ) || null;
     const openings = parseCount(payload.number_of_positions ?? payload.openings ?? payload.positions);
     const status = mapMailStatus(payload.job_status ?? payload.status);
     const priority = mapMailPriority(payload.priority);
@@ -1613,6 +1629,7 @@ export class RequirementsService {
         performedBy,
         title,
         description,
+        rolesAndResponsibilities,
         skills,
         mandatorySkills,
         experience,
@@ -1659,6 +1676,7 @@ export class RequirementsService {
         employmentType: employmentType || undefined,
         noticePeriod: noticePeriod || undefined,
         description: description || undefined,
+        rolesAndResponsibilities: rolesAndResponsibilities || undefined,
         clientEmail,
         toEmails: sanitizeEmailList(toEmails),
         ccEmails: sanitizeEmailList(ccEmails),
@@ -1719,6 +1737,7 @@ export class RequirementsService {
             performedBy,
             title,
             description,
+            rolesAndResponsibilities,
             skills,
             mandatorySkills,
             experience,
@@ -1754,6 +1773,7 @@ export class RequirementsService {
     performedBy: Types.ObjectId;
     title: string;
     description: string | null;
+    rolesAndResponsibilities?: string | null;
     skills: string[];
     mandatorySkills: string[];
     experience: { min: number; max: number };
@@ -1833,6 +1853,16 @@ export class RequirementsService {
       oldValues.description = existing.description;
       newValues.description = params.description.trim();
       existing.description = params.description.trim();
+    }
+
+    if (
+      params.rolesAndResponsibilities &&
+      params.rolesAndResponsibilities.trim() &&
+      existing.rolesAndResponsibilities !== params.rolesAndResponsibilities.trim()
+    ) {
+      oldValues.rolesAndResponsibilities = existing.rolesAndResponsibilities;
+      newValues.rolesAndResponsibilities = params.rolesAndResponsibilities.trim();
+      existing.rolesAndResponsibilities = params.rolesAndResponsibilities.trim();
     }
 
     if ((params.experience.min > 0 || params.experience.max > 0) &&

@@ -57,9 +57,9 @@ export const PAGE_META_B: Record<string, PageMeta> = {
     columns: ['Candidate', 'Type', 'Due', 'Priority', 'Status'],
   },
   Analytics: {
-    title: 'Hiring Progress Analytics',
-    description: 'Positions filled, open, and pipeline conversion for your account.',
-    columns: ['Requirement', 'Open', 'Filled', 'In Interview', 'Offers'],
+    title: 'Analytics Dashboard',
+    description: 'Company-wide recruitment analytics — requirements, pipeline, interviews, and recruiter performance.',
+    columns: ['Metric', 'Value', 'Trend'],
   },
   Invoices: {
     title: 'Invoices',

@@ -21,7 +21,6 @@ import { LandingPage } from './components/landing/LandingPage'
 import { SignInPage } from './components/auth/SignInPage'
 import { SignUpPage } from './components/auth/SignUpRequestPage'
 import { PasswordRecoveryFlow } from './components/auth/PasswordRecoveryFlow'
-import { DevRoleSwitcher } from './components/common/DevRoleSwitcher'
 
 import { NewRequirementModal } from './components/modals/NewRequirementModal'
 import { SubmitCandidateModal } from './components/modals/SubmitCandidateModal'
@@ -571,12 +570,6 @@ export default function App() {
         submission={selectedSubmissionForDetail}
       />
 
-      {/* Dev role switcher for quick in-app switching during development */}
-      <DevRoleSwitcher
-        currentRole={role}
-        currentUserName={currentUser.name}
-        onSwitchRole={handleAuthenticated}
-      />
     </div>
   )
 }

@@ -70,6 +70,20 @@ export class CreateRequirementDto {
   skills?: string[];
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mandatorySkills?: string[];
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  /** Roles & responsibilities (typically filled after JD parse). */
+  @IsOptional()
+  @IsString()
+  rolesAndResponsibilities?: string;
+
+  @IsOptional()
   @IsString()
   assignedLeadId?: string;
 

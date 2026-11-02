@@ -125,6 +125,16 @@ import {
   RequirementHistorySchema,
 } from './modules/requirements/schemas/requirement-history.schema';
 
+import {
+  RequirementAssignment,
+  RequirementAssignmentSchema,
+} from './modules/requirements/schemas/requirement-assignment.schema';
+
+import {
+  EmailIngestionEvent,
+  EmailIngestionEventSchema,
+} from './modules/requirements/schemas/email-ingestion-event.schema';
+
 // Saved Searches
 import {
   SavedSearch,
@@ -238,6 +248,14 @@ import {
       {
         name: RequirementHistory.name,
         schema: RequirementHistorySchema,
+      },
+      {
+        name: RequirementAssignment.name,
+        schema: RequirementAssignmentSchema,
+      },
+      {
+        name: EmailIngestionEvent.name,
+        schema: EmailIngestionEventSchema,
       },
       {
         name: SavedSearch.name,

@@ -22,7 +22,7 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
     setPreferredLocation, interviewAvailability, setInterviewAvailability, offerInHand,
     setOfferInHand, reasonForChange, setReasonForChange, notes,
     setNotes, dupCheckResult,
-    importMode, bulkQueue, setBulkQueue, activeQueueId, setActiveQueueId
+    importMode, setImportMode, bulkQueue, setBulkQueue, activeQueueId, setActiveQueueId
   } = s
 
   // Clear all parsed candidate form fields
@@ -234,6 +234,23 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
   }
 
   const handleSaveDraftForLater = () => {
+    const hasCandidateProfile = [
+      candidateName,
+      email,
+      contactNumber,
+      currentCompany,
+      skills,
+      technologies,
+      qualification,
+      totalExperience,
+      parsedFileName,
+    ].some(v => String(v || '').trim().length > 0) || Boolean(selectedFile)
+
+    if (!hasCandidateProfile) {
+      showError('Add candidate details first')
+      return
+    }
+
     const draftTitle = candidateName || candidateId || 'Draft Candidate Profile'
     saveDraftItem({
       type: 'candidate',
@@ -271,6 +288,8 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
     setDraftsList(getSavedDrafts())
     setShowSaveDraftToast(true)
     setTimeout(() => setShowSaveDraftToast(false), 3500)
+    // Open the Saved for Later page so the recruiter can see the stored draft.
+    setImportMode('drafts')
   }
   return {
     handleParseResume, handleSelectResumeFile, handleSubmit, handleSaveDraftForLater, applyParsedToForm, showError

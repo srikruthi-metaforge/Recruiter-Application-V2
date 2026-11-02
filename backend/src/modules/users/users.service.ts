@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -32,6 +33,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, { roleName: string; permissions: 
       'int_schedule', 'int_join_links', 'int_feedback', 'int_cancel',
       'rep_view_exec', 'rep_view_recruiter', 'rep_export_csv',
       'user_manage', 'role_manage', 'activity_logs',
+      'analytics_view_company',
     ],
   },
   admin: {
@@ -79,6 +81,15 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, { roleName: string; permissions: 
     permissions: ['req_view_my', 'sub_view_client', 'int_feedback'],
   },
 };
+
+/** Core roles that cannot be deleted from Enterprise Role Definitions. */
+const PROTECTED_ROLE_CODES = new Set([
+  'superadmin',
+  'admin',
+  'lead',
+  'recruiter',
+  'client',
+]);
 
 @Injectable()
 export class UsersService {
@@ -393,19 +404,58 @@ export class UsersService {
       storedName[doc.roleCode] = doc.roleName;
     });
 
+    // Always show protected core roles; other roles only if still present in DB
+    // (so deleting Dev Team / custom roles removes them from this list).
     const roleCodes = [
-      ...Object.keys(DEFAULT_ROLE_PERMISSIONS),
-      ...docs.map(doc => doc.roleCode).filter(code => !DEFAULT_ROLE_PERMISSIONS[code]),
+      ...Array.from(PROTECTED_ROLE_CODES),
+      ...docs
+        .map(doc => doc.roleCode)
+        .filter(code => !PROTECTED_ROLE_CODES.has(String(code).toLowerCase())),
     ];
+
+    const userCounts = await this.userModel.aggregate([
+      {
+        $match: {
+          orgId,
+          deletedAt: null,
+          active: { $ne: false },
+        },
+      },
+      {
+        $group: {
+          _id: { $toLower: { $ifNull: ['$role', ''] } },
+          count: { $sum: 1 },
+        },
+      },
+    ]).exec();
+
+    const countByRole: Record<string, number> = {};
+    for (const row of userCounts) {
+      const code = String(row?._id || '').toLowerCase();
+      if (code) countByRole[code] = Number(row.count) || 0;
+    }
 
     return {
       orgId: orgId.toString(),
       permissionsMatrix: result,
-      roles: roleCodes.map(roleCode => ({
-        roleCode,
-        roleName: DEFAULT_ROLE_PERMISSIONS[roleCode]?.roleName || storedName[roleCode] || roleCode,
-        permissions: result[roleCode] || DEFAULT_ROLE_PERMISSIONS[roleCode]?.permissions || [],
-      })),
+      roles: roleCodes.map(roleCode => {
+        const code = String(roleCode).toLowerCase();
+        return {
+          roleCode: code,
+          roleName:
+            DEFAULT_ROLE_PERMISSIONS[code]?.roleName ||
+            storedName[roleCode] ||
+            storedName[code] ||
+            roleCode,
+          permissions:
+            result[roleCode] ||
+            result[code] ||
+            DEFAULT_ROLE_PERMISSIONS[code]?.permissions ||
+            [],
+          userCount: countByRole[code] || 0,
+          isSystem: PROTECTED_ROLE_CODES.has(code),
+        };
+      }),
     };
   }
 
@@ -414,7 +464,10 @@ export class UsersService {
     const orgId = requireOrgId(currentUser);
     const roleCode = dto.roleCode.toLowerCase();
 
-    const roleName = DEFAULT_ROLE_PERMISSIONS[roleCode]?.roleName || roleCode.toUpperCase();
+    const roleName =
+      dto.roleName?.trim() ||
+      DEFAULT_ROLE_PERMISSIONS[roleCode]?.roleName ||
+      roleCode;
     const previous = await this.rolePermissionModel.findOne({ orgId, roleCode }).exec();
 
     const updated = await this.rolePermissionModel.findOneAndUpdate(
@@ -448,6 +501,57 @@ export class UsersService {
         roleName: updated.roleName,
         permissions: updated.permissions,
       },
+    };
+  }
+
+  /** DELETE /api/v1/roles/permissions/:roleCode */
+  async deleteRolePermission(roleCodeRaw: string, currentUser: any) {
+    const orgId = requireOrgId(currentUser);
+    const roleCode = String(roleCodeRaw || '').trim().toLowerCase();
+    if (!roleCode) {
+      throw new BadRequestException('Role code is required');
+    }
+    if (PROTECTED_ROLE_CODES.has(roleCode)) {
+      throw new ForbiddenException(
+        'Core roles (Super Admin, Admin, Team Lead, Recruiter, Client) cannot be deleted',
+      );
+    }
+
+    const existing = await this.rolePermissionModel.findOne({ orgId, roleCode }).exec();
+    if (!existing) {
+      throw new NotFoundException(`Role '${roleCode}' not found`);
+    }
+
+    const assignedCount = await this.userModel
+      .countDocuments({
+        orgId,
+        deletedAt: null,
+        role: roleCode,
+      })
+      .exec();
+    if (assignedCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete role '${existing.roleName || roleCode}' while ${assignedCount} user(s) are assigned to it. Reassign them first.`,
+      );
+    }
+
+    await this.rolePermissionModel.deleteOne({ orgId, roleCode }).exec();
+
+    await this.auditService
+      .recordSecurityAlert({
+        type: 'privilege_change',
+        action: `Role '${roleCode}' deleted`,
+        currentUser,
+        orgId,
+        targetEntity: 'RolePermission',
+        targetId: roleCode,
+        details: { roleCode, roleName: existing.roleName },
+      })
+      .catch(() => {});
+
+    return {
+      message: `Role '${existing.roleName || roleCode}' deleted successfully`,
+      roleCode,
     };
   }
 }

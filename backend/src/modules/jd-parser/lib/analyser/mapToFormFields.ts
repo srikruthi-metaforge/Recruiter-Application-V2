@@ -1,6 +1,11 @@
 import type { JdExtractFormFields } from '../jdFieldExtractor';
 import type { RequirementData } from './types/requirement';
-import { NOT_SPECIFIED, isMissingField, isMissing } from './jd-utils';
+import {
+  NOT_SPECIFIED,
+  isMissingField,
+  isMissing,
+  extractRolesAndResponsibilitiesSection,
+} from './jd-utils';
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
   'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'proton.me', 'protonmail.com', 'mail.com', 'aol.com',
@@ -268,6 +273,15 @@ export function mapRequirementToFormFields(
     ? data.jobDescription.trim()
     : options?.jdText?.trim();
   if (jdBody) out.jdDescription = jdBody;
+
+  let roles = !isMissing(data.rolesAndResponsibilities)
+    ? data.rolesAndResponsibilities.trim()
+    : undefined;
+  if (!roles && options?.jdText) {
+    const fromSection = extractRolesAndResponsibilitiesSection(options.jdText);
+    if (!isMissing(fromSection)) roles = fromSection.trim();
+  }
+  if (roles) out.rolesAndResponsibilities = roles;
 
   return out;
 }

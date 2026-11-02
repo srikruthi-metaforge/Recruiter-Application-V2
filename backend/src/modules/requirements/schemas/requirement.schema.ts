@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type RequirementDocument = Requirement & Document;
 
@@ -147,6 +148,10 @@ export class Requirement {
   @Prop({ type: String, default: null, trim: true })
   description: string;
 
+  /** Roles & responsibilities extracted from JD (after parse / mail ingest). */
+  @Prop({ type: String, default: null, trim: true })
+  rolesAndResponsibilities: string;
+
   @Prop({ type: String, default: null, trim: true })
   employmentType: string;
 
@@ -188,6 +193,17 @@ export class Requirement {
 
   @Prop({ type: Date, default: null })
   deletedAt: Date;
+
+  /** V1 Postgres `requirements.id` (internal PK, distinct from business `requirement_id` / reqCode). */
+  @Prop({ type: String, default: null, trim: true })
+  legacyPostgresId: string | null;
+
+  /**
+   * V1 leftovers: slaDays, demandType, POC text fields, creator/assigner display names,
+   * experience raw string, monthly/yearly budget raw, …
+   */
+  @Prop({ type: Object, default: null })
+  legacy: Record<string, any> | null;
 
   @Prop({ default: 1 })
   schemaVersion: number;
@@ -250,5 +266,6 @@ RequirementSchema.index(
 
 RequirementSchema.index({ orgId: 1, idempotencyKey: 1 }, { sparse: true });
 RequirementSchema.index({ orgId: 1, firstDetectedAt: -1, sourceEmailReceivedAt: -1, deletedAt: 1 });
+applyOrgLegacyPostgresIdIndex(RequirementSchema);
 
 RequirementSchema.plugin(DataScopePlugin);

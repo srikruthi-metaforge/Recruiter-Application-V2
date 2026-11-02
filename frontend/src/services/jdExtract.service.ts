@@ -24,6 +24,7 @@ export type JdExtractFormFields = {
   demandType?: 'Single' | 'Multiple' | 'Bulk'
   submittingTo?: string
   jdDescription?: string
+  rolesAndResponsibilities?: string
   extractionSource?: string
   totalRolesDetected?: number
   roleTitle?: string

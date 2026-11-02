@@ -6,8 +6,9 @@ import type {
   RecruiterUserPermissionData,
   EnterpriseRoleData,
 } from './types'
-import { usersService, rolesService } from '../../../services/workspace.service'
-import { apiErrorMessage, mapApiRoles, mapApiUsers } from './userApi'
+import { usersService, rolesService, clientsService } from '../../../services/workspace.service'
+import { apiErrorMessage, mapApiRoles, mapApiUsers, mapApiClients } from './userApi'
+import type { ClientOption } from './types'
 
 export function useUserManagementState(
   role: Role = 'superadmin',
@@ -35,8 +36,10 @@ export function useUserManagementState(
   const [newUserRole, setNewUserRole] = useState<'Super Admin' | 'Admin' | 'Team Lead' | 'Recruiter' | 'Dev Team'>('Recruiter')
   const [newUserTeam, setNewUserTeam] = useState('Engineering Team')
   const [newUserSupervisor, setNewUserSupervisor] = useState('')
-  const [newUserClient, setNewUserClient] = useState('Accenture')
+  /** Selected client Mongo id; empty string = All Clients / unassigned */
+  const [newUserClient, setNewUserClient] = useState('')
   const [tempPassword, setTempPassword] = useState('')
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
 
   // Reset Password State
   const [resetNewPass, setResetNewPass] = useState('')
@@ -47,7 +50,7 @@ export function useUserManagementState(
 
   // Assign Role & Adjust Client State
   const [targetRole, setTargetRole] = useState<'Super Admin' | 'Admin' | 'Team Lead' | 'Recruiter' | 'Client Reviewer' | 'Dev Team'>('Recruiter')
-  const [targetClient, setTargetClient] = useState<string>('Accenture')
+  const [targetClient, setTargetClient] = useState<string>('')
   const [reassignReason, setReassignReason] = useState('')
   const [adjustClientUser, setAdjustClientUser] = useState<UserAccountData | null>(null)
 
@@ -101,15 +104,23 @@ export function useUserManagementState(
   const [undoToast, setUndoToast] = useState<{ msg: string; userToRestore: UserAccountData } | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, durationMs = 5000) => {
     setToastMsg(msg)
     setUndoToast(null)
-    setTimeout(() => setToastMsg(null), 5000)
+    setTimeout(() => setToastMsg(null), durationMs)
   }
 
-  const reloadUsers = async () => {
+  const clientNameById = useMemo(() => {
+    const map: Record<string, string> = {}
+    clientOptions.forEach(c => {
+      map[c.id] = c.name
+    })
+    return map
+  }, [clientOptions])
+
+  const reloadUsers = async (nameById?: Record<string, string>) => {
     const rows = await usersService.list()
-    const mapped = mapApiUsers(rows)
+    const mapped = mapApiUsers(rows, nameById || clientNameById)
     setUsers(mapped.users)
     setRecruiterUsers(mapped.recruiters)
   }
@@ -125,12 +136,24 @@ export function useUserManagementState(
 
   useEffect(() => {
     let cancelled = false
-    reloadUsers().catch(err => {
-      if (!cancelled) showToast(apiErrorMessage(err))
-    })
-    reloadRoles().catch(err => {
-      if (!cancelled) showToast(apiErrorMessage(err))
-    })
+    ;(async () => {
+      try {
+        const rows = await clientsService.list()
+        if (cancelled) return
+        const options = mapApiClients(rows)
+        setClientOptions(options)
+        const nameMap: Record<string, string> = {}
+        options.forEach(c => {
+          nameMap[c.id] = c.name
+        })
+        await reloadUsers(nameMap)
+      } catch (err) {
+        if (!cancelled) showToast(apiErrorMessage(err))
+      }
+      reloadRoles().catch(err => {
+        if (!cancelled) showToast(apiErrorMessage(err))
+      })
+    })()
     return () => {
       cancelled = true
     }
@@ -184,6 +207,7 @@ export function useUserManagementState(
     newUserName, setNewUserName, newUserEmail, setNewUserEmail, newUserPhone, setNewUserPhone,
     newUserEmpId, setNewUserEmpId, newUserRole, setNewUserRole, newUserTeam, setNewUserTeam,
     newUserSupervisor, setNewUserSupervisor, newUserClient, setNewUserClient, tempPassword, setTempPassword,
+    clientOptions, clientNameById,
     resetNewPass, setResetNewPass, resetConfirmPass, setResetConfirmPass, showPassword, setShowPassword,
     forceChangePass, setForceChangePass, sendEmailNotify, setSendEmailNotify,
     targetRole, setTargetRole, targetClient, setTargetClient, reassignReason, setReassignReason,

@@ -27,16 +27,13 @@ export interface DemoAccount {
 }
 
 /**
- * Quick role accounts on the sign-in page.
- * - Production builds: always off (empty list).
- * - Local/dev: on by default; set NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS=false to hide.
- * Passwords prefer NEXT_PUBLIC_DEMO_PASSWORD_* / NEXT_PUBLIC_DEMO_PASSWORD,
- * then fall back to the known local seed passwords for convenience.
+ * Quick role / demo account UI (login chooser + in-app switcher).
+ * Off by default for production-ready UX.
+ * Opt-in only: set NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS=true explicitly.
  */
 function demoUiEnabled(): boolean {
   if (process.env.NODE_ENV === 'production') return false
-  if (process.env.NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS === 'false') return false
-  return true
+  return process.env.NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS === 'true'
 }
 
 /** Local-only defaults (never shipped in production builds). */

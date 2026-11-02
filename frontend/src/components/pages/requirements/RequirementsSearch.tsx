@@ -1,5 +1,5 @@
 import React from 'react'
-import { UserCheck, Search, ChevronDown, Filter, UserPlus, Calendar, RefreshCw } from 'lucide-react'
+import { UserCheck, Search, ChevronDown, Filter, UserPlus, Calendar } from 'lucide-react'
 import { RequirementDetailOverview } from '../RequirementDetailOverview'
 import { CreateJobDemandForm } from '../CreateJobDemandForm'
 import { PaginationFooter } from '../../ui/PaginationFooter'
@@ -32,9 +32,6 @@ export function RequirementsSearch({ vm }: { vm: RequirementsVm }) {
     currentUserName,
     handleSelfAssign,
     filteredRequirements,
-    isSyncingMail,
-    mailSyncStatus,
-    handleSyncEmails,
   } = vm
   return (
     <>
@@ -182,22 +179,6 @@ export function RequirementsSearch({ vm }: { vm: RequirementsVm }) {
           <span className="text-sm font-semibold text-gray-700">
             {filteredRequirements.length} requirement(s)
           </span>
-
-          {isSyncingMail && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
-              <span>Syncing Outlook...</span>
-            </span>
-          )}
-
-          {mailSyncStatus?.lastSyncedAt && !isSyncingMail && (
-            <span
-              className="text-[11px] text-gray-400 font-medium cursor-help hidden sm:inline"
-              title={`Last Outlook extraction check: ${new Date(mailSyncStatus.lastSyncedAt).toLocaleString()}`}
-            >
-              • Outlook checked {new Date(mailSyncStatus.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
 
           {dateFilter !== 'All' && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">

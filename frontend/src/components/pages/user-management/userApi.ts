@@ -59,10 +59,15 @@ function capabilitiesOf(user: any): RecruiterUserPermissionData['permissions'] {
   }
 }
 
-export function mapApiUser(user: any): UserAccountData {
+export function mapApiUser(user: any, clientNameById?: Record<string, string>): UserAccountData {
   const roleCode = String(user?.role || 'recruiter').toLowerCase()
+  const clientMongoId = user?.clientId ? String(user.clientId) : ''
+  const assignedClient = clientMongoId
+    ? (clientNameById?.[clientMongoId] || '')
+    : 'All Clients'
   return {
-    id: user?.userId || user?.id || '',
+    // Prefer Mongo _id for updates; fall back to business userId
+    id: user?.id || user?._id || user?.userId || '',
     name: user?.name || '',
     email: user?.email || '',
     phone: user?.phone || '',
@@ -71,6 +76,8 @@ export function mapApiUser(user: any): UserAccountData {
     roleCode,
     team: user?.team || '',
     supervisor: user?.supervisor || '',
+    clientMongoId,
+    assignedClient: assignedClient || (clientMongoId ? 'Unknown client' : 'All Clients'),
     status: user?.active === false ? 'Locked' : 'Active',
     twoFactorEnabled: false,
     lastLogin: user?.lastLoginAt ? String(user.lastLoginAt) : '',
@@ -78,12 +85,15 @@ export function mapApiUser(user: any): UserAccountData {
   }
 }
 
-export function mapApiUsers(payload: any): { users: UserAccountData[]; recruiters: RecruiterUserPermissionData[] } {
+export function mapApiUsers(
+  payload: any,
+  clientNameById?: Record<string, string>,
+): { users: UserAccountData[]; recruiters: RecruiterUserPermissionData[] } {
   const list = Array.isArray(payload) ? payload : payload?.items || payload?.users || []
-  const users = list.map(mapApiUser)
+  const users = list.map((user: any) => mapApiUser(user, clientNameById))
   const recruiters = list
     .map((user: any): RecruiterUserPermissionData => {
-      const mapped = mapApiUser(user)
+      const mapped = mapApiUser(user, clientNameById)
       return {
         id: mapped.id,
         name: mapped.name,
@@ -92,12 +102,33 @@ export function mapApiUsers(payload: any): { users: UserAccountData[]; recruiter
         roleCode: mapped.roleCode,
         team: mapped.team,
         avatar: mapped.name.charAt(0).toUpperCase() || 'U',
+        assignedClient: mapped.assignedClient,
         status: mapped.status === 'Active' ? 'Active' : 'Inactive',
         permissions: capabilitiesOf(user),
       }
     })
   return { users, recruiters }
 }
+
+export function mapApiClients(payload: any): { id: string; name: string }[] {
+  const list = Array.isArray(payload) ? payload : payload?.items || payload?.clients || []
+  return list
+    .map((c: any) => ({
+      id: String(c?.id || c?._id || ''),
+      name: String(c?.clientName || c?.name || '').trim(),
+    }))
+    .filter((c: { id: string; name: string }) => c.id && c.name)
+    .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))
+}
+
+/** Core roles that cannot be deleted (Super Admin, Admin, Lead, Recruiter, Client). */
+const PROTECTED_ROLE_CODES = new Set([
+  'superadmin',
+  'admin',
+  'lead',
+  'recruiter',
+  'client',
+])
 
 export function mapApiRoles(payload: any): EnterpriseRoleData[] {
   const list = Array.isArray(payload) ? payload : payload?.roles || payload?.items || []
@@ -110,13 +141,18 @@ export function mapApiRoles(payload: any): EnterpriseRoleData[] {
     } else if (role?.permissions && typeof role.permissions === 'object') {
       Object.assign(permissions, role.permissions)
     }
+    const code = String(role?.roleCode || '').toLowerCase()
+    const isSystem =
+      typeof role?.isSystem === 'boolean'
+        ? role.isSystem
+        : PROTECTED_ROLE_CODES.has(code)
     return {
       id: role?.roleCode || String(index),
-      name: role?.roleName || role?.roleCode || 'Role',
+      name: role?.roleName || ROLE_LABEL[code] || role?.roleCode || 'Role',
       code: role?.roleCode || '',
-      description: role?.roleName || '',
-      userCount: 0,
-      isSystem: !!ROLE_LABEL[String(role?.roleCode || '').toLowerCase()],
+      description: role?.description || role?.roleName || ROLE_LABEL[code] || '',
+      userCount: typeof role?.userCount === 'number' ? role.userCount : 0,
+      isSystem,
       lastUpdated: '',
       permissions,
     }

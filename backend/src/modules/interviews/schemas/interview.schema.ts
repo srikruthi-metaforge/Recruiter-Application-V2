@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type InterviewDocument = Interview & Document;
 
@@ -69,6 +70,17 @@ export class Interview {
   @Prop({ type: Date, default: null })
   deletedAt: Date;
 
+  /** Primary V1 interview PK (`interviews.id` or `interview_rounds.id`). */
+  @Prop({ type: String, default: null, trim: true })
+  legacyPostgresId: string | null;
+
+  /**
+   * Merge metadata from V1 dual models:
+   * v1InterviewId, v1RoundId, recruiterId, rating, finalDecision, reschedule*, …
+   */
+  @Prop({ type: Object, default: null })
+  legacy: Record<string, any> | null;
+
   @Prop({ default: 1 })
   schemaVersion: number;
 }
@@ -79,5 +91,6 @@ export const InterviewSchema = SchemaFactory.createForClass(Interview);
 InterviewSchema.index({ orgId: 1, submissionId: 1, round: 1, deletedAt: 1 });
 InterviewSchema.index({ orgId: 1, dateTime: 1, status: 1, deletedAt: 1 });
 InterviewSchema.index({ orgId: 1, interviewerEmail: 1, status: 1, dateTime: 1, deletedAt: 1 });
+applyOrgLegacyPostgresIdIndex(InterviewSchema);
 
 InterviewSchema.plugin(DataScopePlugin);

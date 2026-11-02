@@ -58,7 +58,8 @@ Schema:
   "mandatorySkills": [],
   "secondarySkills": [],
   "skills": [],
-  "jobDescription": ""
+  "jobDescription": "",
+  "rolesAndResponsibilities": ""
 }
 
 Rules:
@@ -287,6 +288,12 @@ Remove:
 - confidentiality notices
 - legal disclaimers
 
+rolesAndResponsibilities:
+Extract the Roles & Responsibilities / Key Responsibilities / Role Overview section as plain text.
+Preserve bullet points and line breaks when present.
+Do not invent duties that are not in the JD.
+If no such section exists, use "Not specified".
+
 Return JSON only.
 `;
 // cSpell:enable
@@ -316,6 +323,7 @@ const JSON_FIELDS = [
   "secondarySkills",
   "skills",
   "jobDescription",
+  "rolesAndResponsibilities",
 ] as const;
 
 export type LlmProvider =

@@ -3,6 +3,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 
 import { Requirement, RequirementSchema } from './schemas/requirement.schema';
 import { RequirementHistory, RequirementHistorySchema } from './schemas/requirement-history.schema';
+import {
+  RequirementAssignment,
+  RequirementAssignmentSchema,
+} from './schemas/requirement-assignment.schema';
+import {
+  EmailIngestionEvent,
+  EmailIngestionEventSchema,
+} from './schemas/email-ingestion-event.schema';
 import { Client, ClientSchema } from '../clients/schemas/client.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { RequirementRepository } from './repositories/requirement.repository';
@@ -18,6 +26,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([
       { name: Requirement.name, schema: RequirementSchema },
       { name: RequirementHistory.name, schema: RequirementHistorySchema },
+      { name: RequirementAssignment.name, schema: RequirementAssignmentSchema },
+      { name: EmailIngestionEvent.name, schema: EmailIngestionEventSchema },
       { name: Client.name, schema: ClientSchema },
       { name: User.name, schema: UserSchema },
     ]),
@@ -26,7 +36,12 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   controllers: [RequirementsController, RequirementsIngestController],
   providers: [RequirementsService, RequirementRepository, MailExtractionSchedulerService],
-  exports: [RequirementsService, RequirementRepository, MailExtractionSchedulerService],
+  exports: [
+    RequirementsService,
+    RequirementRepository,
+    MailExtractionSchedulerService,
+    MongooseModule,
+  ],
 })
 export class RequirementsModule {}
 

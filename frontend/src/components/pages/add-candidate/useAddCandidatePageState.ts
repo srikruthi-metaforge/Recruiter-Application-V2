@@ -71,6 +71,11 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
     candidate?: any
   }>({ isDuplicate: false })
 
+  // Rehydrate Saved for Later drafts from localStorage after refresh / remount.
+  useEffect(() => {
+    setDraftsList(getSavedDrafts())
+  }, [])
+
   useEffect(() => {
     const cleanEmail = email.trim()
     const cleanPhone = contactNumber.trim()
