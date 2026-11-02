@@ -1,16 +1,23 @@
 import {
   Save,
-  Building,
   Building2,
   X,
 } from 'lucide-react'
+import { usersService } from '../../../services/workspace.service'
+import { apiErrorMessage } from './userApi'
 import type { UserManagementVM } from './useUserManagement'
 
 export function AdjustClientModal({
-    role, setUsers, setRecruiterUsers, targetClient,
-    setTargetClient, adjustClientUser, setAdjustClientUser, showToast
+    targetClient,
+    setTargetClient, adjustClientUser, setAdjustClientUser, showToast,
+    clientOptions, clientNameById, reloadUsers, isSaving, setIsSaving,
 }: UserManagementVM) {
   if (!adjustClientUser) return null
+
+  const clientLabel = targetClient
+    ? (clientNameById[targetClient] || 'selected client')
+    : 'All Clients'
+
   return (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95 duration-150 font-sans">
@@ -43,15 +50,10 @@ export function AdjustClientModal({
                   onChange={e => setTargetClient(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#6B3BF6] cursor-pointer"
                 >
-                  <option value="Accenture">Accenture</option>
-                  <option value="Deloitte">Deloitte</option>
-                  <option value="MetaForge">MetaForge IT Solutions</option>
-                  <option value="Google">Google</option>
-                  <option value="Microsoft">Microsoft</option>
-                  <option value="TCS">Tata Consultancy Services (TCS)</option>
-                  <option value="Infosys">Infosys</option>
-                  <option value="Wipro">Wipro</option>
-                  <option value="All Clients">All Clients (Executive Oversight)</option>
+                  <option value="">All Clients (Executive Oversight)</option>
+                  {clientOptions.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
                 </select>
                 <p className="text-[10px] text-slate-500 mt-1 font-medium">
                   Reassigning this client updates requirement allocations, candidate submission targets, and performance SLAs for this recruiter/lead.
@@ -63,34 +65,33 @@ export function AdjustClientModal({
               <button
                 type="button"
                 onClick={() => setAdjustClientUser(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+                disabled={isSaving}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setUsers(prev =>
-                    prev.map(u =>
-                      u.id === adjustClientUser.id
-                        ? { ...u, assignedClient: targetClient }
-                        : u
-                    )
-                  )
-                  setRecruiterUsers(prev =>
-                    prev.map(r =>
-                      r.id === adjustClientUser.id || r.email === adjustClientUser.email
-                        ? { ...r, assignedClient: targetClient }
-                        : r
-                    )
-                  )
-                  showToast(`Adjusted client assignment for ${adjustClientUser.name} to "${targetClient}"!`)
-                  setAdjustClientUser(null)
+                disabled={isSaving}
+                onClick={async () => {
+                  setIsSaving(true)
+                  try {
+                    await usersService.update(adjustClientUser.id, {
+                      clientId: targetClient || '',
+                    })
+                    await reloadUsers()
+                    showToast(`Adjusted client assignment for ${adjustClientUser.name} to "${clientLabel}"!`)
+                    setAdjustClientUser(null)
+                  } catch (err) {
+                    showToast(apiErrorMessage(err))
+                  } finally {
+                    setIsSaving(false)
+                  }
                 }}
-                className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98"
+                className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98 disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Client Assignment</span>
+                <span>{isSaving ? 'Saving…' : 'Save Client Assignment'}</span>
               </button>
             </div>
           </div>

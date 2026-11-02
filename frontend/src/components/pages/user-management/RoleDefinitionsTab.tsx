@@ -2,12 +2,13 @@ import {
   Shield,
   Sliders,
   Plus,
+  Trash2,
 } from 'lucide-react'
 import type { UserManagementVM } from './useUserManagement'
 
 export function RoleDefinitionsTab({
     canModifyUsers, roles, setViewMode, setEditingRole,
-    setTempRolePermissions
+    setTempRolePermissions, handleDeleteRole, isSaving,
 }: UserManagementVM) {
   return (
         <div className="space-y-6 animate-in fade-in duration-150">
@@ -60,28 +61,42 @@ export function RoleDefinitionsTab({
                   </p>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
                   <div className="text-[11px] text-slate-500">
                     Active Users: <strong className="text-slate-900 font-extrabold">{r.userCount} Accounts</strong>
                   </div>
 
-                  {canModifyUsers ? (
-                    <button
-                      onClick={() => {
-                        setEditingRole(r)
-                        setTempRolePermissions({ ...r.permissions })
-                        setViewMode('configure_permissions')
-                      }}
-                      className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] text-xs font-extrabold rounded-xl border border-purple-200 flex items-center gap-1.5 cursor-pointer transition-all active:scale-98"
-                    >
-                      <Sliders className="w-3.5 h-3.5" />
-                      <span>Configure Permissions</span>
-                    </button>
-                  ) : (
-                    <span className="px-3 py-1.5 bg-slate-100 text-slate-500 text-xs font-bold rounded-xl border border-slate-200">
-                      View Only
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {canModifyUsers && !r.isSystem && (
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => handleDeleteRole(r)}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold rounded-xl border border-rose-200 flex items-center gap-1.5 cursor-pointer transition-all active:scale-98 disabled:opacity-60"
+                        title={`Delete role ${r.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                    {canModifyUsers ? (
+                      <button
+                        onClick={() => {
+                          setEditingRole(r)
+                          setTempRolePermissions({ ...r.permissions })
+                          setViewMode('configure_permissions')
+                        }}
+                        className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] text-xs font-extrabold rounded-xl border border-purple-200 flex items-center gap-1.5 cursor-pointer transition-all active:scale-98"
+                      >
+                        <Sliders className="w-3.5 h-3.5" />
+                        <span>Configure Permissions</span>
+                      </button>
+                    ) : (
+                      <span className="px-3 py-1.5 bg-slate-100 text-slate-500 text-xs font-bold rounded-xl border border-slate-200">
+                        View Only
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

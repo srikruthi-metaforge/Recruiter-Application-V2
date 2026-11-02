@@ -96,45 +96,43 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
   const [workMode, setWorkMode] = useState('On-site')
   const [budgetCurrency, setBudgetCurrency] = useState('INR (₹)')
   const [yearlyBudget, setYearlyBudget] = useState(
-    initialData?.budget ? initialData.budget.replace(/[^0-9]/g, '') : '1400000'
+    initialData?.budget ? initialData.budget.replace(/[^0-9]/g, '') : ''
   )
   const [locationInput, setLocationInput] = useState('')
   const [locations, setLocations] = useState<string[]>(
-    initialData?.location ? initialData.location.split(', ') : ['Pune']
+    initialData?.location
+      ? initialData.location.split(/[,;/|]/).map(s => s.trim()).filter(Boolean)
+      : []
   )
-  const [overallExp, setOverallExp] = useState('7-12 years')
-  const [noticePeriod, setNoticePeriod] = useState('Immediate')
+  const [overallExp, setOverallExp] = useState(
+    initialData?.experience || ''
+  )
+  const [noticePeriod, setNoticePeriod] = useState(
+    initialData?.noticePeriod || ''
+  )
 
   const [mandatorySkillInput, setMandatorySkillInput] = useState('')
+  // Do not pre-fill sample skills — only populate after JD parse (or from edit initialData).
   const [mandatorySkills, setMandatorySkills] = useState<string[]>(
-    initialData?.skills || [
-      'Catia V6',
-      'Door Panel design experience',
-      'knowledge on complete door design',
-      'packaging',
-      'gaps',
-      'other CAE',
-      'Plant',
-      'forming requirements',
-      'Any',
-    ]
+    initialData?.mandatorySkills || initialData?.skills || []
   )
 
   const [skillInput, setSkillInput] = useState('')
-  const [skills, setSkills] = useState<string[]>([
-    'Master section creation & validation',
-    'Door mechanisms',
-    'Hinges & handles',
-    'Cross-functional collaboration (CFT)',
-    'Manufacturing awareness',
-    'Experienced in Design & Development of BIW Closures from the concept to mass production Design',
-    'Design Considering the Package',
-    'master sections',
-    'styling',
-    'vehicle regulation & performance',
-    'Knowledge on Door Regulation for Asian and European market',
-    'Worked in atleast two complete life cycle of Door design',
-  ])
+  const [skills, setSkills] = useState<string[]>(
+    initialData?.skills && initialData?.mandatorySkills
+      ? initialData.skills.filter(
+          s => !(initialData.mandatorySkills || []).some(m => m.toLowerCase() === s.toLowerCase()),
+        )
+      : []
+  )
+
+  /** Filled only after JD Extract & Auto-fill — persisted on create, no UI field yet. */
+  const [rolesAndResponsibilities, setRolesAndResponsibilities] = useState(
+    initialData?.rolesAndResponsibilities || ''
+  )
+  const [jdDescription, setJdDescription] = useState(
+    initialData?.description || ''
+  )
 
   const [jdText, setJdText] = useState('')
   const [jdFile, setJdFile] = useState<File | null>(null)
@@ -217,6 +215,10 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
     setSkillInput,
     skills,
     setSkills,
+    rolesAndResponsibilities,
+    setRolesAndResponsibilities,
+    jdDescription,
+    setJdDescription,
     jdText,
     setJdText,
     jdFile,

@@ -9,6 +9,7 @@ import { Offer, OfferDocument } from '../offers/schemas/offer.schema';
 import { Client, ClientDocument } from '../clients/schemas/client.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { RecruiterAnalytics, RecruiterAnalyticsDocument } from './schemas/recruiter-analytics.schema';
+import { assertAnalyticsAccess } from './analytics.access';
 
 @Injectable()
 export class AnalyticsService {
@@ -44,14 +45,19 @@ export class AnalyticsService {
     return Object.keys(filter).length > 0 ? filter : null;
   }
 
+  private resolveOrgId(currentUser: any): Types.ObjectId {
+    return currentUser?.orgId
+      ? new Types.ObjectId(currentUser.orgId.toString())
+      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+  }
+
   /** GET /api/v1/analytics/dashboard */
   async getDashboardSummary(
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string; clientId?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    const scope = assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
 
@@ -162,6 +168,7 @@ export class AnalyticsService {
     const avgMatchScore = matchScoreAgg.length > 0 ? Math.round(matchScoreAgg[0].avgScore) : 85;
 
     return {
+      scope,
       kpis: {
         totalRequirements,
         activeRequirements,
@@ -180,14 +187,75 @@ export class AnalyticsService {
     };
   }
 
+  /** GET /api/v1/analytics/trends — monthly company-wide volume for charts */
+  async getTrends(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string },
+  ) {
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
+
+    const end = query?.endDate && !isNaN(new Date(query.endDate).getTime())
+      ? new Date(query.endDate)
+      : new Date();
+    const start = query?.startDate && !isNaN(new Date(query.startDate).getTime())
+      ? new Date(query.startDate)
+      : new Date(end.getFullYear(), end.getMonth() - 5, 1);
+
+    const baseMatch = {
+      orgId,
+      deletedAt: null,
+      createdAt: { $gte: start, $lte: end },
+    };
+
+    const monthGroup = {
+      _id: {
+        year: { $year: '$createdAt' },
+        month: { $month: '$createdAt' },
+      },
+      count: { $sum: 1 },
+    };
+
+    const [reqTrend, subTrend, intTrend] = await Promise.all([
+      this.requirementModel.aggregate([{ $match: baseMatch }, { $group: monthGroup }, { $sort: { '_id.year': 1, '_id.month': 1 } }]).exec(),
+      this.submissionModel.aggregate([{ $match: baseMatch }, { $group: monthGroup }, { $sort: { '_id.year': 1, '_id.month': 1 } }]).exec(),
+      this.interviewModel.aggregate([{ $match: baseMatch }, { $group: monthGroup }, { $sort: { '_id.year': 1, '_id.month': 1 } }]).exec(),
+    ]);
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const keyOf = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
+    const map: Record<string, { month: string; requirements: number; submissions: number; interviews: number }> = {};
+
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const endCursor = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= endCursor) {
+      const y = cursor.getFullYear();
+      const m = cursor.getMonth() + 1;
+      const key = keyOf(y, m);
+      map[key] = { month: `${monthNames[m - 1]} ${y}`, requirements: 0, submissions: 0, interviews: 0 };
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    const apply = (rows: any[], field: 'requirements' | 'submissions' | 'interviews') => {
+      for (const row of rows) {
+        const key = keyOf(row._id.year, row._id.month);
+        if (map[key]) map[key][field] = row.count;
+      }
+    };
+    apply(reqTrend, 'requirements');
+    apply(subTrend, 'submissions');
+    apply(intTrend, 'interviews');
+
+    return { months: Object.values(map) };
+  }
+
   /** GET /api/v1/analytics/requirements */
   async getRequirementStats(
     currentUser: any,
     query?: { startDate?: string; endDate?: string; clientId?: string; status?: string; priority?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
@@ -241,9 +309,8 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
@@ -289,9 +356,8 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string; leadId?: string; clientId?: string; stage?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
@@ -342,9 +408,8 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string; round?: string; interviewerEmail?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
@@ -388,9 +453,8 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
@@ -430,9 +494,8 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; tier?: string; status?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
     const filter: Record<string, any> = { orgId, deletedAt: null };
     if (query?.tier) filter.tier = query.tier;
@@ -461,32 +524,35 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string },
   ) {
-    const orgId = currentUser?.orgId
-      ? new Types.ObjectId(currentUser.orgId.toString())
-      : new Types.ObjectId('6ab4f38ff2e0e1823c038948');
+    assertAnalyticsAccess(currentUser);
+    const orgId = this.resolveOrgId(currentUser);
 
-    const userFilter: Record<string, any> = { orgId, deletedAt: null };
+    const userFilter: Record<string, any> = {
+      orgId,
+      deletedAt: null,
+      role: { $in: ['recruiter', 'lead'] },
+    };
     if (query?.recruiterId && Types.ObjectId.isValid(query.recruiterId)) {
       userFilter._id = new Types.ObjectId(query.recruiterId);
     }
 
+    const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
     const recruiters = await this.userModel.find(userFilter, 'name email role').exec();
 
     const performanceList = [];
     for (const r of recruiters) {
       const rId = r._id as Types.ObjectId;
-
-      const subCount = await this.submissionModel.countDocuments({
+      const subFilter: Record<string, any> = {
         orgId,
         recruiterId: rId,
         deletedAt: null,
-      }).exec();
+      };
+      if (dateFilter) subFilter.createdAt = dateFilter;
 
+      const subCount = await this.submissionModel.countDocuments(subFilter).exec();
       const placedCount = await this.submissionModel.countDocuments({
-        orgId,
-        recruiterId: rId,
+        ...subFilter,
         stage: 'Placed',
-        deletedAt: null,
       }).exec();
 
       performanceList.push({
@@ -499,6 +565,6 @@ export class AnalyticsService {
       });
     }
 
-    return performanceList;
+    return performanceList.sort((a, b) => b.submissionsCount - a.submissionsCount);
   }
 }

@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Put,
   Req,
   UseGuards,
@@ -32,5 +34,15 @@ export class RolesController {
     @Req() req: any,
   ) {
     return this.usersService.updateRolePermissions(dto, req.user);
+  }
+
+  /** DELETE /api/v1/roles/permissions/:roleCode — custom / non-core roles only */
+  @Delete('permissions/:roleCode')
+  @Roles('superadmin', 'admin')
+  async deleteRolePermission(
+    @Param('roleCode') roleCode: string,
+    @Req() req: any,
+  ) {
+    return this.usersService.deleteRolePermission(roleCode, req.user);
   }
 }

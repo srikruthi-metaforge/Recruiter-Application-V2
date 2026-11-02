@@ -106,6 +106,13 @@ export function useAppController() {
       const key = navKeyFromPathname(window.location.pathname)
       if (!key) return
       setActiveNav(key)
+      // Phase 1: Analytics deep-links are Super Admin only.
+      if (key === 'Analytics' && getSessionUser()?.role !== 'superadmin') {
+        const fallback = getSessionUser()?.role === 'recruiter' || getSessionUser()?.role === 'lead' ? 'Dashboard' : 'Requirements'
+        setActiveNav(fallback)
+        syncBrowserPath(fallback, 'replace')
+        return
+      }
       if (key === 'Requirements' || key === 'Dashboard' || key === 'Reports' || key === 'Reports & Analytics') {
         applyWorkspace().catch(() => undefined)
       }
@@ -143,7 +150,8 @@ export function useAppController() {
     createAuthenticatedHandler(setRole, setActiveNav, setScreen)(r)
     const fromUrl = typeof window !== 'undefined' ? navKeyFromPathname(window.location.pathname) : null
     const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-    const targetNav = fromUrl || defaultNav
+    // Phase 1: block Analytics URL for non–Super Admin roles.
+    const targetNav = fromUrl === 'Analytics' && r !== 'superadmin' ? defaultNav : (fromUrl || defaultNav)
     setActiveNav(targetNav)
     syncBrowserPath(targetNav, 'replace')
     setWorkspaceReady(false)
@@ -153,6 +161,13 @@ export function useAppController() {
   }
 
   const handleNavSelect = (key: string) => {
+    // Phase 1: Analytics is Super Admin only (menu + deep-link guard).
+    if (key === 'Analytics' && role !== 'superadmin') {
+      const fallback = role === 'recruiter' || role === 'lead' ? 'Dashboard' : 'Requirements'
+      createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)(fallback)
+      syncBrowserPath(fallback, 'push')
+      return
+    }
     createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)(key)
     syncBrowserPath(key, 'push')
     if (

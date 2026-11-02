@@ -62,6 +62,19 @@ export class UpdateRequirementDto {
   skills?: string[];
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mandatorySkills?: string[];
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  rolesAndResponsibilities?: string;
+
+  @IsOptional()
   @IsObject()
   experienceRange?: {
     min: number;

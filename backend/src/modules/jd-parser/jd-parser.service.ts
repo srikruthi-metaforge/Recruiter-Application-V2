@@ -147,6 +147,7 @@ export class JdParserService implements OnModuleInit {
       return {
         ...analyzed.fields,
         jdDescription: analyzed.fields.jdDescription ?? jdText.trim(),
+        rolesAndResponsibilities: analyzed.fields.rolesAndResponsibilities,
         extractionSource: analyzed.source,
         totalRolesDetected: analyzed.totalRoles,
         roleTitle: analyzed.roleTitle,
@@ -160,6 +161,7 @@ export class JdParserService implements OnModuleInit {
       return {
         ...fallback,
         jdDescription: fallback.jdDescription ?? jdText.trim(),
+        rolesAndResponsibilities: fallback.rolesAndResponsibilities,
         usedFallbackParser: true,
       };
     }

@@ -549,7 +549,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
     return (
       <div className="space-y-6 w-full pb-16 font-sans text-slate-800 animate-in fade-in duration-200">
         {/* TOP PAGE HEADER WITH BACK BUTTON */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div className="flex items-center border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setViewMode('list')}
@@ -567,24 +567,6 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                 Fill in the organization details, primary contact POC, commercial SLA terms, and upload the signed Master Services Agreement (MSA).
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              form="add-client-full-form"
-              type="submit"
-              className="px-5 py-2 bg-[#6B3BF6] hover:bg-[#5833E0] text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-98"
-            >
-              <Save className="w-4 h-4" />
-              <span>Save & Empanel Client</span>
-            </button>
           </div>
         </div>
 

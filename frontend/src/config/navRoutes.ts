@@ -14,6 +14,7 @@ const NAV_KEY_TO_PATH: Record<string, string> = {
   'Client Management': '/clients',
   Reports: '/reports',
   'Reports & Analytics': '/reports',
+  Analytics: '/analytics',
   'Audit Logs': '/auditlogs',
   'Activity Logs': '/auditlogs',
   History: '/history',
@@ -50,6 +51,7 @@ PATH_TO_NAV_KEY['/addcandidates'] = 'Candidates'
 PATH_TO_NAV_KEY['/usermanagement'] = 'Users'
 PATH_TO_NAV_KEY['/clients'] = 'Clients'
 PATH_TO_NAV_KEY['/reports'] = 'Reports'
+PATH_TO_NAV_KEY['/analytics'] = 'Analytics'
 PATH_TO_NAV_KEY['/auditlogs'] = 'Audit Logs'
 PATH_TO_NAV_KEY['/history'] = 'History'
 PATH_TO_NAV_KEY['/myprofile'] = 'My Profile'

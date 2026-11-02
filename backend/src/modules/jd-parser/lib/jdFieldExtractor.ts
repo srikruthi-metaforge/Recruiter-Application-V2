@@ -28,6 +28,7 @@ export type JdExtractFormFields = {
   demandType?: 'Single' | 'Multiple' | 'Bulk';
   submittingTo?: string;
   jdDescription?: string;
+  rolesAndResponsibilities?: string;
 };
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
@@ -1967,8 +1968,14 @@ export function parseJdToFormFields(jdText: string, options?: { subjectHint?: st
   const budgetResult = parseBudgetFromText(text);
   const detectedCurrency = parseCurrency(text, budgetResult.raw || undefined);
 
+  const rolesMatch = text.match(
+    /(?:(?:key\s*)?roles?\s*(?:and|&)\s*responsibilities?|key\s*responsibilities?|key\s*areas?\s*of\s*responsibility|role\s*overview|responsibilities?)\s*:?\s*([\s\S]+?)(?=\n\s*(?:mandatory\s*skills?|required\s*skills?|skills?\s*required|primary\s*skills?|secondary\s*skills?|nice\s*to\s*have|good\s*to\s*have|qualifications?|eligibility|requirements?\s*:|experience\s*:|education|budget|notice\s*period|employment\s*type)\b|$)/i,
+  );
+  const rolesAndResponsibilities = rolesMatch?.[1]?.trim().slice(0, 5000) || undefined;
+
   const out: JdExtractFormFields = {
     jdDescription: text,
+    rolesAndResponsibilities,
     jobTitle: jobTitle || undefined,
     clientLeadPoc: pocs.lead,
     clientPoc: pocs.poc,

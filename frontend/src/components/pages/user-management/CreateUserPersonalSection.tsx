@@ -5,7 +5,7 @@ import type { UserManagementVM } from './useUserManagement'
 
 export function CreateUserPersonalSection({
     newUserName, setNewUserName, newUserEmail, setNewUserEmail,
-    newUserPhone, setNewUserPhone, newUserEmpId, setNewUserEmpId
+    newUserPhone, setNewUserPhone
 }: UserManagementVM) {
   return (
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-2xs space-y-4">
@@ -14,7 +14,7 @@ export function CreateUserPersonalSection({
               <span>1. User Personal Details & Identity</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-slate-700 font-bold text-xs mb-1.5">Full Name *</label>
                 <input
@@ -46,17 +46,6 @@ export function CreateUserPersonalSection({
                   placeholder="+91 XXXXX XXXXX"
                   value={newUserPhone}
                   onChange={e => setNewUserPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-[#6B3BF6]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold text-xs mb-1.5">Employee ID</label>
-                <input
-                  type="text"
-                  placeholder="EMP-2026-045"
-                  value={newUserEmpId}
-                  onChange={e => setNewUserEmpId(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-[#6B3BF6]"
                 />
               </div>

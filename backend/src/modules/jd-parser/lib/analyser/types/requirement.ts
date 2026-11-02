@@ -33,6 +33,8 @@ export interface RequirementData {
   secondary_skills?: string[];
   skills: string[];
   jobDescription: string;
+  /** Roles & responsibilities section from the JD (duties / key responsibilities). */
+  rolesAndResponsibilities: string;
 }
 
 export const EMPTY_REQUIREMENT: RequirementData = {
@@ -65,6 +67,7 @@ export const EMPTY_REQUIREMENT: RequirementData = {
   secondarySkills: [],
   skills: [],
   jobDescription: "",
+  rolesAndResponsibilities: "",
 };
 
 /** Result returned from /api/analyze for each detected role */

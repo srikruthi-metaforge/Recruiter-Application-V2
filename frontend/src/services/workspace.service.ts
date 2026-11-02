@@ -65,6 +65,9 @@ export const workspaceService = {
       priority: body.priority,
       openings: body.openings,
       skillsRequired: body.skills || (body as any).skillsRequired,
+      mandatorySkills: body.mandatorySkills || (body as any).mandatorySkills,
+      description: body.description || (body as any).description,
+      rolesAndResponsibilities: body.rolesAndResponsibilities || (body as any).rolesAndResponsibilities,
       location: body.location,
       // Portal "Active" maps to backend Open so new demands get a real reqCode and appear in the shared list.
       status:
@@ -172,8 +175,10 @@ export const usersService = {
 }
 
 export const rolesService = {
-  permissions: () => api.get<any[]>('/roles/permissions'),
+  permissions: () => api.get<any>('/roles/permissions'),
   updatePermissions: (body: unknown) => api.put('/roles/permissions', body),
+  remove: (roleCode: string) =>
+    api.delete(`/roles/permissions/${encodeURIComponent(roleCode)}`),
 }
 
 export const clientsService = {
@@ -301,6 +306,7 @@ function toQueryString(params?: AnalyticsFilterQuery): string {
 
 export const analyticsService = {
   dashboard: (params?: AnalyticsFilterQuery) => api.get<any>(`/analytics/dashboard${toQueryString(params)}`),
+  trends: (params?: AnalyticsFilterQuery) => api.get<any>(`/analytics/trends${toQueryString(params)}`),
   requirements: (params?: AnalyticsFilterQuery) => api.get<any>(`/analytics/requirements${toQueryString(params)}`),
   candidates: (params?: AnalyticsFilterQuery) => api.get<any>(`/analytics/candidates${toQueryString(params)}`),
   submissions: (params?: AnalyticsFilterQuery) => api.get<any>(`/analytics/submissions${toQueryString(params)}`),

@@ -1,5 +1,5 @@
 import React from 'react'
-import { AlertTriangle, Check, X, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, X } from 'lucide-react'
 import { RequirementCardsGrid } from '../../ui/RequirementCardsGrid'
 import { RequirementsVm } from './useRequirementsPage'
 
@@ -19,9 +19,6 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
     handleDeclineRevokeRequest,
     roleLabel,
     pendingRevokeRequests,
-    isSyncingMail,
-    mailSyncStatus,
-    handleSyncEmails,
   } = vm
 
   const handleSelectCardFilter = (key: typeof activeCardFilter) => {
@@ -43,38 +40,10 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
         activeCardFilter={activeCardFilter}
         onSelectFilter={handleSelectCardFilter}
         onCreateNewJobDemand={() => setIsCreatingDemand(true)}
-        onSyncEmails={handleSyncEmails}
-        isSyncingMail={isSyncingMail}
-        mailSyncStatus={mailSyncStatus}
         title="Requirements Dashboard"
         badgeLabel={roleLabel}
         hideCards={role === 'recruiter' || role === 'lead'}
       />
-
-      {/* AUTO EMAIL EXTRACTION SYNC BANNER */}
-      {isSyncingMail && (
-        <div className="bg-gradient-to-r from-indigo-50 via-blue-50 to-purple-50 border border-indigo-200/80 rounded-2xl p-3.5 shadow-xs flex items-center justify-between text-xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            </div>
-            <div>
-              <p className="font-extrabold text-indigo-950 flex items-center gap-2">
-                <span>Microsoft 365 Auto Mail Extraction Active</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] bg-indigo-100 text-indigo-700 font-bold border border-indigo-200">
-                  Processing Inbox
-                </span>
-              </p>
-              <p className="text-[11px] text-indigo-700/80 font-medium mt-0.5">
-                Fetching client requirement emails, extracting role details, skills, experience, and updating requirements list...
-              </p>
-            </div>
-          </div>
-          <span className="text-[11px] font-semibold text-indigo-600 shrink-0 hidden sm:inline-block">
-            Auto-refreshing view...
-          </span>
-        </div>
-      )}
 
       {/* PENDING REVOKE APPROVAL BANNER (EXCLUSIVELY FOR SUPER ADMIN & ADMIN) */}
       {(role === 'superadmin' || role === 'admin' || role === 'devteam') && pendingRevokeRequests.length > 0 && (

@@ -56,7 +56,9 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
     yearlyBudget, budgetCurrency, locationInput, setLocationInput, locations,
     setLocations, mandatorySkillInput, setMandatorySkillInput, mandatorySkills,
     setMandatorySkills, skillInput, setSkillInput, skills,
-    setSkills, jdText, jdFile, setJdText, setIsExtracting, showToast,
+    setSkills, rolesAndResponsibilities, setRolesAndResponsibilities,
+    jdDescription, setJdDescription,
+    jdText, jdFile, setJdText, setIsExtracting, showToast,
     setClientLeadPoc, setClientPoc, setOverallExp, setRelevantExp, setNoticePeriod,
     setOpenings, setEmploymentType, setWorkMode, setYearlyBudget, setBudgetCurrency,
     setPriority, setTypeOfDemand, setRequirementFrom, setCustomCompany,
@@ -175,8 +177,16 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
       filled.push('skills')
     }
 
-    if (data.jdDescription?.trim() && !jdText.trim()) {
-      setJdText(data.jdDescription.trim())
+    if (data.rolesAndResponsibilities?.trim()) {
+      setRolesAndResponsibilities(data.rolesAndResponsibilities.trim())
+      filled.push('roles & responsibilities')
+    }
+
+    if (data.jdDescription?.trim()) {
+      setJdDescription(data.jdDescription.trim())
+      if (!jdText.trim()) {
+        setJdText(data.jdDescription.trim())
+      }
     }
 
     // Prefer internal POC from submitting metadata when present as email-like internal string
@@ -261,6 +271,9 @@ export function useCreateJobDemandFormHandlers(s: CreateJobDemandVmState) {
       emailArrivedTime: initialData?.emailArrivedTime || '',
       budget: budgetDisplay,
       skills: mandatorySkills,
+      mandatorySkills,
+      description: jdDescription || undefined,
+      rolesAndResponsibilities: rolesAndResponsibilities || undefined,
       ...(budgetAmount > 0
         ? {
             budgetRange: { min: budgetAmount, max: budgetAmount, currency: currencyCode },

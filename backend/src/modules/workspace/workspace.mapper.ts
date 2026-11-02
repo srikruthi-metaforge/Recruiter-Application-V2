@@ -151,6 +151,7 @@ export function mapRequirement(r: any) {
     toEmails: r.toEmails || [],
     ccEmails: r.ccEmails || [],
     description: r.description || '',
+    rolesAndResponsibilities: r.rolesAndResponsibilities || '',
     employmentType: r.employmentType || '',
     workMode: r.workMode || '',
     noticePeriod: r.noticePeriod || '',

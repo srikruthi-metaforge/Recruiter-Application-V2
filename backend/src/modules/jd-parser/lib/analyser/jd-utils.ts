@@ -55,6 +55,7 @@ const INHERITABLE_STRING_FIELDS: (keyof RequirementData)[] = [
   "annualBudget",
   "noticePeriod",
   "sla",
+  "rolesAndResponsibilities",
 ];
 
 /** Fill missing role fields from shared JD/email metadata */
@@ -82,6 +83,12 @@ export function mergeInheritedFields(
     common.jobDescription !== NOT_SPECIFIED
   ) {
     merged.jobDescription = common.jobDescription;
+  }
+  if (
+    isMissingField(merged.rolesAndResponsibilities) &&
+    !isMissingField(common.rolesAndResponsibilities)
+  ) {
+    merged.rolesAndResponsibilities = common.rolesAndResponsibilities as string;
   }
 
   if (merged.demandReceivedDate !== NOT_SPECIFIED) {
@@ -333,6 +340,20 @@ export function extractJobDescriptionSection(rawText: string): string {
   return match[1].trim().slice(0, 3000);
 }
 
+/** Extract the Roles & Responsibilities / Key Responsibilities section from JD text. */
+export function extractRolesAndResponsibilitiesSection(rawText: string): string {
+  const text = String(rawText || '');
+  const match = text.match(
+    /(?:(?:key\s*)?roles?\s*(?:and|&)\s*responsibilities?|key\s*responsibilities?|key\s*areas?\s*of\s*responsibility|role\s*overview|responsibilities?)\s*:?\s*([\s\S]+?)(?=\n\s*(?:mandatory\s*skills?|required\s*skills?|skills?\s*required|primary\s*skills?|secondary\s*skills?|nice\s*to\s*have|good\s*to\s*have|qualifications?|eligibility|requirements?\s*:|experience\s*:|education|budget|notice\s*period|employment\s*type)\b|$)/i,
+  );
+  if (!match?.[1]) return NOT_SPECIFIED;
+  const cleaned = match[1]
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .slice(0, 5000);
+  return cleaned || NOT_SPECIFIED;
+}
+
 export function toRequirementData(
   extracted: Partial<RequirementData>,
   options?: { isInferredTitle?: boolean }
@@ -407,6 +428,11 @@ export function toRequirementData(
     secondary_skills: distinctSecondary,
     skills: allSkills,
     jobDescription: normalize(extracted.jobDescription),
+    rolesAndResponsibilities: normalize(
+      extracted.rolesAndResponsibilities ||
+        (extracted as any).roles_and_responsibilities ||
+        (extracted as any).key_responsibilities,
+    ),
   };
 }
 
@@ -682,6 +708,14 @@ export function regexAugment(
   ) {
     augmented.qualificationCriteria =
       qualificationMatch[1].trim();
+  }
+
+  // ROLES & RESPONSIBILITIES
+  if (isMissingField(augmented.rolesAndResponsibilities)) {
+    const rolesSection = extractRolesAndResponsibilitiesSection(rawText);
+    if (!isMissingField(rolesSection)) {
+      augmented.rolesAndResponsibilities = rolesSection;
+    }
   }
   
   // EXPERIENCE

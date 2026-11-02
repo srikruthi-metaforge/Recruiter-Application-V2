@@ -7,9 +7,18 @@ import {
 } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 
+/**
+ * Phase 1: Super Admin only.
+ * @Roles + @RequirePermission block other roles at the guard layer;
+ * AnalyticsService also asserts Super Admin so access cannot rely on UI hiding alone.
+ */
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
+@Roles('superadmin')
+@RequirePermission('analytics_view_company')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
@@ -28,6 +37,16 @@ export class AnalyticsController {
       recruiterId,
       clientId,
     });
+  }
+
+  /** GET /api/v1/analytics/trends */
+  @Get('trends')
+  async getTrends(
+    @Req() req: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.analyticsService.getTrends(req.user, { startDate, endDate });
   }
 
   /** GET /api/v1/analytics/requirements */

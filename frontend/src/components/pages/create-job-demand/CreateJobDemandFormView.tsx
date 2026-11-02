@@ -7,6 +7,7 @@ import { CreateJobBasic } from './CreateJobBasic'
 import { CreateJobClient } from './CreateJobClient'
 import { CreateJobInfo } from './CreateJobInfo'
 import { CreateJobPosition } from './CreateJobPosition'
+import { CreateJobRoles } from './CreateJobRoles'
 import { CreateJobMandatory } from './CreateJobMandatory'
 import { CreateJobCoreSkills } from './CreateJobCoreSkills'
 import { CreateJobActions } from './CreateJobActions'
@@ -23,6 +24,7 @@ export function CreateJobDemandForm(props: CreateJobDemandFormProps) {
         <CreateJobClient vm={vm} />
         <CreateJobInfo vm={vm} />
         <CreateJobPosition vm={vm} />
+        <CreateJobRoles vm={vm} />
         <CreateJobMandatory vm={vm} />
         <CreateJobCoreSkills vm={vm} />
         <CreateJobActions vm={vm} />

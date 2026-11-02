@@ -18,7 +18,7 @@ export function useUserAccessActions(s: UserManagementState) {
       return
     }
     setAdjustClientUser(user)
-    setTargetClient(user.assignedClient || 'Accenture')
+    setTargetClient(user.clientMongoId || '')
   }
 
   // Open Reset Password Page
@@ -41,7 +41,7 @@ export function useUserAccessActions(s: UserManagementState) {
     }
     setSelectedUser(user)
     setTargetRole(user.role)
-    setTargetClient(user.assignedClient || 'Accenture')
+    setTargetClient(user.clientMongoId || '')
     setReassignReason('')
     setViewMode('assign_role')
   }

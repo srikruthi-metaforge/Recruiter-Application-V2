@@ -8,7 +8,8 @@ export function useUserFormActions(s: UserManagementState) {
     canModifyUsers, setViewMode,
     selectedUser, setSelectedUser, newUserName, setNewUserName,
     newUserEmail, setNewUserEmail, newUserPhone, setNewUserPhone,
-    newUserEmpId, setNewUserEmpId, newUserRole, tempPassword,
+    newUserEmpId, setNewUserEmpId, newUserRole, newUserClient, setNewUserClient,
+    tempPassword, setTempPassword, targetClient, clientNameById,
     resetNewPass, resetConfirmPass, targetRole,
     newRoleName, setNewRoleName, newRoleDescription,
     setNewRoleDescription, newPermissions, editingRole, setEditingRole,
@@ -37,21 +38,33 @@ export function useUserFormActions(s: UserManagementState) {
     }
 
     setIsSaving(true)
+    const email = newUserEmail.trim()
+    const name = newUserName.trim()
+    const password = tempPassword
     try {
       await usersService.create({
-        name: newUserName.trim(),
-        email: newUserEmail.trim(),
-        password: tempPassword,
+        name,
+        email,
+        password,
         role: roleCodeForLabel(newUserRole),
         ...(newUserPhone.trim() ? { phone: newUserPhone.trim() } : {}),
+        ...(newUserClient ? { clientId: newUserClient } : {}),
       })
       await reloadUsers()
       setViewMode('list')
-      showToast(`Created user account for ${newUserName.trim()}`)
+      const creds = `Created ${name}. Login with email ${email} and password ${password}`
+      try {
+        await navigator.clipboard.writeText(`Email: ${email}\nPassword: ${password}`)
+        showToast(`${creds} (copied to clipboard)`, 15000)
+      } catch {
+        showToast(creds, 15000)
+      }
       setNewUserName('')
       setNewUserEmail('')
       setNewUserPhone('')
       setNewUserEmpId('')
+      setNewUserClient('')
+      setTempPassword('')
     } catch (err) {
       showToast(apiErrorMessage(err))
     } finally {
@@ -94,10 +107,16 @@ export function useUserFormActions(s: UserManagementState) {
 
     setIsSaving(true)
     try {
-      await usersService.update(selectedUser.id, { role: roleCodeForLabel(targetRole) })
+      await usersService.update(selectedUser.id, {
+        role: roleCodeForLabel(targetRole),
+        clientId: targetClient || '',
+      })
       await reloadUsers()
       setViewMode('list')
-      showToast(`Updated role to "${targetRole}" for ${selectedUser.name}`)
+      const clientLabel = targetClient
+        ? (clientNameById[targetClient] || 'selected client')
+        : 'All Clients'
+      showToast(`Updated role to "${targetRole}" and client to "${clientLabel}" for ${selectedUser.name}`)
       setSelectedUser(null)
     } catch (err) {
       showToast(apiErrorMessage(err))
@@ -120,6 +139,7 @@ export function useUserFormActions(s: UserManagementState) {
     try {
       await rolesService.updatePermissions({
         roleCode,
+        roleName: newRoleName.trim(),
         permissions: enabledPermissionKeys(newPermissions),
       })
       await reloadRoles()
@@ -127,6 +147,31 @@ export function useUserFormActions(s: UserManagementState) {
       showToast(`Saved role "${newRoleName.trim()}"`)
       setNewRoleName('')
       setNewRoleDescription('')
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDeleteRole = async (role: { id: string; code?: string; name: string; isSystem?: boolean }) => {
+    if (isSaving) return
+    if (!canModifyUsers) {
+      showToast('Access Restricted: Only Super Admin can delete roles.')
+      return
+    }
+    if (role.isSystem) {
+      showToast('Core roles (Super Admin, Admin, Team Lead, Recruiter, Client) cannot be deleted.')
+      return
+    }
+    const roleCode = role.code || role.id
+    if (!window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) return
+
+    setIsSaving(true)
+    try {
+      await rolesService.remove(roleCode)
+      await reloadRoles()
+      showToast(`Deleted role "${role.name}"`)
     } catch (err) {
       showToast(apiErrorMessage(err))
     } finally {
@@ -159,6 +204,7 @@ export function useUserFormActions(s: UserManagementState) {
     handleResetPasswordSubmit,
     handleAssignRoleSubmit,
     handleCreateRoleSubmit,
+    handleDeleteRole,
     handleSaveRolePermissions,
   }
 }

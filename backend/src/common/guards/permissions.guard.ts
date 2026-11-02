@@ -3,7 +3,8 @@ import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 
 const FALLBACK_PERMISSIONS: Record<string, string[]> = {
-  superadmin: ['*'],
+  // analytics_view_company: Super Admin phase-1 Analytics (company-wide). Do not grant to admin/lead/recruiter yet.
+  superadmin: ['*', 'analytics_view_company'],
   devteam: ['*'],
   admin: [
     'req_view_all', 'req_create', 'req_edit', 'req_assign',

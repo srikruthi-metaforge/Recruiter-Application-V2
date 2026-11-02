@@ -50,6 +50,8 @@ export interface Requirement {
   revokeRequestedAt?: string
   sla?: string
   description?: string
+  /** Roles & responsibilities from JD parse (stored on requirement). */
+  rolesAndResponsibilities?: string
   employmentType?: string
   workMode?: string
   noticePeriod?: string
