@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { UNPAGED_LIST_CAP } from '../../common/list-page.util';
 
 import {
   Organization,
@@ -57,6 +58,7 @@ export class OrganizationService {
     return this.organizationModel
       .find()
       .sort({ createdAt: -1 })
+      .limit(UNPAGED_LIST_CAP)
       .exec();
   }
 

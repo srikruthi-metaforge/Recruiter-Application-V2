@@ -148,7 +148,11 @@ export interface Interview {
   position: string
   client: string
   stage: InterviewStage
+  /** Display label for round (may mirror stage). */
+  round?: string
   date: string
+  /** ISO datetime from workspace — used by Interview Schedule filters. */
+  dateTime?: string
   recruiter: string
   status: InterviewStatus
   notes?: string

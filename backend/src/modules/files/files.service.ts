@@ -224,6 +224,173 @@ export class FilesService {
     return { fileRecord, absolutePath };
   }
 
+  /** True when file metadata points at a readable file outside the web root. */
+  isReadable(file: FileMetadataDocument | null | undefined): boolean {
+    if (!file?.storageKey || file.scanStatus === 'INFECTED') return false;
+    try {
+      this.resolveExistingFilePath(file.storageKey);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Load a stored file by mongo id or business file id when its bytes are on disk. */
+  async readableById(currentUser: any, id: string): Promise<FileMetadataDocument | null> {
+    const raw = String(id || '').trim();
+    if (!raw) return null;
+    try {
+      const file = await this.findOne(currentUser, raw);
+      return this.isReadable(file) ? file : null;
+    } catch (err) {
+      if (err instanceof NotFoundException) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Find a resume already in file_metadata, or copy it in from the V1 resumes
+   * folder when that file is still on disk. Returns null when only a filename exists.
+   */
+  async locateOrImportResumeByName(
+    currentUser: any,
+    rawNames: string[],
+    uploadedBy?: Types.ObjectId,
+  ): Promise<FileMetadataDocument | null> {
+    const orgId = this.getOrgId(currentUser);
+    const names = this.safeResumeBasenames(rawNames);
+    if (!names.length) return null;
+
+    const existing = await this.filesRepository.findByResumeNames(orgId, names);
+    if (existing && this.isReadable(existing)) return existing;
+
+    const fileName = existing?.originalName || names[0];
+    const sourcePath = this.findLegacyResumePath(names);
+    if (!sourcePath) return null;
+
+    if (existing) {
+      existing.storageKey = this.copyResumeIntoStorage(orgId, sourcePath, fileName);
+      existing.sizeBytes = fs.statSync(sourcePath).size;
+      existing.checksumSha256 = this.checksumFile(sourcePath);
+      existing.scanStatus = 'CLEAN';
+      existing.deletedAt = null;
+      await existing.save();
+      return existing;
+    }
+
+    const owner = uploadedBy && Types.ObjectId.isValid(String(uploadedBy))
+      ? new Types.ObjectId(String(uploadedBy))
+      : this.getUserId(currentUser);
+    const ext = path.extname(fileName).toLowerCase();
+    const count = await this.filesRepository.countFiles(orgId);
+    const saved = await this.filesRepository.create({
+      orgId,
+      fileId: `FILE-V1-${Date.now()}-${String(count + 1).padStart(3, '0')}`,
+      originalName: fileName,
+      mimeType: this.mimeForExtension(ext),
+      sizeBytes: fs.statSync(sourcePath).size,
+      storageProvider: 'LOCAL',
+      bucketName: 'private-resumes',
+      storageKey: this.copyResumeIntoStorage(orgId, sourcePath, fileName),
+      checksumSha256: this.checksumFile(sourcePath),
+      scanStatus: 'CLEAN',
+      uploadedBy: owner,
+      deletedAt: null,
+      legacyPostgresId: `resume:${fileName}`,
+      legacy: { v1ResumeUrl: fileName, v1SourcePath: sourcePath },
+      schemaVersion: 1,
+    });
+    return saved;
+  }
+
+  private safeResumeBasenames(rawNames: string[]): string[] {
+    const names = new Set<string>();
+    for (const raw of rawNames) {
+      const base = path.basename(String(raw || '').replace(/\\/g, '/')).trim();
+      if (!base || base === '.' || base === '..' || base.includes('..') || base.length > 255) continue;
+      names.add(base);
+    }
+    return [...names];
+  }
+
+  private legacyResumeDirs(): string[] {
+    const guesses = [
+      (process.env.V1_RESUMES_DIR || '').trim(),
+      path.resolve(process.cwd(), 'uploads', 'resumes'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'V1_postgre_backup',
+        'staffing_db_full_2026-10-31_120514',
+        'uploads',
+        'resumes',
+      ),
+      path.resolve(
+        process.cwd(),
+        'V1_postgre_backup',
+        'staffing_db_full_2026-10-31_120514',
+        'uploads',
+        'resumes',
+      ),
+    ];
+    const dirs: string[] = [];
+    const seen = new Set<string>();
+    for (const guess of guesses) {
+      if (!guess) continue;
+      const abs = path.resolve(guess);
+      const key = abs.toLowerCase();
+      if (seen.has(key) || !fs.existsSync(abs)) continue;
+      seen.add(key);
+      try {
+        if (fs.statSync(abs).isDirectory()) dirs.push(abs);
+      } catch {
+        /* skip unreadable dirs */
+      }
+    }
+    return dirs;
+  }
+
+  private findLegacyResumePath(names: string[]): string | null {
+    for (const dir of this.legacyResumeDirs()) {
+      const rootWithSep = dir.endsWith(path.sep) ? dir : dir + path.sep;
+      for (const name of names) {
+        const candidate = path.resolve(dir, name);
+        if (!candidate.toLowerCase().startsWith(rootWithSep.toLowerCase())) continue;
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+      }
+    }
+    return null;
+  }
+
+  private copyResumeIntoStorage(orgId: Types.ObjectId, sourcePath: string, originalName: string): string {
+    const ext = path.extname(originalName).toLowerCase() || '.bin';
+    const opaqueName = `${crypto.randomUUID()}${ext}`;
+    const orgDir = resolveResumeStorageDir(orgId.toString());
+    const absolutePath = path.join(orgDir, opaqueName);
+    fs.copyFileSync(sourcePath, absolutePath);
+    try {
+      fs.chmodSync(absolutePath, 0o600);
+    } catch {
+      /* windows may ignore chmod */
+    }
+    return path.relative(this.storageRoot, absolutePath).split(path.sep).join('/');
+  }
+
+  private checksumFile(absolutePath: string): string {
+    return crypto.createHash('sha256').update(fs.readFileSync(absolutePath)).digest('hex');
+  }
+
+  private mimeForExtension(ext: string): string {
+    const mime: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.txt': 'text/plain',
+      '.rtf': 'application/rtf',
+    };
+    return mime[ext] || 'application/octet-stream';
+  }
+
   async remove(currentUser: any, id: string) {
     const orgId = this.getOrgId(currentUser);
     const file = await this.filesRepository.findById(orgId, id);

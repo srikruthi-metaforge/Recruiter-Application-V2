@@ -50,6 +50,13 @@ export async function authenticate(email: string, password: string, expectedRole
     }
     return { ok: true, account }
   } catch (err) {
+    if (err instanceof ApiError && err.status === 429) {
+      return {
+        ok: false,
+        field: 'general',
+        message: 'Sign-in is busy right now. Wait a few seconds and try again.',
+      }
+    }
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       return {
         ok: false,

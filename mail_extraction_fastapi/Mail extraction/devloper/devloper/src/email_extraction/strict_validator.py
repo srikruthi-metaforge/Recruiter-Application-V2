@@ -69,7 +69,7 @@ _EXTRACTED_FIELDS = (
 
 
 _CANDIDATE_TABLE_NOISE_RE = re.compile(
-    r"(?i)^(?:position(?:/title)?|title|skills?|mandatory\s+skills?[\s\-–]*|name|candidate\s+name|vendor\s+name|"
+    r"(?i)^(?:position(?:\s*/\s*title)?|/?title|skills?|mandatory\s+skills?[\s\-–]*|name|candidate\s+name|vendor\s+name|"
     r"bu\s*/\s*is|s[/\.]?r\s*num(?:ber)?\.?|s[/\.]?r\s*no\.?|s[/\.]?l\s*n(?:o|um)\.?|sl\s*no\.?|"
     r"resumes?\s+sent\s+date.*|full\s+name.*|mobile\s+no|mail\s+id|np\s*\(days\)|np\s+days|"
     r"total\s+exp|relevant\s+exp|current\s+location|job\s+location|current\s+organization|"

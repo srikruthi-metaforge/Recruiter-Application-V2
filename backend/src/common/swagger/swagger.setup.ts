@@ -46,7 +46,7 @@ export function setupSwagger(app: INestApplication): string | null {
         '**Auth:** click **Authorize**, paste a JWT access token.',
         'Login with header `x-metaforge-return-tokens: 1` to receive tokens in the JSON body (browsers normally get HttpOnly cookies only).',
         '',
-        '**Health (no `/api/v1` prefix):** `GET /health`, `GET /health/db`.',
+        '**Health (no `/api/v1` prefix):** `GET /health`, `GET /health/db`, `GET /health/metrics`.',
       ].join('\n'),
     )
     .setVersion('2.0.0')

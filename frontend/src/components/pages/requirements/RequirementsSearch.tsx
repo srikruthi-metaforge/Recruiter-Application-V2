@@ -45,11 +45,7 @@ export function RequirementsSearch({ vm }: { vm: RequirementsVm }) {
               placeholder="Search by Requirement ID, Client name, Role, Location, Owner or Recruiter..."
               value={globalSearch}
               onChange={e => {
-                const val = e.target.value
-                setGlobalSearch(val)
-                if (val.trim() && statusDropdown === 'Unassigned') {
-                  setStatusDropdown('All')
-                }
+                setGlobalSearch(e.target.value)
               }}
               className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800 placeholder-gray-400 bg-gray-50/50 transition-all"
             />
@@ -87,18 +83,17 @@ export function RequirementsSearch({ vm }: { vm: RequirementsVm }) {
               onChange={e => {
                 const val = e.target.value
                 setStatusDropdown(val)
-                // Status dropdown becomes the source of truth — clear KPI card filter
-                if (val === 'Unassigned') setActiveCardFilter('UNASSIGNED')
-                else if (val === 'Assigned') setActiveCardFilter('ASSIGNED')
+                // Keep KPI card in sync with status; All clears the card filter
+                if (val === 'Assigned') setActiveCardFilter('ASSIGNED')
+                else if (val === 'Unassigned') setActiveCardFilter('UNASSIGNED')
                 else setActiveCardFilter('ALL')
               }}
               className="w-full appearance-none pl-3.5 pr-8 py-2.5 text-xs sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-700 bg-gray-50/50 font-semibold cursor-pointer"
             >
+              <option value="All">All Statuses</option>
               <option value="Unassigned">Unassigned</option>
               <option value="Assigned">Assigned</option>
-              <option value="All">All Requirements</option>
               <option value="Closed">Closed</option>
-              <option value="Custom">Custom</option>
             </select>
             <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           </div>

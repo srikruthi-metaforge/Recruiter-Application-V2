@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { CreateJobDemandForm } from '../CreateJobDemandForm'
 import { RequirementsVm } from './useRequirementsPage'
+import { JD_CREATE_FORM_SESSION_KEY, clearSessionDraft } from '../../../lib/formSessionDraft'
 
 export function RequirementsCreate({ vm }: { vm: RequirementsVm }) {
   const {
@@ -16,7 +17,11 @@ export function RequirementsCreate({ vm }: { vm: RequirementsVm }) {
     <CreateJobDemandForm
       userRole={roleLabel}
       mode="create"
-      onCancel={() => !saving && setIsCreatingDemand(false)}
+      onCancel={() => {
+        if (saving) return
+        clearSessionDraft(JD_CREATE_FORM_SESSION_KEY)
+        setIsCreatingDemand(false)
+      }}
       onSubmit={async newReq => {
         if (saving) return
         setSaving(true)
@@ -29,6 +34,7 @@ export function RequirementsCreate({ vm }: { vm: RequirementsVm }) {
             setLocalRequirements(updated)
             onUpdateRequirements?.(updated)
           }
+          clearSessionDraft(JD_CREATE_FORM_SESSION_KEY)
           setIsCreatingDemand(false)
         } catch {
           // Keep the form open so the user can retry; toast/errors come from the API layer if any.

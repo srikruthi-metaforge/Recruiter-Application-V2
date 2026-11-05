@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 import { hashPasswordArgon2id } from '../../common/security/password.util';
 
 import { User, UserDocument } from './schemas/user.schema';
@@ -111,7 +112,7 @@ export class UsersService {
   }
 
   /** GET /api/v1/users */
-  async findAll(currentUser: any, query?: { role?: string; search?: string; active?: string }) {
+  async findAll(currentUser: any, query?: { role?: string; search?: string; active?: string; page?: number; limit?: number }) {
     const orgId = requireOrgId(currentUser);
     const filter: Record<string, any> = { orgId, deletedAt: null };
 
@@ -128,8 +129,13 @@ export class UsersService {
       filter.$or = [{ name: regex }, { email: regex }, { userId: regex }];
     }
 
-    const users = await this.userModel.find(filter).sort({ createdAt: -1 }).exec();
-    return users.map(u => this.sanitizeUser(u));
+    const window = resolveListWindow(query?.page, query?.limit);
+    const listQuery = () =>
+      this.userModel.find(filter).sort({ createdAt: -1 }).skip(window.skip).limit(window.limit).lean();
+    const [users, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.userModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
+    return listResult(window, users.map(u => this.sanitizeUser(u as any)), total);
   }
 
   /** Load user by Mongo id or business id, scoped to caller org + role. */

@@ -103,61 +103,94 @@ export function SubmissionCandidateDetailModal({
         </div>
 
         {/* Workflow Actions Toolbar */}
-        <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-600">Stage:</span>
-            <select
-              value={status}
-              onChange={e => onUpdateStage && onUpdateStage(targetId, e.target.value)}
-              className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 shadow-2xs focus:outline-none focus:border-purple-600 cursor-pointer"
-            >
-              <option value="Submitted">Submitted</option>
-              <option value="Submitted to Lead">Submitted to Lead</option>
-              <option value="Submitted to Client">Submitted to Client</option>
-              <option value="Interview Scheduled">Interview Scheduled</option>
-              <option value="Selected">Selected</option>
-              <option value="Placed">Placed</option>
-              <option value="Rejected">Rejected</option>
-            </select>
+        <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200/80 flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-600">Change Status:</span>
+              <select
+                value={status}
+                onChange={e => onUpdateStage && onUpdateStage(targetId, e.target.value)}
+                className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 shadow-2xs focus:outline-none focus:border-purple-600 cursor-pointer"
+                title="Update submission stage, including reversing a rejection"
+              >
+                <option value="Submitted">Submitted</option>
+                <option value="Submitted to Lead">Submitted to Lead</option>
+                <option value="Submitted to Client">Submitted to Client</option>
+                <option value="Client Review">Client Review</option>
+                <option value="Interview Scheduled">Interview Scheduled</option>
+                <option value="Offered">Offered</option>
+                <option value="Placed">Placed</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {onLeadApproval && (
+                <button
+                  type="button"
+                  disabled={status === 'Rejected' || status === 'Submitted to Client'}
+                  onClick={() => {
+                    const reason =
+                      (reasonInput && reasonInput.trim()) ||
+                      (selectedOption && selectedOption !== 'CUSTOM' ? selectedOption : '') ||
+                      'Rejected by Lead'
+                    if (onSaveRejectionReason) onSaveRejectionReason(submission.id, reason)
+                    onLeadApproval(targetId, false, 'Rejected', reason)
+                  }}
+                  className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Reject and notify the recruiter (uses rejection reason below if set)"
+                >
+                  Lead Reject
+                </button>
+              )}
+
+              {onForwardClient && (
+                <button
+                  type="button"
+                  disabled={status === 'Submitted to Client'}
+                  onClick={() =>
+                    onForwardClient(
+                      targetId,
+                      status === 'Rejected'
+                        ? 'Rejection reversed — approved and forwarded to client'
+                        : 'Approved and forwarded to client',
+                    )
+                  }
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    status === 'Rejected'
+                      ? 'Reverse rejection and mark as Submitted to Client'
+                      : 'Approve by forwarding to client — recruiter is notified'
+                  }
+                >
+                  {status === 'Rejected' ? 'Restore to Submitted to Client' : 'Forward to Client'}
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {onLeadApproval && (
-              <button
-                type="button"
-                disabled={status === 'Rejected' || status === 'Submitted to Client'}
-                onClick={() => {
-                  const reason =
-                    (reasonInput && reasonInput.trim()) ||
-                    (selectedOption && selectedOption !== 'CUSTOM' ? selectedOption : '') ||
-                    'Rejected by Lead'
-                  if (onSaveRejectionReason) onSaveRejectionReason(submission.id, reason)
-                  onLeadApproval(targetId, false, 'Rejected', reason)
-                }}
-                className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Reject and notify the recruiter (uses rejection reason below if set)"
-              >
-                Lead Reject
-              </button>
-            )}
-
-            {onForwardClient && (
-              <button
-                type="button"
-                disabled={status === 'Submitted to Client' || status === 'Rejected'}
-                onClick={() => onForwardClient(targetId, 'Approved and forwarded to client')}
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer transition-all text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Approve by forwarding to client — recruiter is notified"
-              >
-                Forward to Client
-              </button>
-            )}
-          </div>
+          {status === 'Rejected' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <span className="font-extrabold uppercase tracking-wide">Rejected</span>
+              <span className="font-medium">
+                Use Change Status, or Restore to Submitted to Client, to move this candidate out of rejection.
+              </span>
+              {onUpdateStage && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateStage(targetId, 'Submitted to Client', 'Rejection status reversed')}
+                  className="ml-auto px-3 py-1 bg-[#6B3BF6] hover:bg-[#5833E0] text-white font-bold rounded-lg cursor-pointer"
+                >
+                  Set Submitted to Client
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <SubmissionCandidateDetailTabs activeTab={activeTab} setActiveTab={setActiveTab} role={role} />
 
-        <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto custom-scrollbar bg-white">
+        <div className="flex-1 min-h-0 p-6 space-y-6 max-h-[65vh] overflow-y-auto custom-scrollbar bg-white">
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <SubmissionCandidateDetailFields

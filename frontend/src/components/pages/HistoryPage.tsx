@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   History,
   Users,
@@ -27,12 +27,14 @@ import {
   Calendar,
   ArrowUpRight,
   Check,
-  ArrowLeft,
   X,
 } from 'lucide-react'
 import { Role, Recruiter, Requirement, Submission, Candidate, Interview } from '../../types'
 import { getSessionUser } from '../../store/session'
 import { PaginationFooter } from '../ui/PaginationFooter'
+import { BackButton } from '../ui/BackButton'
+import { candidatesService, filesService } from '../../services/workspace.service'
+import { apiCandidateToUi } from '../../services/candidatePayload'
 
 interface SubmittedClientsPillCellProps {
   clients: string[]
@@ -113,8 +115,34 @@ function SubmittedClientsPillCell({ clients, onSelectClient, activeClient }: Sub
   )
 }
 
+export type HistorySourcedCandidateRow = {
+  id: string
+  candidateName: string
+  requirementName: string
+  clientName: string
+  sourcedDate: string
+  status: 'Submitted' | 'Working' | 'On Hold' | 'Sourced'
+  experience: string
+  skills?: string[]
+  contactEmail?: string
+  contactPhone?: string
+  candidateCode?: string
+  currentCompany?: string
+  currentLocation?: string
+  noticePeriod?: string
+  currentCtc?: string
+  expectedCtc?: string
+  resumeFileId?: string
+  resumeReference?: string
+  notes?: string
+  /** Candidate document id. Submission rows must not use the submission id for this. */
+  candidateMongoId?: string
+}
+
 export interface RecruiterHistoryItem {
   id: string
+  /** Mongo user id used for Candidate Repository ownership (sourcedByRecruiterId). */
+  recruiterUserId?: string
   recruiterName: string
   recruiterEmail: string
   recruiterAvatar: string
@@ -130,19 +158,11 @@ export interface RecruiterHistoryItem {
   onHoldProfilesCount: number // On hold candidates
   placedCount: number // Offers accepted / joined
   topSkillsSourced: string[]
-  recentSourcedCandidates: {
-    id: string
-    candidateName: string
-    requirementName: string
-    clientName: string
-    sourcedDate: string
-    status: 'Submitted' | 'Working' | 'On Hold' | 'Sourced'
-    experience: string
-    skills?: string[]
-    contactEmail?: string
-  }[]
+  recentSourcedCandidates: HistorySourcedCandidateRow[]
   assignedRequirementsList: {
     id: string
+    mongoId?: string
+    reqCode?: string
     reqName: string
     clientName: string
     status: 'Open' | 'In Progress' | 'Closed'
@@ -267,22 +287,38 @@ export function buildHistoryItemForRecruiter(
       .filter(Boolean),
     contactEmail: c.email,
   }))
-  const sourcedRowsFromSubs = subs.map(s => ({
-    id: s.id,
-    candidateName: s.candidate,
-    requirementName:
-      requirements.find(
-        q =>
-          q.id === s.req ||
-          (q as any).reqCode === s.req ||
-          String((q as any)._id || '') === String((s as any).requirementId || ''),
-      )?.title || s.req,
-    clientName: s.client,
-    sourcedDate: fmtDate(s.submittedAt || s.createdAt || s.date),
-    status: subStatus(s.stage),
-    experience: s.experience || '—',
-    contactEmail: s.email,
-  }))
+  const sourcedRowsFromSubs = subs.map(s => {
+    const candidateMongoId = isMongoObjectId(s.candidateId) ? String(s.candidateId) : undefined
+    const skillList = Array.isArray((s as any).skills)
+      ? (s as any).skills.map((x: unknown) => String(x || '').trim()).filter(Boolean)
+      : []
+    return {
+      id: s.id,
+      candidateMongoId,
+      candidateName: s.candidate,
+      requirementName:
+        requirements.find(
+          q =>
+            q.id === s.req ||
+            (q as any).reqCode === s.req ||
+            String((q as any)._id || '') === String((s as any).requirementId || ''),
+        )?.title || s.req,
+      clientName: s.client,
+      sourcedDate: fmtDate(s.submittedAt || s.createdAt || s.date),
+      status: subStatus(s.stage),
+      experience: s.experience || '—',
+      contactEmail: s.email || undefined,
+      contactPhone: s.phone || undefined,
+      skills: skillList.length ? skillList : undefined,
+      currentCompany: (s as any).currentCompany || undefined,
+      currentLocation: (s as any).currentLocation || undefined,
+      noticePeriod: (s as any).noticePeriod || undefined,
+      currentCtc: (s as any).currentCtc || undefined,
+      expectedCtc: (s as any).expectedCtc || undefined,
+      resumeFileId: (s as any).resumeFileId ? String((s as any).resumeFileId) : undefined,
+      resumeReference: (s as any).resumeFileName || (s as any).resumeReference || undefined,
+    }
+  })
   // Prefer submission pipeline status when the same person is already in repo.
   const seen = new Set<string>()
   const deduped = [...sourcedRowsFromSubs, ...sourcedRowsFromRepo].filter(row => {
@@ -296,8 +332,11 @@ export function buildHistoryItemForRecruiter(
     ...new Set([...reqs.map(q => q.client), ...subs.map(s => s.client)].filter(Boolean)),
   ]
 
+  const recruiterUserId = String(r._id || r.id || '').trim()
+
   return {
     id: `HIST-${r.id || r._id || name}`,
+    recruiterUserId: recruiterUserId || undefined,
     recruiterName: name,
     recruiterEmail: email,
     recruiterAvatar: (name || '?').charAt(0).toUpperCase(),
@@ -306,6 +345,7 @@ export function buildHistoryItemForRecruiter(
     teamLead: r.lead || '—',
     clientAccounts: clients,
     assignedRequirementsCount: reqs.length,
+    // Prefer repo ownership count when caller patches via sourced-counts API.
     sourcedProfilesCount: Math.max(sourced.length, deduped.length),
     submittedProfilesCount: subs.length || r.submissions || 0,
     interviewsCount: ivs.length || r.interviews || 0,
@@ -326,6 +366,8 @@ export function buildHistoryItemForRecruiter(
       )
       return {
         id: q.id,
+        mongoId: String((q as any)._id || ''),
+        reqCode: String((q as any).reqCode || ''),
         reqName: q.title,
         clientName: q.client,
         status: (q.status === 'Closed'
@@ -392,6 +434,51 @@ interface HistoryPageProps {
   currentUserName?: string
   currentUserEmail?: string
   currentUserId?: string
+  /** Workspace Candidate Repository count for the logged-in user. */
+  myCandidatesCount?: number
+  /** Opens the full requirement record. Reports uses this for Assigned Requirements rows. */
+  onOpenRequirement?: (requirement: Requirement) => void
+}
+
+function isMongoObjectId(value?: string | null): boolean {
+  return /^[a-fA-F0-9]{24}$/.test(String(value || '').trim())
+}
+
+function presentText(value?: string | null): string {
+  const text = String(value ?? '').trim()
+  if (!text || text === '—' || /^n\/?a$/i.test(text) || text.toLowerCase() === 'null') return ''
+  return text
+}
+
+function presentMoney(value?: string | null): string {
+  const text = presentText(value)
+  if (!text || text === '0' || text === '0.0' || text === '0.00') return ''
+  return text
+}
+
+/** Keep the pipeline row, and fill only fields that exist on the candidate record. */
+function mergeCandidateProfile(
+  row: HistorySourcedCandidateRow,
+  fresh: HistorySourcedCandidateRow,
+): HistorySourcedCandidateRow {
+  const keep = (current?: string, next?: string) => presentText(next) || presentText(current)
+  return {
+    ...row,
+    candidateCode: keep(row.candidateCode, fresh.candidateCode),
+    contactEmail: keep(row.contactEmail, fresh.contactEmail),
+    contactPhone: keep(row.contactPhone, fresh.contactPhone),
+    currentCompany: keep(row.currentCompany, fresh.currentCompany),
+    currentLocation: keep(row.currentLocation, fresh.currentLocation),
+    noticePeriod: keep(row.noticePeriod, fresh.noticePeriod),
+    currentCtc: presentMoney(fresh.currentCtc) || presentMoney(row.currentCtc),
+    expectedCtc: presentMoney(fresh.expectedCtc) || presentMoney(row.expectedCtc),
+    resumeFileId: presentText(fresh.resumeFileId) || presentText(row.resumeFileId) || undefined,
+    resumeReference: keep(row.resumeReference, fresh.resumeReference),
+    notes: keep(row.notes, fresh.notes),
+    skills: fresh.skills && fresh.skills.length > 0 ? fresh.skills : row.skills,
+    experience: presentText(row.experience) || presentText(fresh.experience) || '—',
+    candidateMongoId: isMongoObjectId(fresh.id) ? fresh.id : row.candidateMongoId,
+  }
 }
 
 export function HistoryPage({
@@ -399,20 +486,140 @@ export function HistoryPage({
   currentUserName,
   currentUserEmail,
   currentUserId,
+  myCandidatesCount,
   recruiters = [],
   requirements = [],
   submissions = [],
   candidates = [],
   interviews = [],
+  onOpenRequirement,
 }: HistoryPageProps) {
   const session = getSessionUser()
   const meName = currentUserName || session?.name || ''
   const meEmail = currentUserEmail || session?.email || ''
   const meId = currentUserId || session?.id || ''
 
+  /** Prefer recruiter directory Mongo `_id` (matches sourcedByRecruiterId). */
+  const myMongoUserId = useMemo(() => {
+    const fromDirectory = recruiters.find(
+      r =>
+        (meEmail && norm(r.email) === norm(meEmail)) ||
+        (meId && (String(r._id || '') === meId || String(r.id) === meId)) ||
+        (meName && nameMatch(r.name, meName)),
+    )
+    const fromDirId = String(fromDirectory?._id || '').trim()
+    if (isMongoObjectId(fromDirId)) return fromDirId
+    if (isMongoObjectId(meId)) return String(meId).trim()
+    return fromDirId || String(meId || '').trim()
+  }, [recruiters, meEmail, meId, meName])
+
+  // True Candidate Repository counts keyed by sourcedByRecruiterId (user Mongo id).
+  const [sourcedCountByUserId, setSourcedCountByUserId] = useState<Record<string, number>>({})
+  const [orgSourcedTotal, setOrgSourcedTotal] = useState(0)
+  /** Live repo total for the logged-in user — only set from per-user filtered APIs. */
+  const [myLiveRepoCount, setMyLiveRepoCount] = useState<number | null>(null)
+
+  const isOrgWideCount = (n: number | null | undefined) => {
+    if (typeof n !== 'number' || n <= 0) return false
+    if (orgSourcedTotal > 0 && n === orgSourcedTotal) return true
+    // Hard guard: org repo is ~20k; never treat that as one user's sourced KPI.
+    if (n >= 5000) return true
+    return false
+  }
+
+  const acceptPersonalRepoCount = (n: number | null | undefined): number | null => {
+    if (typeof n !== 'number' || Number.isNaN(n) || n < 0) return null
+    if (isOrgWideCount(n)) return null
+    return n
+  }
+
+  useEffect(() => {
+    const scoped = acceptPersonalRepoCount(myCandidatesCount)
+    if (scoped !== null) setMyLiveRepoCount(scoped)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myCandidatesCount, orgSourcedTotal])
+
+  useEffect(() => {
+    let active = true
+    candidatesService
+      .sourcedCounts()
+      .then(res => {
+        if (!active) return
+        setSourcedCountByUserId(res.counts || {})
+        setOrgSourcedTotal(Number(res.total || 0))
+      })
+      .catch(() => {
+        if (active) {
+          setSourcedCountByUserId({})
+          setOrgSourcedTotal(0)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Self view: fetch authoritative Candidate Repository total for THIS user only.
+  useEffect(() => {
+    if (!(role === 'recruiter' || role === 'lead')) return
+    const userId = myMongoUserId
+    if (!userId) return
+    let active = true
+    candidatesService
+      .listPage({ page: 1, limit: 1, createdBy: userId })
+      .then(res => {
+        if (!active) return
+        const total = acceptPersonalRepoCount(Number(res.total || 0))
+        // If API ignored createdBy and returned org total, keep map/workspace value instead.
+        if (total !== null) setMyLiveRepoCount(total)
+      })
+      .catch(() => {
+        /* keep sourced-counts / workspace fallback */
+      })
+    return () => {
+      active = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, myMongoUserId, orgSourcedTotal])
+
+  const applyRepoSourcedCounts = (rows: RecruiterHistoryItem[]): RecruiterHistoryItem[] => {
+    if (!Object.keys(sourcedCountByUserId).length) return rows
+    const patched = rows.map(row => {
+      let userKey = String(row.recruiterUserId || '').trim()
+      if (!userKey || typeof sourcedCountByUserId[userKey] !== 'number') {
+        const match = recruiters.find(
+          r =>
+            (row.recruiterEmail && norm(r.email) === norm(row.recruiterEmail)) ||
+            nameMatch(r.name, row.recruiterName),
+        )
+        const mongoId = String(match?._id || '').trim()
+        if (mongoId) userKey = mongoId
+      }
+      const count = userKey ? sourcedCountByUserId[userKey] : undefined
+      if (typeof count !== 'number') return row
+      return { ...row, recruiterUserId: userKey || row.recruiterUserId, sourcedProfilesCount: count }
+    })
+    // Re-sum synthetic lead aggregate rows from patched individuals.
+    return patched.map(row => {
+      if (!String(row.id || '').startsWith('HIST-LEAD-')) return row
+      const team = patched.filter(
+        x => !String(x.id || '').startsWith('HIST-LEAD-') && x.teamLead === row.recruiterName,
+      )
+      if (!team.length) return row
+      return {
+        ...row,
+        sourcedProfilesCount: team.reduce((n, x) => n + (x.sourcedProfilesCount || 0), 0),
+      }
+    })
+  }
+
   const RECRUITERS_HISTORY_DATA = useMemo(
-    () => buildRecruiterHistory(recruiters, requirements, submissions, candidates, interviews),
-    [recruiters, requirements, submissions, candidates, interviews],
+    () =>
+      applyRepoSourcedCounts(
+        buildRecruiterHistory(recruiters, requirements, submissions, candidates, interviews),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyRepoSourcedCounts closes over sourcedCountByUserId
+    [recruiters, requirements, submissions, candidates, interviews, sourcedCountByUserId],
   )
   // Determine if viewing as Super Admin / Admin or as a Recruiter / Lead
   const isSuperAdminOrAdmin = role === 'superadmin' || role === 'admin' || role === 'devteam'
@@ -425,17 +632,220 @@ export function HistoryPage({
   const [selectedRecruiterDetail, setSelectedRecruiterDetail] = useState<RecruiterHistoryItem | null>(null)
   const [recruiterDetailModalTab, setRecruiterDetailModalTab] = useState<'requirements' | 'sourced'>('requirements')
 
+  // Live Candidate Repository rows for Sourced KPI drill-down (paged).
+  const [repoSourcedRows, setRepoSourcedRows] = useState<HistorySourcedCandidateRow[]>([])
+  const [repoSourcedTotal, setRepoSourcedTotal] = useState(0)
+  const [repoSourcedPage, setRepoSourcedPage] = useState(1)
+  const [repoSourcedPageSize, setRepoSourcedPageSize] = useState(10)
+  const [repoSourcedLoading, setRepoSourcedLoading] = useState(false)
+  const [repoSourcedUserId, setRepoSourcedUserId] = useState<string>('')
+
   // Helpers to get full list of worked requirements and sourced profiles matching counts
   const getFullAssignedRequirements = (rec: RecruiterHistoryItem) => rec.assignedRequirementsList || []
 
-  const getFullSourcedCandidates = (rec: RecruiterHistoryItem) => rec.recentSourcedCandidates || []
+  const getFullSourcedCandidates = (rec: RecruiterHistoryItem) => {
+    if (
+      recruiterDetailModalTab === 'sourced' &&
+      repoSourcedUserId &&
+      rec.recruiterUserId &&
+      repoSourcedUserId === rec.recruiterUserId
+    ) {
+      return repoSourcedRows
+    }
+    return rec.recentSourcedCandidates || []
+  }
+
+  const mapApiCandidateToSourcedRow = (raw: any): HistorySourcedCandidateRow => {
+    const ui = apiCandidateToUi(raw)
+    const expYears =
+      typeof (raw as any)?.totalExperienceYears === 'number'
+        ? (raw as any).totalExperienceYears
+        : Number(String(ui.totalExperience || '').match(/\d+/)?.[0] || 0)
+    const created =
+      (raw && (raw.createdAt || raw.updatedAt)) ||
+      (ui as any).createdAt ||
+      ''
+    let sourcedDate = '—'
+    if (created) {
+      const d = new Date(created)
+      if (!Number.isNaN(d.getTime())) sourcedDate = d.toLocaleDateString()
+    }
+    const skillsArr = Array.isArray(ui.skills)
+      ? ui.skills
+      : String(ui.skills || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+    return {
+      id: String(ui._id || ui.id || raw?._id || raw?.id || raw?.candidateId || Math.random()),
+      candidateCode: String(ui.candidateId || raw?.candidateId || ''),
+      candidateName: ui.name || '—',
+      requirementName: 'Candidate Repository',
+      clientName: '—',
+      sourcedDate,
+      status: 'Sourced',
+      experience: expYears ? `${expYears} yrs` : ui.totalExperience || '—',
+      skills: skillsArr,
+      contactEmail: ui.email || '',
+      contactPhone: ui.phone || '',
+      currentCompany: ui.company || '',
+      currentLocation: ui.currentLocation || '',
+      noticePeriod: ui.noticePeriod || '',
+      currentCtc: ui.currentCtc || '',
+      expectedCtc: ui.expectedCtc || '',
+      resumeFileId: ui.resumeFileId || (raw?.resumeFileId ? String(raw.resumeFileId) : undefined),
+      resumeReference: ui.resumeName || raw?.resumeFileName || '',
+      notes: ui.notes || '',
+    }
+  }
+
+  const loadRepoSourcedForUser = (userId: string, page = 1, pageSize = repoSourcedPageSize) => {
+    const id = String(userId || '').trim()
+    // Never load the unfiltered org repository — require a creator id.
+    if (!id) {
+      setRepoSourcedRows([])
+      setRepoSourcedTotal(0)
+      setRepoSourcedUserId('')
+      setRepoSourcedLoading(false)
+      return
+    }
+    setRepoSourcedLoading(true)
+    setRepoSourcedUserId(id)
+    setRepoSourcedPage(page)
+    const mapTotal = typeof sourcedCountByUserId[id] === 'number' ? sourcedCountByUserId[id] : null
+
+    candidatesService
+      .listSourcedBy(id, { page, limit: pageSize })
+      .then(res => {
+        const apiTotal = Number(res.total || 0)
+        const rows = (res.items || []).map((raw: any) => {
+          try {
+            return mapApiCandidateToSourcedRow(raw)
+          } catch {
+            return null
+          }
+        }).filter(Boolean) as HistorySourcedCandidateRow[]
+
+        setRepoSourcedRows(rows)
+        const personalTotal = acceptPersonalRepoCount(apiTotal)
+        const nextTotal =
+          personalTotal !== null ? personalTotal : mapTotal !== null ? mapTotal : rows.length
+        setRepoSourcedTotal(nextTotal)
+        if (id === myMongoUserId && personalTotal !== null) {
+          setMyLiveRepoCount(personalTotal)
+        }
+      })
+      .catch(() => {
+        // Fallback to createdBy listPage if dedicated route is unavailable.
+        return candidatesService
+          .listPage({ page, limit: pageSize, createdBy: id })
+          .then(res => {
+            const apiTotal = Number(res.total || 0)
+            if (isOrgWideCount(apiTotal)) {
+              setRepoSourcedRows([])
+              setRepoSourcedTotal(mapTotal ?? 0)
+              return
+            }
+            const rows = (res.items || []).map((raw: any) => {
+              try {
+                return mapApiCandidateToSourcedRow(raw)
+              } catch {
+                return null
+              }
+            }).filter(Boolean) as HistorySourcedCandidateRow[]
+            setRepoSourcedRows(rows)
+            const personalTotal = acceptPersonalRepoCount(apiTotal)
+            setRepoSourcedTotal(
+              personalTotal !== null ? personalTotal : mapTotal !== null ? mapTotal : rows.length,
+            )
+          })
+          .catch(() => {
+            setRepoSourcedRows([])
+            setRepoSourcedTotal(mapTotal ?? 0)
+          })
+      })
+      .finally(() => setRepoSourcedLoading(false))
+  }
 
   // Recruiter Personal View Active Tab & Status Filter
   const [recruiterTab, setRecruiterTab] = useState<'requirements' | 'sourced'>('requirements')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Submitted' | 'Working' | 'On Hold' | 'Sourced'>('All')
   const [selectedReqFilter, setSelectedReqFilter] = useState<string | null>(null)
-  const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<any | null>(null)
+  const [selectedCandidateDetail, setSelectedCandidateDetail] = useState<HistorySourcedCandidateRow | null>(null)
+  const [candidateDetailLoading, setCandidateDetailLoading] = useState(false)
+  const [detailToast, setDetailToast] = useState('')
   const [selectedRequirementDetail, setSelectedRequirementDetail] = useState<any | null>(null)
+
+  const openSourcedCandidateDetail = async (cand: HistorySourcedCandidateRow) => {
+    // Open immediately with list-row data, then load the candidate record for contact and resume.
+    setSelectedCandidateDetail(cand)
+    const candidateId = String(cand.candidateMongoId || '').trim()
+    const sourcedId = cand.status === 'Sourced' ? String(cand.id || '').trim() : ''
+    const lookupId = isMongoObjectId(candidateId) ? candidateId : isMongoObjectId(sourcedId) ? sourcedId : ''
+    if (!lookupId) return
+    setCandidateDetailLoading(true)
+    try {
+      const fresh = await candidatesService.getById(lookupId)
+      if (fresh) {
+        const mapped = mapApiCandidateToSourcedRow(fresh)
+        setSelectedCandidateDetail(prev => (prev ? mergeCandidateProfile(prev, mapped) : mapped))
+      }
+    } catch {
+      // Keep the submission snapshot. Do not invent contact or resume fields.
+    } finally {
+      setCandidateDetailLoading(false)
+    }
+  }
+
+  const openAssignedRequirement = (row: RecruiterHistoryItem['assignedRequirementsList'][number]) => {
+    const full = requirements.find(q => {
+      const mongoId = String((q as any)._id || '')
+      const code = String(q.reqCode || '')
+      return (
+        q.id === row.id ||
+        (!!row.mongoId && mongoId === row.mongoId) ||
+        (!!row.reqCode && code === row.reqCode) ||
+        (!!code && code === row.id)
+      )
+    })
+    if (full && onOpenRequirement) {
+      onOpenRequirement(full)
+      return
+    }
+    setSelectedRequirementDetail(full || row)
+  }
+
+  const downloadCandidateResume = async (cand: HistorySourcedCandidateRow) => {
+    const candidateId = String(cand.candidateMongoId || '').trim()
+    const sourcedId = cand.status === 'Sourced' ? String(cand.id || '').trim() : ''
+    const lookupId = isMongoObjectId(candidateId) ? candidateId : isMongoObjectId(sourcedId) ? sourcedId : ''
+    const fileId = String(cand.resumeFileId || '').trim()
+    if (!lookupId && !fileId) {
+      setDetailToast('No resume file is stored for this candidate.')
+      window.setTimeout(() => setDetailToast(''), 4000)
+      return
+    }
+    setDetailToast('Downloading resume…')
+    try {
+      if (lookupId) await candidatesService.downloadResume(lookupId)
+      else await filesService.download(fileId)
+      setDetailToast('Resume download started.')
+    } catch (err) {
+      if (lookupId && fileId) {
+        try {
+          await filesService.download(fileId)
+          setDetailToast('Resume download started.')
+          window.setTimeout(() => setDetailToast(''), 4000)
+          return
+        } catch {
+          /* use the candidate-download error below */
+        }
+      }
+      const message = err instanceof Error && err.message ? err.message : 'Could not download the resume.'
+      setDetailToast(message)
+    }
+    window.setTimeout(() => setDetailToast(''), 4000)
+  }
 
   // Team Lead View Tab State: 'self' (My Individual Performance) | 'team' (Team Members Performance)
   const [leadViewTab, setLeadViewTab] = useState<'self' | 'team'>('self')
@@ -443,9 +853,16 @@ export function HistoryPage({
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
+  const [myReqsPage, setMyReqsPage] = useState(1)
+  const [myReqsPageSize, setMyReqsPageSize] = useState(10)
+  const [profileListPage, setProfileListPage] = useState(1)
+  const profileListPageSize = 10
+  const [modalReqsPage, setModalReqsPage] = useState(1)
+  const [modalReqsPageSize, setModalReqsPageSize] = useState(5)
 
   // Identify logged in recruiter item for Recruiter / Lead view — always live from workspace.
   const myRecruiterHistory = useMemo(() => {
+    let item: RecruiterHistoryItem | null = null
     if (role === 'recruiter' || role === 'lead') {
       const fromDirectory = recruiters.find(
         r =>
@@ -455,10 +872,10 @@ export function HistoryPage({
       )
       // Always compute from live reqs/subs/candidates so KPIs never stick at 0
       // when directory metadata is incomplete.
-      return buildHistoryItemForRecruiter(
+      item = buildHistoryItemForRecruiter(
         {
           id: fromDirectory?.id || meId || meEmail || meName || 'me',
-          _id: fromDirectory?._id || meId || undefined,
+          _id: fromDirectory?._id || myMongoUserId || meId || undefined,
           name: fromDirectory?.name || meName || 'Recruiter',
           email: fromDirectory?.email || meEmail,
           lead: fromDirectory?.lead || (role === 'lead' ? meName : '—'),
@@ -471,27 +888,41 @@ export function HistoryPage({
         candidates,
         interviews,
       )
+    } else if (meEmail) {
+      item = RECRUITERS_HISTORY_DATA.find(r => norm(r.recruiterEmail) === norm(meEmail)) || null
+    } else if (meName) {
+      item = RECRUITERS_HISTORY_DATA.find(r => nameMatch(r.recruiterName, meName)) || null
     }
-    if (meEmail) {
-      const found = RECRUITERS_HISTORY_DATA.find(r => norm(r.recruiterEmail) === norm(meEmail))
-      if (found) return found
+
+    if (!item) return null
+    const userId = myMongoUserId || item.recruiterUserId || meId
+    // Prefer per-user DB map first — never allow org-wide totals into this KPI.
+    const fromMap = userId && typeof sourcedCountByUserId[userId] === 'number'
+      ? sourcedCountByUserId[userId]
+      : undefined
+    const fromLive = acceptPersonalRepoCount(myLiveRepoCount)
+    const fromWorkspace = acceptPersonalRepoCount(myCandidatesCount)
+    const repoCount = fromMap ?? fromLive ?? fromWorkspace
+    if (typeof repoCount === 'number') {
+      return { ...item, recruiterUserId: userId || item.recruiterUserId, sourcedProfilesCount: repoCount }
     }
-    if (meName) {
-      const found = RECRUITERS_HISTORY_DATA.find(r => nameMatch(r.recruiterName, meName))
-      if (found) return found
-    }
-    return null
+    return { ...item, recruiterUserId: userId || item.recruiterUserId }
   }, [
     RECRUITERS_HISTORY_DATA,
     role,
     meEmail,
     meName,
     meId,
+    myMongoUserId,
+    myLiveRepoCount,
+    myCandidatesCount,
     recruiters,
     requirements,
     submissions,
     candidates,
     interviews,
+    sourcedCountByUserId,
+    orgSourcedTotal,
   ])
 
   // Filtered Recruiters List for Super Admin or Team Lead
@@ -528,10 +959,31 @@ export function HistoryPage({
 
   const totalPages = Math.ceil(filteredRecruiters.length / pageSize) || 1
 
-  // Summary Totals for Super Admin or Team Lead View
+  // Summary Totals for Super Admin / Admin / Team Lead View
   const totals = useMemo(() => {
+    // Super Admin + Admin: org-wide accurate card totals (not a sum of table rows).
+    // Table rows can miss unmatched/deleted users and double-count HIST-LEAD aggregates.
+    if (role === 'superadmin' || role === 'admin') {
+      const sourcedFromMap = Object.values(sourcedCountByUserId).reduce(
+        (n, v) => n + (typeof v === 'number' ? v : 0),
+        0,
+      )
+      return {
+        requirements: requirements.length,
+        sourced: orgSourcedTotal > 0 ? orgSourcedTotal : sourcedFromMap,
+        submitted: submissions.length,
+        working: submissions.filter(s => subStatus(s.stage) === 'Working').length,
+        onHold: submissions.filter(s => subStatus(s.stage) === 'On Hold').length,
+        placed: submissions.filter(s =>
+          /offer|placed|joined|selected/i.test(String(s.stage || '')),
+        ).length,
+      }
+    }
+
+    // Lead (and others): sum individuals only — skip synthetic lead aggregate rows.
     return filteredRecruiters.reduce(
       (acc, r) => {
+        if (String(r.id || '').startsWith('HIST-LEAD-')) return acc
         acc.requirements += r.assignedRequirementsCount
         acc.sourced += r.sourcedProfilesCount
         acc.submitted += r.submittedProfilesCount
@@ -540,9 +992,16 @@ export function HistoryPage({
         acc.placed += r.placedCount
         return acc
       },
-      { requirements: 0, sourced: 0, submitted: 0, working: 0, onHold: 0, placed: 0 }
+      { requirements: 0, sourced: 0, submitted: 0, working: 0, onHold: 0, placed: 0 },
     )
-  }, [filteredRecruiters])
+  }, [
+    role,
+    filteredRecruiters,
+    requirements,
+    submissions,
+    orgSourcedTotal,
+    sourcedCountByUserId,
+  ])
 
   // Filtered requirements for Recruiter View
   const filteredMyRequirements = useMemo(() => {
@@ -559,9 +1018,130 @@ export function HistoryPage({
     })
   }, [myRecruiterHistory, searchQuery])
 
+  useEffect(() => {
+    setMyReqsPage(1)
+  }, [searchQuery, recruiterTab])
+
+  const paginatedMyRequirements = useMemo(() => {
+    const start = (myReqsPage - 1) * myReqsPageSize
+    return filteredMyRequirements.slice(start, start + myReqsPageSize)
+  }, [filteredMyRequirements, myReqsPage, myReqsPageSize])
+
+  // When Sourced KPI (All) is open, load real Candidate Repository rows for this user.
+  useEffect(() => {
+    if (recruiterTab !== 'sourced' || statusFilter !== 'All') return
+    const userId = myMongoUserId || myRecruiterHistory?.recruiterUserId || ''
+    if (!userId) {
+      setRepoSourcedRows([])
+      setRepoSourcedTotal(0)
+      return
+    }
+    loadRepoSourcedForUser(userId, 1, repoSourcedPageSize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recruiterTab, statusFilter, myMongoUserId, myRecruiterHistory?.recruiterUserId, repoSourcedPageSize])
+
+  // Admin/lead modal: load repo candidates when Sourced tab is selected.
+  useEffect(() => {
+    if (!selectedRecruiterDetail || recruiterDetailModalTab !== 'sourced') return
+    const userId = selectedRecruiterDetail.recruiterUserId || ''
+    if (!userId) {
+      setRepoSourcedRows([])
+      setRepoSourcedTotal(0)
+      return
+    }
+    loadRepoSourcedForUser(userId, 1, repoSourcedPageSize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRecruiterDetail?.recruiterUserId, recruiterDetailModalTab, repoSourcedPageSize])
+
+  // Keep modal KPI count in sync with live repo totals once loaded.
+  useEffect(() => {
+    if (!selectedRecruiterDetail?.recruiterUserId) return
+    const count = sourcedCountByUserId[selectedRecruiterDetail.recruiterUserId]
+    if (typeof count === 'number' && selectedRecruiterDetail.sourcedProfilesCount !== count) {
+      setSelectedRecruiterDetail(prev => (prev ? { ...prev, sourcedProfilesCount: count } : prev))
+    }
+  }, [sourcedCountByUserId, selectedRecruiterDetail?.recruiterUserId])
+
+  // Individual Analytics → Sourced: open the same candidate-info view as History Sourced KPI.
+  useEffect(() => {
+    let view = ''
+    let rid = ''
+    try {
+      view = sessionStorage.getItem('pending_history_view') || ''
+      rid = sessionStorage.getItem('pending_history_recruiter_id') || ''
+    } catch {
+      return
+    }
+    if (view !== 'sourced') return
+
+    const clearPending = () => {
+      try {
+        sessionStorage.removeItem('pending_history_view')
+        sessionStorage.removeItem('pending_history_recruiter_id')
+      } catch {
+        // ignore
+      }
+    }
+
+    const isSelfView = role === 'recruiter' || (role === 'lead' && leadViewTab === 'self')
+    const viewingOwn =
+      !rid ||
+      rid === myMongoUserId ||
+      rid === meId ||
+      (myRecruiterHistory?.recruiterUserId && rid === myRecruiterHistory.recruiterUserId)
+
+    if (isSelfView && viewingOwn) {
+      setRecruiterTab('sourced')
+      setStatusFilter('All')
+      setSelectedReqFilter(null)
+      clearPending()
+      return
+    }
+
+    // Admin / lead team view: wait for history rows, then open recruiter sourced modal.
+    if (!rid) {
+      clearPending()
+      return
+    }
+    if (!RECRUITERS_HISTORY_DATA.length) return
+
+    const item =
+      RECRUITERS_HISTORY_DATA.find(r => r.recruiterUserId === rid) ||
+      RECRUITERS_HISTORY_DATA.find(r => norm(r.recruiterEmail) === norm(rid)) ||
+      null
+    if (item) {
+      if (role === 'lead') setLeadViewTab('team')
+      setSelectedRecruiterDetail(item)
+      setRecruiterDetailModalTab('sourced')
+    }
+    clearPending()
+  }, [
+    role,
+    leadViewTab,
+    myMongoUserId,
+    meId,
+    myRecruiterHistory?.recruiterUserId,
+    RECRUITERS_HISTORY_DATA,
+  ])
+
   // Filtered sourced candidates for Recruiter View
   const filteredMySourcedCandidates = useMemo(() => {
     if (!myRecruiterHistory) return []
+    // Sourced Profiles KPI → real Candidate Repository list for this user
+    if (statusFilter === 'All' && !selectedReqFilter) {
+      const q = searchQuery.trim().toLowerCase()
+      return repoSourcedRows.filter(cand => {
+        if (!q) return true
+        return (
+          cand.candidateName.toLowerCase().includes(q) ||
+          cand.requirementName.toLowerCase().includes(q) ||
+          cand.clientName.toLowerCase().includes(q) ||
+          cand.status.toLowerCase().includes(q) ||
+          (cand.contactEmail || '').toLowerCase().includes(q) ||
+          (cand.skills && cand.skills.some(s => s.toLowerCase().includes(q)))
+        )
+      })
+    }
     return myRecruiterHistory.recentSourcedCandidates.filter(cand => {
       if (selectedReqFilter && cand.requirementName !== selectedReqFilter) return false
       if (statusFilter !== 'All' && cand.status !== statusFilter) return false
@@ -575,7 +1155,19 @@ export function HistoryPage({
         (cand.skills && cand.skills.some(s => s.toLowerCase().includes(q)))
       )
     })
-  }, [myRecruiterHistory, searchQuery, selectedReqFilter, statusFilter])
+  }, [myRecruiterHistory, searchQuery, selectedReqFilter, statusFilter, repoSourcedRows])
+
+  const isSubmittedOrWorkingTable = statusFilter === 'Submitted' || statusFilter === 'Working'
+
+  useEffect(() => {
+    setProfileListPage(1)
+  }, [statusFilter, searchQuery, selectedReqFilter])
+
+  const paginatedProfileRows = useMemo(() => {
+    if (!isSubmittedOrWorkingTable) return filteredMySourcedCandidates
+    const start = (profileListPage - 1) * profileListPageSize
+    return filteredMySourcedCandidates.slice(start, start + profileListPageSize)
+  }, [filteredMySourcedCandidates, isSubmittedOrWorkingTable, profileListPage])
 
   // Export Super Admin CSV Handler
   const handleExportSuperAdminCSV = () => {
@@ -671,6 +1263,224 @@ export function HistoryPage({
       </div>
     )
   }
+
+  const sourcedCandidateDetailModal = selectedCandidateDetail ? (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-3xl border border-slate-200 max-w-2xl w-full p-6 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200 font-sans max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-[#6B3BF6] text-white font-bold flex items-center justify-center text-sm shrink-0">
+              {selectedCandidateDetail.candidateName.charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-black text-slate-900 truncate">{selectedCandidateDetail.candidateName}</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                {selectedCandidateDetail.candidateCode ? `ID: ${selectedCandidateDetail.candidateCode} · ` : ''}
+                Exp: {selectedCandidateDetail.experience}
+                {candidateDetailLoading ? ' · Refreshing…' : ''}
+              </p>
+              {(presentText(selectedCandidateDetail.requirementName) &&
+                selectedCandidateDetail.requirementName !== 'Candidate Repository') ||
+              (presentText(selectedCandidateDetail.clientName) && selectedCandidateDetail.clientName !== '—') ? (
+                <p className="text-[11px] text-slate-500 font-semibold truncate">
+                  {[
+                    presentText(selectedCandidateDetail.requirementName) &&
+                    selectedCandidateDetail.requirementName !== 'Candidate Repository'
+                      ? selectedCandidateDetail.requirementName
+                      : '',
+                    presentText(selectedCandidateDetail.clientName) && selectedCandidateDetail.clientName !== '—'
+                      ? selectedCandidateDetail.clientName
+                      : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedCandidateDetail(null)}
+            className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-all cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Email</span>
+              <span className="font-bold text-slate-900 text-xs break-all">{selectedCandidateDetail.contactEmail || '—'}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Phone</span>
+              <span className="font-bold text-slate-900 text-xs">{selectedCandidateDetail.contactPhone || '—'}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Current Company</span>
+              <span className="font-bold text-slate-900 text-xs">{selectedCandidateDetail.currentCompany || '—'}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Location</span>
+              <span className="font-bold text-slate-900 text-xs">{selectedCandidateDetail.currentLocation || '—'}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Notice Period</span>
+              <span className="font-bold text-slate-900 text-xs">{selectedCandidateDetail.noticePeriod || '—'}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">CTC (Current / Expected)</span>
+              <span className="font-bold text-slate-900 text-xs">
+                {presentMoney(selectedCandidateDetail.currentCtc) || '—'} / {presentMoney(selectedCandidateDetail.expectedCtc) || '—'}
+              </span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Sourced Date</span>
+              <span className="font-mono font-bold text-slate-900 text-xs">{selectedCandidateDetail.sourcedDate}</span>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Status</span>
+              <span className="font-extrabold text-purple-700 text-xs">{selectedCandidateDetail.status}</span>
+            </div>
+          </div>
+
+          {selectedCandidateDetail.skills && selectedCandidateDetail.skills.length > 0 && (
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Skills</span>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedCandidateDetail.skills.map((s: string) => (
+                  <span key={s} className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-semibold border border-slate-200">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/80 space-y-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Resume</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <FileText className="w-4 h-4 text-rose-500 shrink-0" />
+              <span className="text-xs font-bold text-slate-800">
+                {selectedCandidateDetail.resumeReference || (selectedCandidateDetail.resumeFileId ? 'Resume on file' : 'No resume attached')}
+              </span>
+              <button
+                type="button"
+                onClick={() => downloadCandidateResume(selectedCandidateDetail)}
+                disabled={!selectedCandidateDetail.resumeFileId && !selectedCandidateDetail.resumeReference}
+                className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
+                  selectedCandidateDetail.resumeFileId || selectedCandidateDetail.resumeReference
+                    ? 'bg-[#6B3BF6] hover:bg-[#5833E0] text-white'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Resume
+              </button>
+            </div>
+            {detailToast && (
+              <p className="text-[11px] font-semibold text-[#6B3BF6]">{detailToast}</p>
+            )}
+          </div>
+
+          {selectedCandidateDetail.notes && (
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Notes</span>
+              <p className="text-xs text-slate-700 bg-white border border-slate-200 rounded-xl p-3 leading-relaxed">
+                {selectedCandidateDetail.notes}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="pt-3 border-t border-slate-100 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setSelectedCandidateDetail(null)}
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-2xs"
+          >
+            Close Detail
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const requirementRecord = selectedRequirementDetail as (Requirement & RecruiterHistoryItem['assignedRequirementsList'][number]) | null
+  const requirementDetailModal = requirementRecord ? (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl border border-slate-200 max-w-2xl w-full p-6 space-y-5 shadow-2xl font-sans max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-mono font-bold text-[#6B3BF6]">
+              {requirementRecord.reqCode || requirementRecord.id}
+            </p>
+            <h3 className="text-base font-black text-slate-900 mt-1">{requirementRecord.title || requirementRecord.reqName}</h3>
+            <p className="text-xs text-slate-500 font-semibold mt-1">{requirementRecord.client || requirementRecord.clientName || '—'}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedRequirementDetail(null)}
+            className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {[
+            ['Status', requirementRecord.status],
+            ['Priority', requirementRecord.priority],
+            ['Assignment', requirementRecord.assignmentStatus],
+            ['Location', requirementRecord.location],
+            ['Work mode', requirementRecord.workMode],
+            ['Employment', requirementRecord.employmentType],
+            ['Experience', requirementRecord.experience || requirementRecord.experienceLevel],
+            ['Openings', requirementRecord.openings != null ? String(requirementRecord.openings) : ''],
+            ['Client email', requirementRecord.clientEmail],
+            ['Assigned to', requirementRecord.assignedRecruiterNames],
+            ['Budget', presentText(requirementRecord.budget)],
+            ['Submissions', requirementRecord.submissionsCount != null ? String(requirementRecord.submissionsCount) : (requirementRecord.submissions != null ? String(requirementRecord.submissions) : '')],
+            ['Working', requirementRecord.workingCount != null ? String(requirementRecord.workingCount) : ''],
+          ].filter(([, value]) => presentText(value)).map(([label, value]) => (
+            <div key={label} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">{label}</span>
+              <span className="font-bold text-slate-900 text-xs break-all">{value}</span>
+            </div>
+          ))}
+        </div>
+        {Array.isArray(requirementRecord.skills) && requirementRecord.skills.length > 0 && (
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Skills</span>
+            <div className="flex flex-wrap gap-1.5">
+              {requirementRecord.skills.filter(Boolean).map(skill => (
+                <span key={skill} className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-semibold border border-slate-200">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {presentText(requirementRecord.description) && (
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Description</span>
+            <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 leading-relaxed whitespace-pre-wrap">
+              {requirementRecord.description}
+            </p>
+          </div>
+        )}
+        <div className="pt-3 border-t border-slate-100 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setSelectedRequirementDetail(null)}
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold cursor-pointer"
+          >
+            Close Detail
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   // =========================================================================
   // VIEW A: RECRUITER PERSONAL HISTORY VIEW (Or Team Lead Individual View)
@@ -853,18 +1663,14 @@ export function HistoryPage({
             {/* SEARCH INPUT & BACK BUTTON */}
             <div className="flex items-center gap-2.5 w-full">
               {(recruiterTab === 'sourced' || selectedReqFilter || statusFilter !== 'All') && (
-                <button
+                <BackButton
+                  label="Back to Requirements"
                   onClick={() => {
                     setRecruiterTab('requirements')
                     setSelectedReqFilter(null)
                     setStatusFilter('All')
                   }}
-                  className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] border border-purple-200 rounded-xl text-xs font-extrabold shadow-2xs transition-all duration-200 cursor-pointer flex items-center gap-1.5 shrink-0"
-                  title="Go back to Assigned Requirements History"
-                >
-                  <ArrowLeft className="w-4 h-4 text-[#6B3BF6]" />
-                  <span className="hidden sm:inline">Back to Reqs</span>
-                </button>
+                />
               )}
               <div className="relative w-full">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -935,8 +1741,13 @@ export function HistoryPage({
                       </td>
                     </tr>
                   ) : (
-                    filteredMyRequirements.map(req => (
-                      <tr key={req.id} className="hover:bg-purple-50/40 transition-colors group">
+                    paginatedMyRequirements.map(req => (
+                      <tr
+                        key={req.id}
+                        onClick={() => openAssignedRequirement(req)}
+                        className="hover:bg-purple-50/40 transition-colors group cursor-pointer"
+                        title="View requirement details"
+                      >
                         <td className="py-4 px-4 whitespace-nowrap">
                           <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#6B3BF6] transition-colors">
                             {req.reqName}
@@ -987,6 +1798,18 @@ export function HistoryPage({
                 </tbody>
               </table>
             </div>
+            <PaginationFooter
+              currentPage={myReqsPage}
+              totalPages={Math.max(1, Math.ceil(filteredMyRequirements.length / myReqsPageSize))}
+              totalItems={filteredMyRequirements.length}
+              pageSize={myReqsPageSize}
+              onPageChange={setMyReqsPage}
+              onPageSizeChange={size => {
+                setMyReqsPageSize(size)
+                setMyReqsPage(1)
+              }}
+              itemLabel="requirements"
+            />
           </div>
         )}
 
@@ -995,18 +1818,14 @@ export function HistoryPage({
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
               <div className="flex items-center gap-3">
-                <button
+                <BackButton
+                  label="Back to Requirements"
                   onClick={() => {
                     setRecruiterTab('requirements')
                     setSelectedReqFilter(null)
                     setStatusFilter('All')
                   }}
-                  className="px-3 py-1.5 bg-white hover:bg-purple-50 text-[#6B3BF6] border border-purple-200 rounded-xl text-xs font-extrabold shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
-                  title="Go back to Assigned Requirements History"
-                >
-                  <ArrowLeft className="w-4 h-4 text-[#6B3BF6]" />
-                  <span>Back to Requirements</span>
-                </button>
+                />
                 <div className="h-5 w-px bg-slate-200" />
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-[#6B3BF6]" />
@@ -1021,7 +1840,13 @@ export function HistoryPage({
                   </h3>
                 </div>
               </div>
-              <span className="text-xs text-slate-500 font-medium">Showing {filteredMySourcedCandidates.length} sourced candidate records</span>
+              <span className="text-xs text-slate-500 font-medium">
+                {statusFilter === 'All' && !selectedReqFilter
+                  ? repoSourcedLoading
+                    ? 'Loading candidate repository…'
+                    : `Showing ${filteredMySourcedCandidates.length} of ${repoSourcedTotal || myRecruiterHistory?.sourcedProfilesCount || 0} repository candidates`
+                  : `Showing ${filteredMySourcedCandidates.length} sourced candidate records`}
+              </span>
             </div>
 
             <div className="overflow-x-auto">
@@ -1036,21 +1861,39 @@ export function HistoryPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                  {filteredMySourcedCandidates.length === 0 ? (
+                  {repoSourcedLoading && statusFilter === 'All' && !selectedReqFilter ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center text-slate-400 font-bold text-sm">
+                        Loading candidates from repository…
+                      </td>
+                    </tr>
+                  ) : filteredMySourcedCandidates.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-12 text-center text-slate-400 font-bold text-sm">
                         No sourced candidates match the specified search or filter criteria.
                       </td>
                     </tr>
                   ) : (
-                    filteredMySourcedCandidates.map(cand => (
-                      <tr key={cand.id} className="hover:bg-purple-50/40 transition-colors group">
+                    paginatedProfileRows.map(cand => (
+                      <tr
+                        key={cand.id}
+                        onClick={() => openSourcedCandidateDetail(cand)}
+                        className="hover:bg-purple-50/40 transition-colors group cursor-pointer"
+                        title="Click to view candidate details and resume"
+                      >
                         <td className="py-4 px-4 whitespace-nowrap">
-                          <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#6B3BF6] transition-colors">
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation()
+                              openSourcedCandidateDetail(cand)
+                            }}
+                            className="text-left font-extrabold text-slate-900 text-xs group-hover:text-[#6B3BF6] hover:underline transition-colors cursor-pointer"
+                          >
                             {cand.candidateName}
-                          </div>
+                          </button>
                           <div className="text-[10px] text-slate-400 font-normal">
-                            Exp: {cand.experience} • {cand.contactEmail || `${cand.id.toLowerCase()}@candidate.io`}
+                            Exp: {cand.experience} • {cand.contactEmail || '—'}
                           </div>
                         </td>
 
@@ -1087,75 +1930,42 @@ export function HistoryPage({
                 </tbody>
               </table>
             </div>
+
+            {isSubmittedOrWorkingTable && (
+              <PaginationFooter
+                currentPage={profileListPage}
+                totalPages={Math.max(1, Math.ceil(filteredMySourcedCandidates.length / profileListPageSize))}
+                totalItems={filteredMySourcedCandidates.length}
+                pageSize={profileListPageSize}
+                onPageChange={setProfileListPage}
+                itemLabel="profiles"
+              />
+            )}
+
+            {statusFilter === 'All' && !selectedReqFilter && repoSourcedTotal > repoSourcedPageSize && (
+              <PaginationFooter
+                currentPage={repoSourcedPage}
+                totalPages={Math.max(1, Math.ceil(repoSourcedTotal / repoSourcedPageSize))}
+                totalItems={repoSourcedTotal}
+                pageSize={repoSourcedPageSize}
+                onPageChange={page => {
+                  const userId = myMongoUserId || myRecruiterHistory?.recruiterUserId || ''
+                  if (userId) loadRepoSourcedForUser(userId, page, repoSourcedPageSize)
+                }}
+                onPageSizeChange={size => {
+                  setRepoSourcedPageSize(size)
+                  const userId = myMongoUserId || myRecruiterHistory?.recruiterUserId || ''
+                  if (userId) loadRepoSourcedForUser(userId, 1, size)
+                }}
+                itemLabel="candidates"
+              />
+            )}
           </div>
         )}
         </div>
 
-        {/* RECRUITER CANDIDATE INSPECTION MODAL */}
-        {selectedCandidateDetail && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
-            <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-6 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200 font-sans">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#6B3BF6] text-white font-bold flex items-center justify-center text-sm">
-                    {selectedCandidateDetail.candidateName.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">{selectedCandidateDetail.candidateName}</h3>
-                    <p className="text-xs text-slate-500 font-medium">Experience: {selectedCandidateDetail.experience}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedCandidateDetail(null)}
-                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-all cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div className="bg-purple-50/60 p-3.5 rounded-2xl border border-purple-100 space-y-1.5">
-                  <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Requirement Details</div>
-                  <div className="font-extrabold text-slate-900 text-sm">{selectedCandidateDetail.requirementName}</div>
-                  <div className="text-slate-600 font-medium">Client Account: <span className="font-bold text-[#6B3BF6]">{selectedCandidateDetail.clientName}</span></div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Sourced Date</span>
-                    <span className="font-mono font-bold text-slate-900 text-xs">{selectedCandidateDetail.sourcedDate}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Pipeline Status</span>
-                    <span className="font-extrabold text-purple-700 text-xs">{selectedCandidateDetail.status}</span>
-                  </div>
-                </div>
-
-                {selectedCandidateDetail.skills && (
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Matched Technical Skills</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedCandidateDetail.skills.map((s: string) => (
-                        <span key={s} className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-semibold border border-slate-200">
-                          {s}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex justify-end">
-                <button
-                  onClick={() => setSelectedCandidateDetail(null)}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-2xs"
-                >
-                  Close Detail
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {sourcedCandidateDetailModal}
+        {requirementDetailModal}
       </div>
     )
   }
@@ -1243,7 +2053,9 @@ export function HistoryPage({
             {totals.requirements} Reqs
           </div>
           <div className="text-[11px] text-[#6B3BF6] font-semibold">
-            Active requirement allocations
+            {role === 'superadmin' || role === 'admin'
+              ? 'All requirements in the organization'
+              : 'Active requirement allocations'}
           </div>
         </div>
 
@@ -1257,7 +2069,9 @@ export function HistoryPage({
             {totals.sourced} Sourced
           </div>
           <div className="text-[11px] text-[#6B3BF6] font-semibold">
-            Added to candidate repository
+            {role === 'superadmin' || role === 'admin'
+              ? 'Total candidate repository (org-wide)'
+              : 'Added to candidate repository'}
           </div>
         </div>
 
@@ -1271,7 +2085,9 @@ export function HistoryPage({
             {totals.submitted} Submitted
           </div>
           <div className="text-[11px] text-slate-600 font-semibold">
-            Pushed to client submissions
+            {role === 'superadmin' || role === 'admin'
+              ? 'All client submissions in the organization'
+              : 'Pushed to client submissions'}
           </div>
         </div>
 
@@ -1285,7 +2101,9 @@ export function HistoryPage({
             {totals.working} Working
           </div>
           <div className="text-[11px] text-slate-600 font-semibold">
-            Active in interview pipeline
+            {role === 'superadmin' || role === 'admin'
+              ? 'Org-wide active interview pipeline'
+              : 'Active in interview pipeline'}
           </div>
         </div>
 
@@ -1299,7 +2117,9 @@ export function HistoryPage({
             {totals.onHold} On Hold
           </div>
           <div className="text-[11px] text-slate-600 font-semibold">
-            Temporarily paused candidates
+            {role === 'superadmin' || role === 'admin'
+              ? 'Org-wide paused candidates'
+              : 'Temporarily paused candidates'}
           </div>
         </div>
       </div>
@@ -1349,7 +2169,10 @@ export function HistoryPage({
                   return (
                     <tr
                       key={item.id}
-                      onClick={() => setSelectedRecruiterDetail(item)}
+                      onClick={() => {
+                        setModalReqsPage(1)
+                        setSelectedRecruiterDetail(item)
+                      }}
                       className="hover:bg-purple-50/40 transition-colors cursor-pointer group"
                     >
                       {/* RECRUITER NAME & TEAM LEAD */}
@@ -1376,6 +2199,7 @@ export function HistoryPage({
                         <button
                           type="button"
                           onClick={() => {
+                            setModalReqsPage(1)
                             setRecruiterDetailModalTab('requirements')
                             setSelectedRecruiterDetail(item)
                           }}
@@ -1466,9 +2290,14 @@ export function HistoryPage({
       </div>
 
       {/* 5. RECRUITER FULL HISTORY INSPECTION MODAL */}
+      {sourcedCandidateDetailModal}
+      {requirementDetailModal}
+
       {selectedRecruiterDetail && (() => {
         const fullReqsList = getFullAssignedRequirements(selectedRecruiterDetail)
         const fullSourcedList = getFullSourcedCandidates(selectedRecruiterDetail)
+        const modalReqsStart = (modalReqsPage - 1) * modalReqsPageSize
+        const paginatedModalReqs = fullReqsList.slice(modalReqsStart, modalReqsStart + modalReqsPageSize)
 
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -1564,7 +2393,13 @@ export function HistoryPage({
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  <span>Sourced Profiles ({fullSourcedList.length})</span>
+                  <span>
+                    Sourced Profiles (
+                    {selectedRecruiterDetail.sourcedProfilesCount ||
+                      repoSourcedTotal ||
+                      fullSourcedList.length}
+                    )
+                  </span>
                 </button>
               </div>
 
@@ -1590,8 +2425,13 @@ export function HistoryPage({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200/70 text-slate-800 font-medium">
-                          {fullReqsList.map((req, idx) => (
-                            <tr key={req.id || idx} className="hover:bg-white transition-colors">
+                          {paginatedModalReqs.map((req, idx) => (
+                            <tr
+                              key={req.id || idx}
+                              onClick={() => openAssignedRequirement(req)}
+                              className="hover:bg-white transition-colors cursor-pointer"
+                              title="View requirement details"
+                            >
                               <td className="py-2.5 px-3 font-mono font-extrabold text-[#6B3BF6]">
                                 {req.id}
                               </td>
@@ -1629,6 +2469,18 @@ export function HistoryPage({
                         </tbody>
                       </table>
                     </div>
+                    <PaginationFooter
+                      currentPage={modalReqsPage}
+                      totalPages={Math.max(1, Math.ceil(fullReqsList.length / modalReqsPageSize))}
+                      totalItems={fullReqsList.length}
+                      pageSize={modalReqsPageSize}
+                      onPageChange={setModalReqsPage}
+                      onPageSizeChange={size => {
+                        setModalReqsPageSize(size)
+                        setModalReqsPage(1)
+                      }}
+                      itemLabel="requirements"
+                    />
                   </div>
                 </div>
               )}
@@ -1637,7 +2489,10 @@ export function HistoryPage({
               {recruiterDetailModalTab === 'sourced' && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Candidate Repository Sourcing History for {selectedRecruiterDetail.recruiterName} ({fullSourcedList.length} Profiles)
+                    Candidate Repository for {selectedRecruiterDetail.recruiterName} (
+                    {selectedRecruiterDetail.sourcedProfilesCount || repoSourcedTotal || fullSourcedList.length} Profiles
+                    )
+                    {repoSourcedLoading ? ' · Loading…' : ''}
                   </h4>
                   <div className="bg-slate-50 rounded-2xl border border-slate-200/80 overflow-hidden">
                     <div className="overflow-x-auto">
@@ -1651,10 +2506,36 @@ export function HistoryPage({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200/70 text-slate-800 font-medium">
-                          {fullSourcedList.map((cand, idx) => (
-                            <tr key={cand.id || idx} className="hover:bg-white transition-colors">
+                          {repoSourcedLoading ? (
+                            <tr>
+                              <td colSpan={4} className="py-10 text-center text-slate-400 font-bold">
+                                Loading candidates from repository…
+                              </td>
+                            </tr>
+                          ) : fullSourcedList.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="py-10 text-center text-slate-400 font-bold">
+                                No candidates found in repository for this user.
+                              </td>
+                            </tr>
+                          ) : fullSourcedList.map((cand, idx) => (
+                            <tr
+                              key={cand.id || idx}
+                              onClick={() => openSourcedCandidateDetail(cand)}
+                              className="hover:bg-white transition-colors cursor-pointer group"
+                              title="Click to view candidate details and resume"
+                            >
                               <td className="py-2.5 px-3 font-bold text-slate-900">
-                                {cand.candidateName}
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    openSourcedCandidateDetail(cand)
+                                  }}
+                                  className="text-left font-bold text-slate-900 group-hover:text-[#6B3BF6] hover:underline cursor-pointer"
+                                >
+                                  {cand.candidateName}
+                                </button>
                                 <span className="text-[10px] text-slate-400 font-normal block">{cand.experience}</span>
                               </td>
                               <td className="py-2.5 px-3">
@@ -1680,6 +2561,26 @@ export function HistoryPage({
                         </tbody>
                       </table>
                     </div>
+                    {repoSourcedTotal > repoSourcedPageSize && selectedRecruiterDetail.recruiterUserId && (
+                      <PaginationFooter
+                        currentPage={repoSourcedPage}
+                        totalPages={Math.max(1, Math.ceil(repoSourcedTotal / repoSourcedPageSize))}
+                        totalItems={repoSourcedTotal}
+                        pageSize={repoSourcedPageSize}
+                        onPageChange={page =>
+                          loadRepoSourcedForUser(
+                            selectedRecruiterDetail.recruiterUserId || '',
+                            page,
+                            repoSourcedPageSize,
+                          )
+                        }
+                        onPageSizeChange={size => {
+                          setRepoSourcedPageSize(size)
+                          loadRepoSourcedForUser(selectedRecruiterDetail.recruiterUserId || '', 1, size)
+                        }}
+                        itemLabel="candidates"
+                      />
+                    )}
                   </div>
                 </div>
               )}

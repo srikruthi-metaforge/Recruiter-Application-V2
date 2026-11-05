@@ -168,6 +168,8 @@ export class CandidatesService {
       noticePeriod?: number;
       location?: string;
       status?: string;
+      /** User id (sourcedByRecruiterId) or creator display name */
+      createdBy?: string;
       page?: number;
       limit?: number;
     },
@@ -178,6 +180,23 @@ export class CandidatesService {
 
     if (query?.status) {
       filter.status = query.status;
+    }
+
+    // Filter by who added the candidate (Created By → sourcedByRecruiterId).
+    // Fail closed: if a creator filter was requested but cannot be resolved,
+    // return an empty page — never the full org repository.
+    const createdBy = String(query?.createdBy || '').trim();
+    if (createdBy) {
+      const resolvedCreatorId = await this.resolveCreatedByRecruiterId(orgId, createdBy);
+      if (!resolvedCreatorId) {
+        const pageEarly = query?.page ? Math.max(1, Number(query.page)) : 1;
+        const limitEarly = query?.limit ? Math.max(1, Math.min(100, Number(query.limit))) : 0;
+        if (limitEarly > 0) {
+          return { items: [], total: 0, page: pageEarly, limit: limitEarly, totalPages: 0 };
+        }
+        return [];
+      }
+      filter.sourcedByRecruiterId = resolvedCreatorId;
     }
 
     if (query?.minExperience !== undefined && !isNaN(Number(query.minExperience))) {
@@ -219,19 +238,21 @@ export class CandidatesService {
     }
 
     const page = query?.page ? Math.max(1, Number(query.page)) : 1;
-    const limit = query?.limit ? Math.max(1, Math.min(200, Number(query.limit))) : 0;
+    // Cap page size for UI pagination (never allow unbounded page storms from clients).
+    const limit = query?.limit ? Math.max(1, Math.min(100, Number(query.limit))) : 0;
 
-    let items;
     if (limit > 0) {
-      items = await this.candidateModel
-        .find(filter)
-        .populate('sourcedByRecruiterId', 'name email')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec();
-
-      const total = await this.candidateModel.countDocuments(filter).exec();
+      const [items, total] = await Promise.all([
+        this.candidateModel
+          .find(filter)
+          .populate('sourcedByRecruiterId', 'name email')
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean()
+          .exec(),
+        this.candidateModel.countDocuments(filter).exec(),
+      ]);
 
       return {
         items: items.map((item) => this.sanitizeCandidate(item)),
@@ -240,15 +261,122 @@ export class CandidatesService {
         limit,
         totalPages: Math.ceil(total / limit),
       };
-    } else {
-      items = await this.candidateModel
+    }
+
+    // Array shape is unchanged. The read is capped so an omitted limit cannot scan the collection.
+    const items = await this.candidateModel
+      .find(filter)
+      .populate('sourcedByRecruiterId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(1000)
+      .lean()
+      .exec();
+    return items.map((item) => this.sanitizeCandidate(item));
+  }
+
+  /** Resolve Created By filter to a recruiter Mongo ObjectId (id / userId / email). */
+  private async resolveCreatedByRecruiterId(
+    orgId: Types.ObjectId,
+    createdBy: string,
+  ): Promise<Types.ObjectId | null> {
+    const raw = String(createdBy || '').trim();
+    if (!raw) return null;
+    if (Types.ObjectId.isValid(raw) && String(new Types.ObjectId(raw)) === raw) {
+      return new Types.ObjectId(raw);
+    }
+    const user = await this.candidateModel.db.collection('users').findOne(
+      {
+        orgId,
+        $and: [
+          { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
+          { $or: [{ userId: raw }, { email: raw.toLowerCase() }] },
+        ],
+      },
+      { projection: { _id: 1 } },
+    );
+    return user?._id ? new Types.ObjectId(String(user._id)) : null;
+  }
+
+  /**
+   * GET /api/v1/candidates/sourced-by/:recruiterId
+   * Paged Candidate Repository rows for one sourcer (always filtered).
+   * Optional `from` / `to` (ISO dates) filter on candidate.createdAt for period KPIs.
+   */
+  async findSourcedByRecruiter(
+    currentUser: any,
+    recruiterId: string,
+    page = 1,
+    limit = 10,
+    from?: string,
+    to?: string,
+  ) {
+    const orgId = requireOrgId(currentUser);
+    const resolved = await this.resolveCreatedByRecruiterId(orgId, recruiterId);
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+    if (!resolved) {
+      return { items: [], total: 0, page: safePage, limit: safeLimit, totalPages: 0 };
+    }
+    const filter: Record<string, any> = {
+      orgId,
+      deletedAt: null,
+      sourcedByRecruiterId: resolved,
+    };
+    const createdAt: Record<string, Date> = {};
+    if (from) {
+      const start = new Date(from);
+      if (!Number.isNaN(start.getTime())) createdAt.$gte = start;
+    }
+    if (to) {
+      const end = new Date(to);
+      if (!Number.isNaN(end.getTime())) createdAt.$lte = end;
+    }
+    if (Object.keys(createdAt).length > 0) {
+      filter.createdAt = createdAt;
+    }
+    const [items, total] = await Promise.all([
+      this.candidateModel
         .find(filter)
         .populate('sourcedByRecruiterId', 'name email')
         .sort({ createdAt: -1 })
-        .limit(1000)
-        .exec();
-      return items.map((item) => this.sanitizeCandidate(item));
+        .skip((safePage - 1) * safeLimit)
+        .limit(safeLimit)
+        .exec(),
+      this.candidateModel.countDocuments(filter).exec(),
+    ]);
+    return {
+      items: items.map((item) => this.sanitizeCandidate(item)),
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit) || 0,
+    };
+  }
+
+  /**
+   * GET /api/v1/candidates/sourced-counts
+   * One aggregation: active repo candidates grouped by sourcedByRecruiterId.
+   */
+  async sourcedCountsByRecruiter(currentUser: any) {
+    const orgId = requireOrgId(currentUser);
+    const [rows, total] = await Promise.all([
+      this.candidateModel
+        .aggregate<{ _id: Types.ObjectId | null; count: number }>([
+          { $match: { orgId, deletedAt: null } },
+          { $group: { _id: '$sourcedByRecruiterId', count: { $sum: 1 } } },
+        ])
+        .exec(),
+      // Full Candidate Repository size for the org (includes records with no sourcer id).
+      this.candidateModel.countDocuments({ orgId, deletedAt: null }).exec(),
+    ]);
+
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      if (!row?._id) continue;
+      const key = String(row._id);
+      counts[key] = Number(row.count) || 0;
     }
+    return { counts, total: Number(total) || 0 };
   }
 
   /** Load candidate by Mongo id or business id, scoped to caller org. */
@@ -272,7 +400,103 @@ export class CandidatesService {
   async findById(id: string, currentUser: any) {
     const doc = await this.loadCandidateForUser(id, currentUser);
     await this.withSourcedRecruiter(doc);
+    await this.ensureResumeLinked(doc, currentUser).catch((err) => {
+      console.error('Candidate resume link failed:', err);
+    });
     return this.sanitizeCandidate(doc);
+  }
+
+  /**
+   * GET /api/v1/candidates/:id/resume
+   * Resolves a stored resume (file id, candidate document, file metadata, or V1 disk)
+   * and returns a short-lived download URL.
+   */
+  async createResumeDownload(id: string, currentUser: any) {
+    const doc = await this.loadCandidateForUser(id, currentUser);
+    const file = await this.ensureResumeLinked(doc, currentUser);
+    if (!file) {
+      const named = this.resumeNameHints(doc).length > 0;
+      throw new NotFoundException(
+        named
+          ? 'The resume name is saved on this candidate, but the file is not stored. Upload the resume again to download it.'
+          : 'No resume file is stored for this candidate.',
+      );
+    }
+    const signed = await this.filesService.createSignedDownloadUrl(currentUser, String(file._id));
+    return {
+      ...signed,
+      fileId: String(file._id),
+      resumeFileName: file.originalName || doc.resumeFileName || null,
+    };
+  }
+
+  /** Filenames recorded on the candidate, including the V1 resume_url leftover. */
+  private resumeNameHints(doc: CandidateDocument | any): string[] {
+    const legacy = doc?.legacy && typeof doc.legacy === 'object' ? doc.legacy : {};
+    return [doc?.resumeFileName, legacy.resumeUrl, doc?.resumeUrl, doc?.resumeFileUrl]
+      .map((value) => (value == null ? '' : String(value).trim()))
+      .filter(Boolean);
+  }
+
+  private recruiterObjectId(doc: CandidateDocument | any): Types.ObjectId | undefined {
+    const raw = doc?.sourcedByRecruiterId;
+    const id = raw && typeof raw === 'object' ? raw._id : raw;
+    if (id && Types.ObjectId.isValid(String(id))) return new Types.ObjectId(String(id));
+    return undefined;
+  }
+
+  /**
+   * Attach resumeFileId when the file is already stored but the candidate row
+   * only has a filename. Returns null when no file bytes exist.
+   */
+  private async ensureResumeLinked(doc: CandidateDocument, currentUser: any) {
+    if (doc.resumeFileId) {
+      const linked = await this.filesService.readableById(currentUser, String(doc.resumeFileId));
+      if (linked) return linked;
+    }
+
+    const documentRow = await this.candidateDocumentModel
+      .findOne({
+        orgId: doc.orgId,
+        candidateId: doc._id,
+        documentType: 'Resume',
+        deletedAt: null,
+      })
+      .sort({ isPrimaryResume: -1, createdAt: -1 })
+      .exec();
+    if (documentRow?.fileMetadataId) {
+      const fromDocument = await this.filesService.readableById(
+        currentUser,
+        String(documentRow.fileMetadataId),
+      );
+      if (fromDocument) {
+        await this.persistResumeLink(doc, fromDocument);
+        return fromDocument;
+      }
+    }
+
+    const found = await this.filesService.locateOrImportResumeByName(
+      currentUser,
+      this.resumeNameHints(doc),
+      this.recruiterObjectId(doc),
+    );
+    if (!found) return null;
+    await this.persistResumeLink(doc, found);
+    return found;
+  }
+
+  private async persistResumeLink(doc: CandidateDocument, file: { _id: any; originalName?: string }) {
+    const fileId = file._id as Types.ObjectId;
+    const name = file.originalName ? String(file.originalName) : doc.resumeFileName;
+    const changed =
+      !doc.resumeFileId ||
+      String(doc.resumeFileId) !== String(fileId) ||
+      (name && doc.resumeFileName !== name);
+    if (!changed) return;
+    doc.resumeFileId = fileId;
+    if (name) doc.resumeFileName = name;
+    await doc.save();
+    await this.recordPrimaryResume(doc, fileId);
   }
 
   /** POST /api/v1/candidates/duplicate-check */

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { SavedSearch, SavedSearchDocument } from '../schemas/saved-search.schema';
+import { UNPAGED_LIST_CAP } from '../../../common/list-page.util';
 
 @Injectable()
 export class SavedSearchesRepository {
@@ -15,6 +16,7 @@ export class SavedSearchesRepository {
       .find(filter)
       .populate('userId', 'name email role')
       .sort({ createdAt: -1 })
+      .limit(UNPAGED_LIST_CAP)
       .exec();
   }
 

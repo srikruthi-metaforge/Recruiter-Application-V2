@@ -49,7 +49,7 @@ export class UsersController {
   /** GET /api/v1/users */
   @Get()
   async findAll(
-    @Query() query: { role?: string; search?: string; active?: string },
+    @Query() query: { role?: string; search?: string; active?: string; page?: number; limit?: number },
     @Req() req: any,
   ) {
     return this.usersService.findAll(req.user, query);

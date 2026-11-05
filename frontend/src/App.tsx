@@ -1,34 +1,84 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { useQuery } from '@tanstack/react-query'
 import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from './types'
 import { brand } from './theme'
 import { logoutRemote, restoreSession } from './data/authService'
 import { clearSession, getSessionUser } from './store/session'
+import { markSidebarNavigation } from './utils/notificationNavigation'
 import { titleForRole } from './data/roleMeta'
 import { workspaceService } from './services/workspace.service'
 import { saveSubmissionsStore } from './data/submissionsStore'
+import { fetchWorkspace, patchWorkspace, prefetchCandidateFirstPage, prefetchNotifications, prefetchWorkspace, resetWorkspaceRefresh } from './lib/workspaceRefresh'
+import { queryKeys } from './lib/queryKeys'
+import { NotificationProvider } from './hooks/notificationContext'
 
 import { Sidebar } from './components/layout/Sidebar'
 import { Topbar } from './components/layout/Topbar'
 import { PageContainer } from './components/layout/PageContainer'
-
-import { RecruiterDashboard } from './components/dashboards/RecruiterDashboard'
-import { DevTeamDashboard } from './components/dashboards/DevTeamDashboard'
-import { ModulePage } from './components/pages/ModulePage'
-
-import { LandingPage } from './components/landing/LandingPage'
-import { SignInPage } from './components/auth/SignInPage'
-import { SignUpPage } from './components/auth/SignUpRequestPage'
-import { PasswordRecoveryFlow } from './components/auth/PasswordRecoveryFlow'
-
-import { NewRequirementModal } from './components/modals/NewRequirementModal'
-import { SubmitCandidateModal } from './components/modals/SubmitCandidateModal'
-import { InterviewFeedbackModal } from './components/modals/InterviewFeedbackModal'
-import { CandidateDetailModal } from './components/modals/CandidateDetailModal'
+import { PageLoading } from './components/common/PageLoading'
 import { navKeyFromPathname, resetBrowserPathToRoot, syncBrowserPath } from './config/navRoutes'
 
+const screenLoading = () => <PageLoading label="Loading…" />
+
+const RecruiterDashboard = dynamic(
+  () => import('./components/dashboards/RecruiterDashboard').then(m => m.RecruiterDashboard),
+  { loading: screenLoading },
+)
+const DevTeamDashboard = dynamic(
+  () => import('./components/dashboards/DevTeamDashboard').then(m => m.DevTeamDashboard),
+  { loading: screenLoading },
+)
+const ModulePage = dynamic(
+  () => import('./components/pages/ModulePage').then(m => m.ModulePage),
+  { loading: screenLoading },
+)
+const LandingPage = dynamic(
+  () => import('./components/landing/LandingPage').then(m => m.LandingPage),
+  { loading: screenLoading },
+)
+const SignInPage = dynamic(
+  () => import('./components/auth/SignInPage').then(m => m.SignInPage),
+  { loading: screenLoading },
+)
+const SignUpPage = dynamic(
+  () => import('./components/auth/SignUpRequestPage').then(m => m.SignUpPage),
+  { loading: screenLoading },
+)
+const PasswordRecoveryFlow = dynamic(
+  () => import('./components/auth/PasswordRecoveryFlow').then(m => m.PasswordRecoveryFlow),
+  { loading: screenLoading },
+)
+const NewRequirementModal = dynamic(
+  () => import('./components/modals/NewRequirementModal').then(m => m.NewRequirementModal),
+  { loading: () => null },
+)
+const SubmitCandidateModal = dynamic(
+  () => import('./components/modals/SubmitCandidateModal').then(m => m.SubmitCandidateModal),
+  { loading: () => null },
+)
+const InterviewFeedbackModal = dynamic(
+  () => import('./components/modals/InterviewFeedbackModal').then(m => m.InterviewFeedbackModal),
+  { loading: () => null },
+)
+const CandidateDetailModal = dynamic(
+  () => import('./components/modals/CandidateDetailModal').then(m => m.CandidateDetailModal),
+  { loading: () => null },
+)
+
 const emptyUser = { email: '', name: '', password: '', title: '' }
+const noop = () => {}
+const EMPTY_REQUIREMENTS: Requirement[] = []
+const EMPTY_SUBMISSIONS: Submission[] = []
+const EMPTY_INTERVIEWS: Interview[] = []
+const EMPTY_RECRUITERS: Recruiter[] = []
+const EMPTY_LEADS: Lead[] = []
+const EMPTY_ADMINS: Admin[] = []
+const EMPTY_LOGS: ActivityLogItem[] = []
+const EMPTY_CANDIDATES: Candidate[] = []
+const WORKSPACE_NAV = new Set(['Requirements', 'Dashboard', 'Reports'])
 const NAV_STORAGE_KEY = 'mrap_active_nav'
 
 function getSavedNav(): string | null {
@@ -72,26 +122,40 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<string>('Dashboard')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
-  const [requirements, setRequirements] = useState<Requirement[]>([])
-  const [submissions, setSubmissions] = useState<Submission[]>([])
-  const [interviews, setInterviews] = useState<Interview[]>([])
-  const [recruiters, setRecruiters] = useState<Recruiter[]>([])
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [admins, setAdmins] = useState<Admin[]>([])
-  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
-  const [candidates, setCandidates] = useState<Candidate[]>([])
   const [currentUser, setCurrentUser] = useState(emptyUser)
+  const sessionUserId = getSessionUser()?.id || ''
+  const workspaceQuery = useQuery({
+    queryKey: queryKeys.workspace(sessionUserId || 'signed-out'),
+    enabled: false,
+    queryFn: ({ signal }) => workspaceService.load({ signal }),
+  })
+  const workspace = sessionUserId ? workspaceQuery.data : undefined
+  const requirements = workspace?.requirements ?? EMPTY_REQUIREMENTS
+  const submissions = workspace?.submissions ?? EMPTY_SUBMISSIONS
+  const interviews = workspace?.interviews ?? EMPTY_INTERVIEWS
+  const recruiters = workspace?.recruiters ?? EMPTY_RECRUITERS
+  const leads = workspace?.leads ?? EMPTY_LEADS
+  const admins = workspace?.admins ?? EMPTY_ADMINS
+  const activityLogs = workspace?.activityLogs ?? EMPTY_LOGS
+  const candidates = workspace?.candidates ?? EMPTY_CANDIDATES
+  const workspaceStats = {
+    totalCandidates: workspace?.stats?.totalCandidates,
+    myCandidatesCount: workspace?.stats?.myCandidatesCount,
+  }
 
-  const handleAddActivityLog = (newLog: ActivityLogItem) => {
-    setActivityLogs(prev => [newLog, ...prev])
+  const handleAddActivityLog = useCallback((newLog: ActivityLogItem) => {
+    patchWorkspace(current => ({
+      ...current,
+      activityLogs: [newLog, ...(current.activityLogs || [])],
+    }))
     void workspaceService.addActivityLog(newLog).catch(() => undefined)
-  }
+  }, [])
 
-  // Sync React state only. Do NOT call PUT /requirements/bulk here —
+  // Sync the shared cache only. Do NOT call PUT /requirements/bulk here —
   // assign/create/edit already hit dedicated APIs; bulk is lead/admin-only and 403s for recruiters.
-  const persistRequirements = (next: Requirement[]) => {
-    setRequirements(next)
-  }
+  const persistRequirements = useCallback((next: Requirement[]) => {
+    patchWorkspace(current => ({ ...current, requirements: next }))
+  }, [])
 
   const [isNewReqOpen, setIsNewReqOpen] = useState(false)
   const [isSubmitCandidateOpen, setIsSubmitCandidateOpen] = useState(false)
@@ -100,23 +164,20 @@ export default function App() {
   const [selectedInterviewForFeedback, setSelectedInterviewForFeedback] = useState<Interview | null>(null)
   const [isCandidateDetailOpen, setIsCandidateDetailOpen] = useState(false)
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
-  // Ignore stale workspace responses when login + restoreSession + nav refresh overlap.
-  const workspaceLoadSeq = useRef(0)
+  // Single workspace GET. Navigation reuses a fresh copy; mutations pass force.
+  const loadWorkspace = useCallback((opts?: { force?: boolean }) => {
+    const id = getSessionUser()?.id
+    if (!id) return Promise.resolve()
+    return fetchWorkspace(id, opts).then(() => undefined)
+  }, [])
 
-  const loadWorkspace = async () => {
-    const seq = ++workspaceLoadSeq.current
-    const payload = await workspaceService.load()
-    if (seq !== workspaceLoadSeq.current) return
-    setRequirements(payload.requirements || [])
-    setSubmissions(payload.submissions || [])
-    saveSubmissionsStore(payload.submissions || [], { silent: true })
-    setInterviews(payload.interviews || [])
-    setRecruiters(payload.recruiters || [])
-    setLeads(payload.leads || [])
-    setAdmins(payload.admins || [])
-    setActivityLogs(payload.activityLogs || [])
-    setCandidates(payload.candidates || [])
-  }
+  useEffect(() => {
+    const onRefresh = () => {
+      void loadWorkspace({ force: true }).catch(() => undefined)
+    }
+    window.addEventListener('workspace_refresh', onRefresh)
+    return () => window.removeEventListener('workspace_refresh', onRefresh)
+  }, [loadWorkspace])
 
   useEffect(() => {
     let cancelled = false
@@ -145,7 +206,7 @@ export default function App() {
         syncBrowserPath(targetNav, 'replace')
         setScreen('app')
         try {
-          await loadWorkspace()
+          await loadWorkspace({ force: true })
         } catch {
           // Empty workspace until API recovers
         }
@@ -174,23 +235,16 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     void logoutRemote()
+    resetWorkspaceRefresh()
     clearSession()
     clearSavedNav()
     setScreen('landing')
     setActiveNav('Requirements')
     resetBrowserPathToRoot()
-    setRequirements([])
-    setSubmissions([])
-    setInterviews([])
-    setRecruiters([])
-    setLeads([])
-    setAdmins([])
-    setActivityLogs([])
-    setCandidates([])
     setCurrentUser(emptyUser)
-  }
+  }, [])
 
   const handleAuthenticated = (r: Role) => {
     setRole(r)
@@ -210,10 +264,10 @@ export default function App() {
     saveNav(targetNav)
     syncBrowserPath(targetNav, 'replace')
     setScreen('app')
-    void loadWorkspace().catch(() => undefined)
+    void loadWorkspace({ force: true }).catch(() => undefined)
   }
 
-  const handleNavSelect = (nav: string) => {
+  const handleNavSelect = useCallback((nav: string) => {
     if (nav !== 'Candidates' && nav !== 'Candidate Search') {
       setSelectedReqIdForSubmit(null)
     }
@@ -223,7 +277,31 @@ export default function App() {
     if (nav === 'Requirements') {
       void loadWorkspace().catch(() => undefined)
     }
-  }
+  }, [loadWorkspace])
+
+  const handleSidebarNav = useCallback((nav: string) => {
+    setSelectedReqIdForSubmit(null)
+    markSidebarNavigation()
+    handleNavSelect(nav)
+  }, [handleNavSelect])
+
+  const handlePrefetchNav = useCallback((nav: string) => {
+    const id = getSessionUser()?.id
+    if (!id) return
+    if (nav === 'Notifications') {
+      void prefetchNotifications(id)
+      return
+    }
+    if (nav === 'Candidates') {
+      void prefetchCandidateFirstPage(id)
+      return
+    }
+    if (WORKSPACE_NAV.has(nav)) void prefetchWorkspace(id)
+  }, [])
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed(collapsed => !collapsed)
+  }, [])
 
   const handleNavSelectRef = useRef(handleNavSelect)
   handleNavSelectRef.current = handleNavSelect
@@ -253,23 +331,30 @@ export default function App() {
       updatedAt: (newReq as any).updatedAt || nowIso,
     }
     // Optimistic insert, then replace with persisted row (real reqCode) so all users see it after reload.
-    setRequirements(prev => [enrichedReq, ...prev])
+    patchWorkspace(current => ({
+      ...current,
+      requirements: [enrichedReq, ...(current.requirements || [])],
+    }))
     try {
       const created: any = await workspaceService.createRequirement(enrichedReq)
       if (created) {
         const persistedId = created.reqCode || created.displayId || created.id || enrichedReq.id
-        setRequirements(prev =>
-          prev.map(r =>
+        patchWorkspace(current => ({
+          ...current,
+          requirements: (current.requirements || []).map(r =>
             r.id === enrichedReq.id
               ? { ...r, ...created, id: persistedId, reqCode: created.reqCode || persistedId, _id: created._id || (r as any)._id }
               : r,
           ),
-        )
+        }))
       }
       // Refresh from workspace so list matches DB for every role in the org.
-      await loadWorkspace().catch(() => undefined)
+      await loadWorkspace({ force: true }).catch(() => undefined)
     } catch (err) {
-      setRequirements(prev => prev.filter(r => r.id !== enrichedReq.id))
+      patchWorkspace(current => ({
+        ...current,
+        requirements: (current.requirements || []).filter(r => r.id !== enrichedReq.id),
+      }))
       throw err
     }
   }
@@ -324,25 +409,24 @@ export default function App() {
           undefined,
       } as Submission
 
-      setSubmissions(prev => {
-        const next = [saved, ...prev.filter(s => s.id !== enrichedSub.id && s.id !== saved.id)]
-        saveSubmissionsStore(next)
-        return next
+      patchWorkspace(current => {
+        const nextSubs = [saved, ...(current.submissions || []).filter(s => s.id !== enrichedSub.id && s.id !== saved.id)]
+        saveSubmissionsStore(nextSubs)
+        return {
+          ...current,
+          submissions: nextSubs,
+          requirements: (current.requirements || []).map(r =>
+            r.id === matched?.id || (r as any)._id === requirementId || (r as any).reqCode === reqCode
+              ? { ...r, submissions: (r.submissions || 0) + (created?.alreadyExists ? 0 : 1) }
+              : r,
+          ),
+          recruiters: (current.recruiters || []).map(rec =>
+            rec.name === newSub.recruiter
+              ? { ...rec, submissions: rec.submissions + 1, today: rec.today + 1 }
+              : rec,
+          ),
+        }
       })
-      setRequirements(prev =>
-        prev.map(r =>
-          r.id === matched?.id || (r as any)._id === requirementId || (r as any).reqCode === reqCode
-            ? { ...r, submissions: (r.submissions || 0) + (created?.alreadyExists ? 0 : 1) }
-            : r,
-        ),
-      )
-      setRecruiters(prev =>
-        prev.map(rec =>
-          rec.name === newSub.recruiter
-            ? { ...rec, submissions: rec.submissions + 1, today: rec.today + 1 }
-            : rec,
-        ),
-      )
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('submissions_updated'))
       }
@@ -365,7 +449,7 @@ export default function App() {
           : `Submitted candidate to requirement ${reqCode || newSub.req}`,
       })
       if (!opts?.silent) {
-        await loadWorkspace().catch(() => undefined)
+        await loadWorkspace({ force: true }).catch(() => undefined)
       }
     } catch (err: any) {
       if (!opts?.silent && typeof window !== 'undefined') {
@@ -376,7 +460,10 @@ export default function App() {
   }
 
   const handleSaveInterviewFeedback = (interviewId: string, status: InterviewStatus, notes: string) => {
-    setInterviews(prev => prev.map(iv => (iv.id === interviewId ? { ...iv, status, notes } : iv)))
+    patchWorkspace(current => ({
+      ...current,
+      interviews: (current.interviews || []).map(iv => (iv.id === interviewId ? { ...iv, status, notes } : iv)),
+    }))
     void workspaceService.saveInterviewFeedback(interviewId, status, notes).catch(() => undefined)
     const targetIv = interviews.find(i => i.id === interviewId)
     handleAddActivityLog({
@@ -478,6 +565,7 @@ export default function App() {
           return (
             <RecruiterDashboard
               candidates={candidates}
+              myCandidatesCount={workspaceStats.myCandidatesCount}
               submissions={submissions}
               interviews={interviews}
               requirements={requirements}
@@ -519,57 +607,74 @@ export default function App() {
         }}
         currentUserName={currentUser.name}
         currentUserEmail={currentUser.email}
+        myCandidatesCount={workspaceStats.myCandidatesCount}
         initialCandidates={candidates}
-        onCandidatesChange={setCandidates}
+        onCandidatesChange={next => {
+          patchWorkspace(current => ({ ...current, candidates: next }))
+        }}
       />
     )
   }
 
   return (
-    <div className="flex h-screen overflow-hidden font-body" style={{ background: brand.background }}>
+    <NotificationProvider role={role}>
+    <div className="flex h-dvh overflow-hidden font-body" style={{ background: brand.background }}>
       <Sidebar
         role={role}
         onLogout={handleLogout}
         activeNav={activeNav}
-        onNavSelect={handleNavSelect}
+        onNavSelect={handleSidebarNav}
+        onPrefetch={handlePrefetchNav}
         collapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        onToggleCollapse={toggleSidebar}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div
+        className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0"
+        style={{ ['--app-sidebar-offset' as string]: isSidebarCollapsed ? '72px' : '260px' }}
+      >
         <Topbar
           title={activeNav}
           role={role}
           searchValue=""
-          onSearchChange={() => {}}
+          onSearchChange={noop}
           onSignOut={handleLogout}
         />
-        <main className="flex-1 overflow-y-auto w-full min-w-0 px-4 py-5 lg:px-6 xl:px-8 app-main-content">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full min-w-0 px-4 py-5 lg:px-6 xl:px-8 app-main-content">
           <PageContainer>{renderContent()}</PageContainer>
         </main>
       </div>
 
-      <NewRequirementModal isOpen={isNewReqOpen} onClose={() => setIsNewReqOpen(false)} onAdd={handleAddRequirement} />
-      <SubmitCandidateModal
-        isOpen={isSubmitCandidateOpen}
-        onClose={() => setIsSubmitCandidateOpen(false)}
-        requirements={requirements}
-        selectedReqId={selectedReqIdForSubmit}
-        onSubmit={handleSubmitCandidate}
-        currentRecruiterName={currentUser.name}
-      />
-      <InterviewFeedbackModal
-        isOpen={isFeedbackModalOpen}
-        onClose={() => setIsFeedbackModalOpen(false)}
-        interview={selectedInterviewForFeedback}
-        onSaveFeedback={handleSaveInterviewFeedback}
-      />
-      <CandidateDetailModal
-        isOpen={isCandidateDetailOpen}
-        onClose={() => setIsCandidateDetailOpen(false)}
-        submission={selectedSubmissionForDetail}
-      />
+      {isNewReqOpen && (
+        <NewRequirementModal isOpen onClose={() => setIsNewReqOpen(false)} onAdd={handleAddRequirement} />
+      )}
+      {isSubmitCandidateOpen && (
+        <SubmitCandidateModal
+          isOpen
+          onClose={() => setIsSubmitCandidateOpen(false)}
+          requirements={requirements}
+          selectedReqId={selectedReqIdForSubmit}
+          onSubmit={handleSubmitCandidate}
+          currentRecruiterName={currentUser.name}
+        />
+      )}
+      {isFeedbackModalOpen && selectedInterviewForFeedback && (
+        <InterviewFeedbackModal
+          isOpen
+          onClose={() => setIsFeedbackModalOpen(false)}
+          interview={selectedInterviewForFeedback}
+          onSaveFeedback={handleSaveInterviewFeedback}
+        />
+      )}
+      {isCandidateDetailOpen && selectedSubmissionForDetail && (
+        <CandidateDetailModal
+          isOpen
+          onClose={() => setIsCandidateDetailOpen(false)}
+          submission={selectedSubmissionForDetail}
+        />
+      )}
 
     </div>
+    </NotificationProvider>
   )
 }

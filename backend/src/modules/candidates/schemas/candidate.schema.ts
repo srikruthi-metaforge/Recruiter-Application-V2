@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type CandidateDocument = Candidate & Document;
@@ -102,10 +103,12 @@ export class Candidate {
 export const CandidateSchema = SchemaFactory.createForClass(Candidate);
 
 // Compound Indexes prefixed with orgId and suffix deletedAt
+CandidateSchema.index({ orgId: 1, deletedAt: 1, createdAt: -1 });
+CandidateSchema.index({ orgId: 1, sourcedByRecruiterId: 1, deletedAt: 1, createdAt: -1 });
 CandidateSchema.index({ orgId: 1, phone: 1, deletedAt: 1 }, { unique: true });
 CandidateSchema.index({ orgId: 1, email: 1, deletedAt: 1 }, { unique: true });
 CandidateSchema.index({ orgId: 1, skills: 1, totalExperienceYears: 1, deletedAt: 1 });
 CandidateSchema.index({ orgId: 1, noticePeriodDays: 1, currentLocation: 1, deletedAt: 1 });
 applyOrgLegacyPostgresIdIndex(CandidateSchema);
 
-CandidateSchema.plugin(DataScopePlugin);
+CandidateSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

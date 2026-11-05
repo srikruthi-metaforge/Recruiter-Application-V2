@@ -1,4 +1,4 @@
-export const VENDOR_NAME = 'Metaforgeit'
+export const VENDOR_NAME = 'Metaforge IT'
 export const SUPPLIER_NAME = 'Shaum'
 export const PREVIOUS_AVAILABLE_DOCUMENTS = 'Available Documents\u200b'
 

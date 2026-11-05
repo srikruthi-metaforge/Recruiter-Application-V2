@@ -6,6 +6,8 @@ import {
   assertCanAccessRequirement,
   assertCanAccessSubmission,
   assertCanAccessUser,
+  assertCanViewSubmission,
+  assertCanWorkOnRequirement,
   orgScope,
   requireOrgId,
 } from './resource-access.util';
@@ -110,5 +112,35 @@ describe('resource-access.util', () => {
     expect(() =>
       assertCanAccessUser({ _id: userB, orgId: orgA }, caller({ role: 'admin' })),
     ).not.toThrow();
+  });
+
+  it('blocks recruiter work when not assigned; allows when assigned', () => {
+    expect(() =>
+      assertCanWorkOnRequirement(
+        { orgId: orgA, assignmentStatus: 'Assigned', assignedRecruiterIds: [userB] },
+        caller(),
+      ),
+    ).toThrow(ForbiddenException);
+    expect(() =>
+      assertCanWorkOnRequirement(
+        { orgId: orgA, assignmentStatus: 'Assigned', assignedRecruiterIds: [userA] },
+        caller(),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertCanWorkOnRequirement(
+        { orgId: orgA, assignmentStatus: 'Assigned', assignedRecruiterIds: [userB] },
+        caller({ role: 'lead' }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('allows recruiter to view peer submission but not mutate', () => {
+    expect(() =>
+      assertCanViewSubmission({ orgId: orgA, recruiterId: userB }, caller()),
+    ).not.toThrow();
+    expect(() =>
+      assertCanAccessSubmission({ orgId: orgA, recruiterId: userB }, caller()),
+    ).toThrow(NotFoundException);
   });
 });

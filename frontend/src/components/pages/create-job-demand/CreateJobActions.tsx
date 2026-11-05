@@ -1,5 +1,6 @@
 import React from 'react'
 import { CreateJobDemandVm } from './useCreateJobDemandForm'
+import { FixedPageActionBar } from '../../layout/FixedPageActionBar'
 
 export function CreateJobActions({ vm }: { vm: CreateJobDemandVm }) {
   const {
@@ -8,8 +9,8 @@ export function CreateJobActions({ vm }: { vm: CreateJobDemandVm }) {
   } = vm
   return (
     <>
-        {/* STICKY BOTTOM ACTION BAR */}
-        <div className="sticky bottom-4 z-30 bg-white/95 backdrop-blur-md border border-slate-200/90 py-3.5 px-6 rounded-2xl shadow-xl flex items-center justify-end gap-3 mt-6">
+        <FixedPageActionBar>
+        <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 py-3.5 px-6 rounded-2xl shadow-xl flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onCancel}
@@ -25,6 +26,7 @@ export function CreateJobActions({ vm }: { vm: CreateJobDemandVm }) {
             {isEdit ? 'Save changes' : 'Create Requirement'}
           </button>
         </div>
+        </FixedPageActionBar>
     </>
   )
 }

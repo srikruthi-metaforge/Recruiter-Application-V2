@@ -3,8 +3,44 @@ import { Requirement } from '../../../types'
 import { CardFilterType } from '../../ui/RequirementCardsGrid'
 import { usersService, workspaceService } from '../../../services/workspace.service'
 import { getSessionUser } from '../../../store/session'
+import {
+  REQ_CREATING_SESSION_KEY,
+  clearSessionDraft,
+  readSessionDraft,
+  writeSessionDraft,
+} from '../../../lib/formSessionDraft'
 import { useState, useMemo } from 'react'
 import React from 'react'
+import { SIDEBAR_NAV_EVENT } from '../../../utils/notificationNavigation'
+
+function ymdFromIso(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function readPendingRequirementsScope() {
+  if (typeof window === 'undefined') {
+    return { from: '', to: '', ids: '', name: '' }
+  }
+  try {
+    const from = sessionStorage.getItem('pending_requirements_from') || ''
+    const to = sessionStorage.getItem('pending_requirements_to') || ''
+    const ids = sessionStorage.getItem('pending_requirements_assignee_ids') || ''
+    const name = sessionStorage.getItem('pending_requirements_assignee_name') || ''
+    sessionStorage.removeItem('pending_requirements_from')
+    sessionStorage.removeItem('pending_requirements_to')
+    sessionStorage.removeItem('pending_requirements_assignee_ids')
+    sessionStorage.removeItem('pending_requirements_assignee_name')
+    return { from, to, ids, name }
+  } catch {
+    return { from: '', to: '', ids: '', name: '' }
+  }
+}
 
 export function useRequirementsPageState(props: RequirementsPageProps) {
   const {
@@ -13,7 +49,7 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
   submissions = [],
   interviews = [],
   recruiters = [],
-  initialStatusFilter = 'Unassigned',
+  initialStatusFilter = 'All',
   onOpenSubmit,
   onUpdateRequirements,
   onAddRequirement,
@@ -30,16 +66,47 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
   // Selected requirement for detail overview screen
   const [selectedReqForDetail, setSelectedReqForDetail] = useState<Requirement | null>(null)
 
-  // Create Job Demand state
-  const [isCreatingDemand, setIsCreatingDemand] = useState(false)
+  // Create Job Demand state — restore after refresh so user stays on the form
+  const [isCreatingDemand, setIsCreatingDemand] = useState(() => {
+    const creating = readSessionDraft<boolean>(REQ_CREATING_SESSION_KEY) === true
+    if (creating && typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem('mrap_req_editing_demand_id_v1')
+      } catch {
+        // ignore
+      }
+    }
+    return creating
+  })
+
+  React.useEffect(() => {
+    if (isCreatingDemand) {
+      writeSessionDraft(REQ_CREATING_SESSION_KEY, true)
+      try {
+        window.sessionStorage.removeItem('mrap_req_editing_demand_id_v1')
+      } catch {
+        // ignore
+      }
+    } else {
+      clearSessionDraft(REQ_CREATING_SESSION_KEY)
+    }
+  }, [isCreatingDemand])
 
   // Search and Filter states
   const [globalSearch, setGlobalSearch] = useState('')
-  const [statusDropdown, setStatusDropdown] = useState<string>(initialStatusFilter || 'Unassigned')
+  const [statusDropdown, setStatusDropdown] = useState<string>(() => {
+    const allowed = new Set(['All', 'Unassigned', 'Assigned', 'Closed'])
+    return allowed.has(initialStatusFilter || '') ? (initialStatusFilter as string) : 'All'
+  })
   const [clientDropdown, setClientDropdown] = useState<string>('All')
-  const [dateFilter, setDateFilter] = useState<string>('All')
-  const [customStartDate, setCustomStartDate] = useState<string>('')
-  const [customEndDate, setCustomEndDate] = useState<string>('')
+  const [pendingReqScope] = useState(readPendingRequirementsScope)
+  const [dateFilter, setDateFilter] = useState<string>(
+    pendingReqScope.from || pendingReqScope.to ? 'Custom range' : 'All',
+  )
+  const [customStartDate, setCustomStartDate] = useState<string>(ymdFromIso(pendingReqScope.from))
+  const [customEndDate, setCustomEndDate] = useState<string>(ymdFromIso(pendingReqScope.to))
+  const [assigneeScopeIds, setAssigneeScopeIds] = useState(pendingReqScope.ids)
+  const [assigneeScopeName, setAssigneeScopeName] = useState(pendingReqScope.name)
 
 
   // Selected card filter
@@ -200,6 +267,34 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
     return () => window.removeEventListener('notification_navigate', onNavigate as EventListener)
   }, [localRequirements])
 
+  // Analytics Assigned KPI: same recruiter + received-date window. Sidebar clears it.
+  React.useEffect(() => {
+    const apply = () => {
+      const scope = readPendingRequirementsScope()
+      if (!scope.from && !scope.to && !scope.ids && !scope.name) return
+      if (scope.from || scope.to) {
+        setDateFilter('Custom range')
+        setCustomStartDate(ymdFromIso(scope.from))
+        setCustomEndDate(ymdFromIso(scope.to))
+      }
+      setAssigneeScopeIds(scope.ids)
+      setAssigneeScopeName(scope.name)
+      setStatusDropdown('Assigned')
+      setActiveCardFilter('ASSIGNED')
+    }
+    const clearScope = () => {
+      setAssigneeScopeIds('')
+      setAssigneeScopeName('')
+    }
+    apply()
+    window.addEventListener('notification_navigate', apply as EventListener)
+    window.addEventListener(SIDEBAR_NAV_EVENT, clearScope as EventListener)
+    return () => {
+      window.removeEventListener('notification_navigate', apply as EventListener)
+      window.removeEventListener(SIDEBAR_NAV_EVENT, clearScope as EventListener)
+    }
+  }, [])
+
   // Single Self Assign handler
   return {
     role,
@@ -230,6 +325,10 @@ export function useRequirementsPageState(props: RequirementsPageProps) {
     setCustomStartDate,
     customEndDate,
     setCustomEndDate,
+    assigneeScopeIds,
+    assigneeScopeName,
+    setAssigneeScopeIds,
+    setAssigneeScopeName,
     activeCardFilter,
     setActiveCardFilter,
     selectedReqIds,

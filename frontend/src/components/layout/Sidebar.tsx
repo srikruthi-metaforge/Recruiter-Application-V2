@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { memo, useState } from 'react'
 import { LogOut, Menu, User } from 'lucide-react'
 import { ROLE_NAV } from '../../config/navigation'
 import { MetaforgeLogo } from '../common/MetaforgeLogo'
@@ -6,11 +6,12 @@ import { ICONS, LayoutDashboard, ROLE_DASHBOARD_INFO, SidebarProps } from './sid
 
 export type { SidebarProps }
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   role,
   onLogout,
   activeNav = 'Dashboard',
   onNavSelect,
+  onPrefetch,
   collapsed: externalCollapsed,
   onToggleCollapse,
 }: SidebarProps) {
@@ -30,7 +31,7 @@ export function Sidebar({
   return (
     <aside
       className={`${isCollapsed ? 'w-[72px]' : 'w-[260px]'
-        } h-screen flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out select-none relative z-20`}
+        } h-dvh flex flex-col flex-shrink-0 min-h-0 transition-all duration-300 ease-in-out select-none relative z-20`}
       style={{
         background: 'linear-gradient(180deg, #0A1424 0%, #0B172A 50%, #0D1B30 100%)',
         boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
@@ -96,7 +97,7 @@ export function Sidebar({
       </div>
 
       {/* Primary navigation */}
-      <nav className="flex-1 py-3 px-3 space-y-2 overflow-y-auto sidebar-scroll">
+      <nav className="flex-1 min-h-0 py-3 px-3 space-y-2 overflow-y-auto sidebar-scroll">
         {mainNavItems.map(item => {
           const Icon = ICONS[item.key] || LayoutDashboard
           const isActive = activeNav === item.key
@@ -106,6 +107,7 @@ export function Sidebar({
             <div key={item.key} className="relative group">
               <button
                 onClick={() => onNavSelect?.(item.key)}
+                onMouseEnter={() => onPrefetch?.(item.key)}
                 className={`w-full flex items-center gap-3 rounded-xl transition-all duration-200 ${isCollapsed ? 'justify-center py-2' : 'px-3 py-2'
                   } ${isActive
                     ? 'text-white font-bold shadow-md shadow-[#6B3BF6]/20'
@@ -175,4 +177,4 @@ export function Sidebar({
       </div>
     </aside>
   )
-}
+})

@@ -24,7 +24,6 @@ import {
   X,
   FileCheck,
   Upload,
-  ArrowLeft,
   Briefcase,
   MapPin,
   FileSpreadsheet,
@@ -40,8 +39,10 @@ import {
 } from 'lucide-react'
 import { Role, Requirement } from '../../types'
 import { PaginationFooter } from '../ui/PaginationFooter'
+import { BackButton } from '../ui/BackButton'
 import { ClientDeliveryGapAnalysisPage } from './ClientDeliveryGapAnalysisPage'
 import { clientsService } from '../../services/workspace.service'
+import { canonicalizeClientName } from '../../utils/canonicalClientName'
 
 export interface ClientRecord {
   id: string
@@ -84,7 +85,63 @@ export interface ClientRequirementItem {
 }
 
 
-const sameClient = (a?: string, b?: string) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
+const sameClient = (a?: string, b?: string) =>
+  canonicalizeClientName(a) === canonicalizeClientName(b)
+
+/** Prefer a real company master row over email/POC junk when rolling up. */
+function seedScore(c: ClientRecord, canonical: string): number {
+  const n = (c.name || '').trim()
+  if (!n) return -1
+  if (n.toLowerCase() === canonical.toLowerCase()) return 100
+  if (!n.includes('@') && canonicalizeClientName(n) === canonical) return 50
+  return 0
+}
+
+/** Display-only: one row per canonical company (V1-style client info). */
+export function rollupClientsForDisplay(rows: ClientRecord[]): ClientRecord[] {
+  const by = new Map<string, ClientRecord>()
+  for (const c of rows) {
+    const key = canonicalizeClientName(c.name)
+    const existing = by.get(key)
+    if (!existing) {
+      by.set(key, {
+        ...c,
+        id: `CANON-${key.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'CLIENT'}`,
+        name: key,
+      })
+      continue
+    }
+    const preferNew = seedScore(c, key) > seedScore(existing, key)
+    by.set(key, {
+      ...(preferNew ? c : existing),
+      id: existing.id,
+      name: key,
+      activeReqs: (existing.activeReqs || 0) + (c.activeReqs || 0),
+      totalSubmissions: (existing.totalSubmissions || 0) + (c.totalSubmissions || 0),
+      totalPlacements: (existing.totalPlacements || 0) + (c.totalPlacements || 0),
+      teamMemberCount: Math.max(existing.teamMemberCount || 0, c.teamMemberCount || 0),
+      teamMembers: Array.from(new Set([...(existing.teamMembers || []), ...(c.teamMembers || [])])),
+      teamLead: preferNew
+        ? (c.teamLead || existing.teamLead)
+        : (existing.teamLead || c.teamLead),
+      pocName: preferNew ? (c.pocName || existing.pocName) : (existing.pocName || c.pocName),
+      pocEmail: preferNew ? (c.pocEmail || existing.pocEmail) : (existing.pocEmail || c.pocEmail),
+      pocPhone: preferNew ? (c.pocPhone || existing.pocPhone) : (existing.pocPhone || c.pocPhone),
+      domain: preferNew ? (c.domain || existing.domain) : (existing.domain || c.domain),
+      location: preferNew ? (c.location || existing.location) : (existing.location || c.location),
+      commercialFee: preferNew ? (c.commercialFee || existing.commercialFee) : (existing.commercialFee || c.commercialFee),
+      paymentTerms: preferNew ? (c.paymentTerms || existing.paymentTerms) : (existing.paymentTerms || c.paymentTerms),
+      slaTAT: preferNew ? (c.slaTAT || existing.slaTAT) : (existing.slaTAT || c.slaTAT),
+      agreementStatus: preferNew ? c.agreementStatus : existing.agreementStatus,
+      agreementStartDate: preferNew ? (c.agreementStartDate || existing.agreementStartDate) : (existing.agreementStartDate || c.agreementStartDate),
+      agreementEndDate: preferNew ? (c.agreementEndDate || existing.agreementEndDate) : (existing.agreementEndDate || c.agreementEndDate),
+      agreementDocName: preferNew ? (c.agreementDocName || existing.agreementDocName) : (existing.agreementDocName || c.agreementDocName),
+      signedBy: preferNew ? (c.signedBy || existing.signedBy) : (existing.signedBy || c.signedBy),
+      signedDate: preferNew ? (c.signedDate || existing.signedDate) : (existing.signedDate || c.signedDate),
+    })
+  }
+  return [...by.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
 
 export const getRequirementsForClient = (client: ClientRecord, requirements: Requirement[]): ClientRequirementItem[] =>
   requirements
@@ -145,6 +202,8 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
   const [selectedClientForReqsModal, setSelectedClientForReqsModal] = useState<ClientRecord | null>(null)
   const [reqsModalSearchQuery, setReqsModalSearchQuery] = useState('')
   const [reqsModalPriorityFilter, setReqsModalPriorityFilter] = useState<'All' | 'High' | 'Medium' | 'Low'>('All')
+  const [reqsModalPage, setReqsModalPage] = useState(1)
+  const [reqsModalPageSize, setReqsModalPageSize] = useState(5)
   const [activeDropdownClientId, setActiveDropdownClientId] = useState<string | null>(null)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -217,9 +276,12 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
     setTimeout(() => setToastMsg(null), 3500)
   }
 
+  // V1-style company rollup (emails / POC names → LTTS, ITC, …)
+  const displayClients = useMemo(() => rollupClientsForDisplay(clients), [clients])
+
   // Filtered Clients
   const filteredClients = useMemo(() => {
-    return clients.filter(c => {
+    return displayClients.filter(c => {
       if (domainFilter !== 'All Domains' && c.domain !== domainFilter) {
         return false
       }
@@ -234,7 +296,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
       }
       return true
     })
-  }, [clients, searchQuery, domainFilter])
+  }, [displayClients, searchQuery, domainFilter])
 
   // Filtered requirements for Client Requirements Breakdown Modal
   const filteredModalReqs = useMemo(() => {
@@ -255,6 +317,11 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
       return true
     })
   }, [selectedClientForReqsModal, reqsModalSearchQuery, reqsModalPriorityFilter])
+
+  const paginatedModalReqs = useMemo(() => {
+    const start = (reqsModalPage - 1) * reqsModalPageSize
+    return filteredModalReqs.slice(start, start + reqsModalPageSize)
+  }, [filteredModalReqs, reqsModalPage, reqsModalPageSize])
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -338,13 +405,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
         {/* TOP HEADER WITH BACK BUTTON & DOWNLOAD PDF ACTION */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setViewMode('list')}
-              className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-slate-200"
-              title="Back to Clients List"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            <BackButton label="Back to Clients List" onClick={() => setViewMode('list')} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
@@ -551,13 +612,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
         {/* TOP PAGE HEADER WITH BACK BUTTON */}
         <div className="flex items-center border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setViewMode('list')}
-              className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-slate-200"
-              title="Back to Clients List"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            <BackButton label="Back to Clients List" onClick={() => setViewMode('list')} />
             <div>
               <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-[#6B3BF6]" />
@@ -812,7 +867,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Client Management</h1>
             <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-blue-100 text-blue-900 border border-blue-200 inline-flex items-center gap-1.5 shadow-2xs">
               <Building2 className="w-3.5 h-3.5 text-blue-600" />
-              <span>{clients.length} Empaneled Clients</span>
+              <span>{displayClients.length} Empaneled Clients</span>
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
@@ -842,7 +897,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
               Active Executed MSAs
             </span>
             <p className="text-2xl font-extrabold text-slate-900 mt-1 tabular-nums">
-              {clients.filter(c => c.agreementStatus === 'Active - Executed').length}
+              {displayClients.filter(c => c.agreementStatus === 'Active - Executed').length}
             </p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-[#6B3BF6]">
@@ -1058,6 +1113,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                         setSelectedClientForReqsModal(client)
                         setReqsModalSearchQuery('')
                         setReqsModalPriorityFilter('All')
+                        setReqsModalPage(1)
                       }}
                       className="px-3 py-1 rounded-full text-xs font-extrabold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 hover:border-blue-400 tabular-nums transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95 inline-flex items-center gap-1.5"
                       title={`Click to view all requirements received from ${client.name}`}
@@ -1193,7 +1249,10 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                   type="text"
                   placeholder="Search requirement title, ID, recruiter..."
                   value={reqsModalSearchQuery}
-                  onChange={e => setReqsModalSearchQuery(e.target.value)}
+                  onChange={e => {
+                    setReqsModalSearchQuery(e.target.value)
+                    setReqsModalPage(1)
+                  }}
                   className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-[#6B3BF6] text-slate-800"
                 />
               </div>
@@ -1204,7 +1263,10 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                 {(['All', 'High', 'Medium', 'Low'] as const).map(p => (
                   <button
                     key={p}
-                    onClick={() => setReqsModalPriorityFilter(p)}
+                    onClick={() => {
+                      setReqsModalPriorityFilter(p)
+                      setReqsModalPage(1)
+                    }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
                       reqsModalPriorityFilter === p
                         ? 'bg-[#6B3BF6] text-white shadow-2xs'
@@ -1232,7 +1294,7 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200/70 text-slate-800 font-medium">
-                    {filteredModalReqs.map(req => (
+                    {paginatedModalReqs.map(req => (
                       <tr key={req.id} className="hover:bg-white transition-colors">
                         <td className="py-3 px-3.5">
                           <div className="font-extrabold text-slate-900 text-xs">{req.title}</div>
@@ -1281,12 +1343,24 @@ export function ClientsPage({ role = 'superadmin', requirements = [] }: ClientsP
                   </tbody>
                 </table>
               </div>
+              <PaginationFooter
+                currentPage={reqsModalPage}
+                totalPages={Math.max(1, Math.ceil(filteredModalReqs.length / reqsModalPageSize))}
+                totalItems={filteredModalReqs.length}
+                pageSize={reqsModalPageSize}
+                onPageChange={setReqsModalPage}
+                onPageSizeChange={size => {
+                  setReqsModalPageSize(size)
+                  setReqsModalPage(1)
+                }}
+                itemLabel="requirements"
+              />
             </div>
 
             {/* MODAL FOOTER */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
               <span className="text-xs text-slate-500 font-medium">
-                Showing {filteredModalReqs.length} requirement(s) from {selectedClientForReqsModal.name}
+                Requirements from {selectedClientForReqsModal.name}
               </span>
               <button
                 onClick={() => setSelectedClientForReqsModal(null)}

@@ -39,6 +39,8 @@ export class SubmissionsController {
     @Query('requirementId') requirementId?: string,
     @Query('candidateId') candidateId?: string,
     @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.submissionsService.findAll(req.user, {
       stage,
@@ -48,6 +50,8 @@ export class SubmissionsController {
       requirementId,
       candidateId,
       search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

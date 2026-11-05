@@ -5,6 +5,12 @@ import { workspaceService, submissionsService } from '../../../services/workspac
 import { getSessionUser } from '../../../store/session'
 import { mapBackendSubmission, ScreenshotSubmission } from '../submissions/preamble'
 import { apiErrorMessage } from '../../../services/candidatePayload'
+import {
+  canWorkOnRequirement,
+  ownsByRecruiter,
+  requirementAssignedToRecruiter,
+} from '../../../utils/recruiterOwnership'
+import { isRequirementUnassigned } from '../../ui/requirementAssignment'
 
 export interface PipelineCandidateItem {
   id: string
@@ -15,6 +21,8 @@ export interface PipelineCandidateItem {
   status: string
   activity: string
   action: 'Schedule Interview' | 'View only'
+  /** False for peer submissions — pipeline actions stay view-only. */
+  isOwnedByMe?: boolean
   l1Status: 'locked' | 'active' | 'selected' | 'rejected'
   l2Status: 'locked' | 'active' | 'selected' | 'skipped' | 'rejected'
   finalStatus: 'locked' | 'active' | 'completed' | 'rejected'
@@ -66,6 +74,9 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
   const [historyTabFilter, setHistoryTabFilter] = useState<'all' | 'submitted_lead' | 'submitted_client' | 'interview' | 'selected' | 'rejected'>('all')
   const [historySearchQuery, setHistorySearchQuery] = useState('')
   const [historyPage, setHistoryPage] = useState(1)
+  const [historyPageSize, setHistoryPageSize] = useState(5)
+  const [pipelinePage, setPipelinePage] = useState(1)
+  const [pipelinePageSize, setPipelinePageSize] = useState(5)
   const [assignTabFilter, setAssignTabFilter] = useState<'all' | 'active' | 'revoked'>('all')
   const [assignSearchQuery, setAssignSearchQuery] = useState('')
   const [toastMsg, setToastMsg] = useState<string | null>(null)
@@ -88,8 +99,12 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
   }
 
   const handleUpdatePipelineStage = (candidateId: string, stage: 'L1' | 'L2' | 'FINAL', action: string) => {
+    const candidate = pipelineCandidates.find(c => c.id === candidateId)
+    if (!candidate || candidate.action === 'View only' || candidate.isOwnedByMe === false) {
+      showToast('View only: you cannot change another recruiter\'s submission on this requirement.')
+      return
+    }
     if (action === 'reject') {
-      const candidate = pipelineCandidates.find(c => c.id === candidateId)
       if (candidate) {
         setRejectionModalData({
           candidateId,
@@ -287,54 +302,112 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requirement?.id, (requirement as any)?._id, (requirement as any)?.reqCode])
 
+  const sessionUser = getSessionUser()
+  const meIdentity = useMemo(
+    () => ({
+      id: sessionUser?.id || null,
+      email: sessionUser?.email || null,
+      name: sessionUser?.name || currentUserName || null,
+    }),
+    [sessionUser?.id, sessionUser?.email, sessionUser?.name, currentUserName],
+  )
+
+  const canWork = useMemo(
+    () => canWorkOnRequirement(requirement, meIdentity, normalizedRole),
+    [requirement, meIdentity, normalizedRole],
+  )
+
+  const isAssignedToMe = useMemo(
+    () => requirementAssignedToRecruiter(requirement, meIdentity),
+    [requirement, meIdentity],
+  )
+
   useEffect(() => {
     setPipelineCandidates(
-      reqSubmissions.map(sub => ({
-        id: String(sub.id),
-        name: sub.candidateName,
-        exp: sub.experience || '—',
-        company: sub.currentCompany || '—',
-        notice: sub.noticePeriod || '—',
-        status: sub.status,
-        activity: sub.submittedOn,
-        action: 'Schedule Interview' as const,
-        l1Status: 'active' as const,
-        l2Status: 'locked' as const,
-        finalStatus: 'locked' as const,
-      })),
-    )
-  }, [reqSubmissions])
-
-  const rawHistorySubmissions = useMemo(
-    () =>
-      reqSubmissions.map(sub => ({
-        subId: String(sub.submissionId || sub.id),
-        avatar: (sub.candidateName || '?')
-          .split(/\s+/)
-          .map(w => w.charAt(0))
-          .join('')
-          .slice(0, 2)
-          .toUpperCase(),
-        name: sub.candidateName,
-        email: sub.email,
-        submittedBy: sub.submittedBy,
-        submitterEmail: String(
+      reqSubmissions.map(sub => {
+        const ownerId = String(
+          (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
+            ? sub.raw.recruiterId._id || sub.raw.recruiterId.id
+            : sub.raw?.recruiterId) || '',
+        )
+        const ownerEmail = String(
           (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
             ? sub.raw.recruiterId.email
             : '') ||
             sub.raw?.recruiterEmail ||
             '',
-        ),
-        recruiterMongoId: String(
+        )
+        const isMine =
+          !isRecruiter ||
+          ownsByRecruiter(
+            { id: ownerId || null, email: ownerEmail || null, name: sub.submittedBy || null },
+            meIdentity,
+          )
+        const stageOk = !/interview|offer|placed|rejected/i.test(sub.status || '')
+        return {
+          id: String(sub.id),
+          name: sub.candidateName,
+          exp: sub.experience || '—',
+          company: sub.currentCompany || '—',
+          notice: sub.noticePeriod || '—',
+          status: sub.status,
+          activity: sub.submittedOn,
+          action: canWork && isMine && stageOk ? ('Schedule Interview' as const) : ('View only' as const),
+          isOwnedByMe: isMine,
+          l1Status: 'active' as const,
+          l2Status: 'locked' as const,
+          finalStatus: 'locked' as const,
+        }
+      }),
+    )
+  }, [reqSubmissions, canWork, isRecruiter, meIdentity])
+
+  const rawHistorySubmissions = useMemo(
+    () =>
+      reqSubmissions.map(sub => {
+        const recruiterMongoId = String(
           (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
             ? sub.raw.recruiterId._id || sub.raw.recruiterId.id
             : sub.raw?.recruiterId) || '',
-        ),
-        submittedOn: sub.submittedOn,
-        status: sub.status,
-        canSchedule: !/interview|offer|placed|rejected/i.test(sub.status || ''),
-      })),
-    [reqSubmissions],
+        )
+        const submitterEmail = String(
+          (sub.raw?.recruiterId && typeof sub.raw.recruiterId === 'object'
+            ? sub.raw.recruiterId.email
+            : '') ||
+            sub.raw?.recruiterEmail ||
+            '',
+        )
+        const isMine =
+          !isRecruiter ||
+          ownsByRecruiter(
+            {
+              id: recruiterMongoId || null,
+              email: submitterEmail || null,
+              name: sub.submittedBy || null,
+            },
+            meIdentity,
+          )
+        const stageOk = !/interview|offer|placed|rejected/i.test(sub.status || '')
+        return {
+          subId: String(sub.submissionId || sub.id),
+          avatar: (sub.candidateName || '?')
+            .split(/\s+/)
+            .map(w => w.charAt(0))
+            .join('')
+            .slice(0, 2)
+            .toUpperCase(),
+          name: sub.candidateName,
+          email: sub.email,
+          submittedBy: sub.submittedBy,
+          submitterEmail,
+          recruiterMongoId,
+          submittedOn: sub.submittedOn,
+          status: sub.status,
+          isOwnedByMe: isMine,
+          canSchedule: Boolean(canWork && isMine && stageOk),
+        }
+      }),
+    [reqSubmissions, canWork, isRecruiter, meIdentity],
   )
 
   const filteredHistoryRows = useMemo(() => {
@@ -361,6 +434,24 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
       return true
     })
   }, [historyTabFilter, historySearchQuery, rawHistorySubmissions])
+
+  useEffect(() => {
+    setHistoryPage(1)
+  }, [historyTabFilter, historySearchQuery, historyPageSize])
+
+  const paginatedHistoryRows = useMemo(() => {
+    const start = (historyPage - 1) * historyPageSize
+    return filteredHistoryRows.slice(start, start + historyPageSize)
+  }, [filteredHistoryRows, historyPage, historyPageSize])
+
+  useEffect(() => {
+    setPipelinePage(1)
+  }, [pipelineCandidates.length, pipelinePageSize])
+
+  const paginatedPipelineCandidates = useMemo(() => {
+    const start = (pipelinePage - 1) * pipelinePageSize
+    return pipelineCandidates.slice(start, start + pipelinePageSize)
+  }, [pipelineCandidates, pipelinePage, pipelinePageSize])
 
   const historyStatusCounts = useMemo(() => {
     // Metric cards ignore the active status tab so totals stay stable while filtering.
@@ -390,8 +481,7 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     }
   }, [rawHistorySubmissions, isRecruiter, requirement])
 
-  const isUnassigned =
-    requirement.assignmentStatus === 'Unassigned' || !requirement.owner || requirement.owner === 'Unassigned'
+  const isUnassigned = isRequirementUnassigned(requirement)
 
   const mandatorySkills = useMemo(() => {
     if (requirement.mandatorySkills && requirement.mandatorySkills.length > 0) {
@@ -431,6 +521,14 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     setHistorySearchQuery,
     historyPage,
     setHistoryPage,
+    historyPageSize,
+    setHistoryPageSize,
+    paginatedHistoryRows,
+    pipelinePage,
+    setPipelinePage,
+    pipelinePageSize,
+    setPipelinePageSize,
+    paginatedPipelineCandidates,
     assignTabFilter,
     setAssignTabFilter,
     assignSearchQuery,
@@ -454,6 +552,8 @@ export function useRequirementDetailOverviewState(props: RequirementDetailOvervi
     filteredHistoryRows,
     historyStatusCounts,
     isUnassigned,
+    canWork,
+    isAssignedToMe,
     showToast,
     mandatorySkills,
     generalSkills,

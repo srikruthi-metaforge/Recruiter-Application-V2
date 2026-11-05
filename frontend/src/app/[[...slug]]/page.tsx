@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '../../components/common/ErrorBoundary'
+import { QueryProvider } from '../../components/query/QueryProvider'
 
 const App = dynamic(() => import('../../features/app'), { ssr: false })
 
@@ -12,7 +13,9 @@ const App = dynamic(() => import('../../features/app'), { ssr: false })
 export default function SpaCatchAllPage() {
   return (
     <ErrorBoundary>
-      <App />
+      <QueryProvider>
+        <App />
+      </QueryProvider>
     </ErrorBoundary>
   )
 }

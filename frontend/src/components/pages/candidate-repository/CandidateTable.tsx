@@ -13,10 +13,19 @@ export function CandidateTable({ vm }: { vm: CandidateRepoVm }) {
     pageSize,
     setCurrentPage,
     setPageSize,
+    totalItems,
+    listLoading,
   } = vm
+
+  const total = typeof totalItems === 'number' ? totalItems : filteredList.length
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+      {listLoading ? (
+        <div className="px-4 py-3 text-xs text-slate-500 border-b border-slate-100 bg-slate-50/50">
+          Loading candidates…
+        </div>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -24,7 +33,7 @@ export function CandidateTable({ vm }: { vm: CandidateRepoVm }) {
               <th className="w-10 px-4 py-3.5">
                 <input
                   type="checkbox"
-                  checked={selectedIds.size === filteredList.length && filteredList.length > 0}
+                  checked={selectedIds.size === paginatedRepoList.length && paginatedRepoList.length > 0}
                   onChange={toggleSelectAll}
                   className="w-4 h-4 text-[#4F46E5] rounded-md focus:ring-[#4F46E5] cursor-pointer"
                 />
@@ -65,11 +74,14 @@ export function CandidateTable({ vm }: { vm: CandidateRepoVm }) {
       {/* PAGINATION FOOTER */}
       <PaginationFooter
         currentPage={currentPage}
-        totalPages={Math.ceil(filteredList.length / pageSize)}
-        totalItems={filteredList.length}
+        totalPages={Math.max(1, Math.ceil(total / pageSize))}
+        totalItems={total}
         pageSize={pageSize}
         onPageChange={setCurrentPage}
-        onPageSizeChange={setPageSize}
+        onPageSizeChange={(size) => {
+          setPageSize(size)
+          setCurrentPage(1)
+        }}
         itemLabel="candidates"
       />
     </div>

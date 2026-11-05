@@ -7,6 +7,7 @@ import {
   submissionsService,
 } from '../../services/workspace.service'
 import { apiErrorMessage } from '../pages/submissions/preamble'
+import { isAbortError } from '../../lib/api'
 
 type ExistingOnReq = {
   candidateMongoId: string
@@ -68,12 +69,14 @@ function isDupOnRequirement(
 }
 
 export function useSubmitCandidateModal({
+  isOpen = true,
   requirements,
   selectedReqId,
   onSubmit,
   onClose,
   currentRecruiterName,
 }: {
+  isOpen?: boolean
   requirements: Requirement[]
   selectedReqId?: string | null
   onSubmit: (sub: Submission, opts?: { silent?: boolean }) => void | Promise<void>
@@ -105,11 +108,13 @@ export function useSubmitCandidateModal({
   const [existingOnTargetReq, setExistingOnTargetReq] = useState<ExistingOnReq[]>([])
 
   useEffect(() => {
+    if (!isOpen) return
+    const controller = new AbortController()
     let active = true
     candidatesService
-      .list()
-      .then((data: any) => {
-        const list: any[] = Array.isArray(data) ? data : data?.items || data?.data || []
+      .listPage({ page: 1, limit: 100, signal: controller.signal })
+      .then(res => {
+        const list: any[] = Array.isArray(res?.items) ? res.items : []
         if (!active) return
         setExistingCandidates(
           list
@@ -145,11 +150,15 @@ export function useSubmitCandidateModal({
             }),
         )
       })
-      .catch(() => active && setExistingCandidates([]))
+      .catch(err => {
+        if (!active || isAbortError(err)) return
+        setExistingCandidates([])
+      })
     return () => {
       active = false
+      controller.abort()
     }
-  }, [])
+  }, [isOpen])
 
   const targetReq =
     requirements.find(r => {
@@ -162,6 +171,8 @@ export function useSubmitCandidateModal({
 
   // Server-scoped list for THIS requirement only — never use the global client store.
   useEffect(() => {
+    if (!isOpen) return
+    const controller = new AbortController()
     let cancelled = false
     const mongoReqId = String((targetReq as any)?._id || '').trim()
     const reqCode = String((targetReq as any)?.reqCode || targetReqId || '')
@@ -173,7 +184,7 @@ export function useSubmitCandidateModal({
       return
     }
     submissionsService
-      .list(`?requirementId=${encodeURIComponent(queryId)}`)
+      .list(`?requirementId=${encodeURIComponent(queryId)}`, { signal: controller.signal })
       .then((data: any) => {
         if (cancelled || !Array.isArray(data)) return
         setExistingOnTargetReq(
@@ -210,13 +221,15 @@ export function useSubmitCandidateModal({
           }),
         )
       })
-      .catch(() => {
-        if (!cancelled) setExistingOnTargetReq([])
+      .catch(err => {
+        if (cancelled || isAbortError(err)) return
+        setExistingOnTargetReq([])
       })
     return () => {
       cancelled = true
+      controller.abort()
     }
-  }, [targetReqId, (targetReq as any)?._id, (targetReq as any)?.reqCode])
+  }, [isOpen, targetReqId, (targetReq as any)?._id, (targetReq as any)?.reqCode])
 
   const isCandidateDupOnTarget = useCallback(
     (c: { id?: string; candidateId?: string; email?: string; phone?: string }) =>

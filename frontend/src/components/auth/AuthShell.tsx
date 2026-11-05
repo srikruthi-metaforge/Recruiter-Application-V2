@@ -73,11 +73,11 @@ export function AuthShell({
   )
 
   return (
-    <div ref={shellRef} className="h-screen max-h-screen overflow-hidden flex bg-slate-50 font-sans">
+    <div ref={shellRef} className="h-dvh max-h-dvh overflow-hidden flex bg-slate-50 font-sans">
       {/* Left panel — deep navy product showcase */}
       <div
         data-auth="panel"
-        className="hidden lg:flex lg:w-[460px] xl:w-[500px] 2xl:w-[540px] flex-shrink-0 bg-[#0B1021] flex-col relative overflow-hidden text-white border-r border-slate-800/80"
+        className="hidden lg:flex lg:w-[460px] xl:w-[500px] 2xl:w-[540px] flex-shrink-0 bg-[#0B1021] flex-col relative overflow-hidden min-h-0 text-white border-r border-slate-800/80"
       >
         {/* Grid pattern */}
         <div
@@ -94,7 +94,7 @@ export function AuthShell({
         <div className="absolute bottom-[-10%] right-[-10%] w-[420px] h-[420px] bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col justify-between h-full px-8 xl:px-10 py-6 xl:py-8 overflow-y-auto">
+        <div className="relative z-10 flex flex-col justify-between h-full min-h-0 px-8 xl:px-10 py-6 xl:py-8 overflow-y-auto">
           <div>
             {onBack && backLabel && (
               <button
@@ -156,7 +156,7 @@ export function AuthShell({
       </div>
 
       {/* Right panel — form column */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-slate-50 relative overflow-y-auto h-full">
+      <div className="flex-1 min-h-0 flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-slate-50 relative overflow-y-auto h-full">
         <div
           data-auth="form"
           className={`w-full my-auto ${wide ? 'max-w-lg xl:max-w-xl' : 'max-w-md xl:max-w-lg'}`}

@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const HSTS = 'max-age=31536000; includeSubDomains; preload'
 
+/** HTTPS redirect and HSTS stay off unless an operator sets FORCE_HTTPS=true. */
 function httpsRequired(): boolean {
-  if (process.env.FORCE_HTTPS === 'true') return true
-  if (process.env.FORCE_HTTPS === 'false') return false
-  return process.env.NODE_ENV === 'production'
+  return process.env.FORCE_HTTPS === 'true'
 }
 
 function isHttpsRequest(request: NextRequest): boolean {
@@ -17,14 +16,15 @@ function isHttpsRequest(request: NextRequest): boolean {
 }
 
 /**
- * Content-Security-Policy with per-request nonces + HTTPS transport hardening.
+ * Content-Security-Policy with per-request nonces.
+ * HTTP stays on HTTP for internal LAN access (server IP and app port).
  * Drops script-src 'unsafe-inline' (Next attaches the nonce to its scripts).
  * style-src keeps 'unsafe-inline' for React style={{}} attributes / Tailwind runtime needs.
  */
 export function middleware(request: NextRequest) {
   const forceHttps = httpsRequired()
 
-  // Transport: HTTPS everywhere in production (or FORCE_HTTPS).
+  // Optional HTTPS redirect. Unset FORCE_HTTPS must not upgrade http://<server-ip>:<port>.
   if (forceHttps && !isHttpsRequest(request)) {
     const url = request.nextUrl.clone()
     url.protocol = 'https:'
@@ -42,7 +42,7 @@ export function middleware(request: NextRequest) {
 
   const connectSrc = [
     "'self'",
-    // Local API only in development; production uses same-origin /api proxy over HTTPS.
+    // Local API only in development; production uses the same-origin /api proxy.
     isDev ? 'http://localhost:3001' : null,
     isDev ? 'http://127.0.0.1:3001' : null,
     isDev ? 'https://localhost:3001' : null,
@@ -57,8 +57,8 @@ export function middleware(request: NextRequest) {
     "default-src 'self'",
     `script-src ${scriptSrc}`,
     // Dropped 'unsafe-inline' from stylesheets where possible; keep for React style attrs.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com data:",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     "img-src 'self' data: blob: https:",
     `connect-src ${connectSrc}`,
     // Allow same-origin / about:srcdoc email preview iframes; block remote frames.

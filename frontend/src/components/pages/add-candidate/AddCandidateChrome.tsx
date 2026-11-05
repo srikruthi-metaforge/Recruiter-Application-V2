@@ -1,5 +1,6 @@
 import React from 'react'
-import { Users, CheckCircle, ArrowLeft, AlertCircle, X } from 'lucide-react'
+import { Users, CheckCircle, AlertCircle, X } from 'lucide-react'
+import { BackButton } from '../../ui/BackButton'
 
 import { PageHeader } from '../../layout/PageHeader'
 import { AddCandidateVm } from './useAddCandidatePage'
@@ -7,6 +8,9 @@ import { AddCandidateVm } from './useAddCandidatePage'
 export function AddCandidateChrome({ vm }: { vm: AddCandidateVm }) {
   const {
     onOpenRepository,
+    onBack,
+    backLabel,
+    pageTitle,
     showSuccessToast,
     toastMsg,
     setToastMsg,
@@ -14,6 +18,10 @@ export function AddCandidateChrome({ vm }: { vm: AddCandidateVm }) {
   } = vm
 
   const handleBack = () => {
+    if (typeof onBack === 'function') {
+      onBack()
+      return
+    }
     if (typeof onOpenRepository === 'function') {
       onOpenRepository()
     }
@@ -47,20 +55,12 @@ export function AddCandidateChrome({ vm }: { vm: AddCandidateVm }) {
 
       <div className="flex items-center gap-3">
         {showBack && (
-          <button
-            type="button"
-            onClick={handleBack}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all cursor-pointer shrink-0"
-            title="Return to candidate repository"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-500" />
-            <span>Back</span>
-          </button>
+          <BackButton label={backLabel || 'Back to Repository'} onClick={handleBack} />
         )}
 
         <div className="flex-1">
           <PageHeader
-            title="Candidate Search & Entry"
+            title={pageTitle || 'Candidate Search & Entry'}
             subtitle="Drop a resume to auto-fill details with Metaforge AI, or enter manually. Single or bulk import supported — review before submitting."
             action={
               <button

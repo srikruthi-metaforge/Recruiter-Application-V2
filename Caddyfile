@@ -1,4 +1,8 @@
-:8080 {
+{
+	auto_https off
+}
+
+:80 {
   encode gzip
 
   handle /api/* {
@@ -14,7 +18,7 @@
   }
 
   header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    -Strict-Transport-Security
     X-Content-Type-Options "nosniff"
     X-Frame-Options "SAMEORIGIN"
     Referrer-Policy "strict-origin-when-cross-origin"

@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { TenantCacheService } from '../redis/tenant-cache.service';
 import {
   Notification,
   NotificationDocument,
@@ -23,6 +24,7 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    @Optional() private readonly tenantCache?: TenantCacheService,
   ) {}
 
   /** Format document for API output */
@@ -45,7 +47,9 @@ export class NotificationsService {
   /** Insert single notification */
   async createNotification(payload: CreateNotificationPayload): Promise<NotificationDocument> {
     const notification = new this.notificationModel(payload);
-    return notification.save();
+    const saved = await notification.save();
+    if (this.tenantCache) await this.tenantCache.invalidateNotifications(payload.orgId, payload.userId);
+    return saved;
   }
 
   /** Insert many notifications (best-effort; skips empty lists). */
@@ -53,15 +57,50 @@ export class NotificationsService {
     if (!payloads?.length) return 0;
     try {
       const result = await this.notificationModel.insertMany(payloads, { ordered: false });
+      await this.invalidateNotificationUsers(payloads);
       return result.length;
     } catch {
+      await this.invalidateNotificationUsers(payloads);
       // Partial insert is fine — never block the parent workflow.
       return 0;
     }
   }
 
+  private async invalidateNotificationUsers(payloads: CreateNotificationPayload[]) {
+    const seen = new Set<string>();
+    for (const payload of payloads) {
+      const key = `${payload.orgId}:${payload.userId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (this.tenantCache) await this.tenantCache.invalidateNotifications(payload.orgId, payload.userId);
+    }
+  }
+
   /** GET /api/v1/notifications */
   async findAll(
+    currentUser: any,
+    query?: {
+      unreadOnly?: boolean;
+      type?: string;
+      limit?: number;
+      cursor?: string;
+    },
+  ) {
+    const orgId = currentUser?.orgId
+      ? String(currentUser.orgId)
+      : '6ab4f38ff2e0e1823c038948';
+    const userId = String(currentUser?.id || currentUser?.userId || '');
+    const variant = JSON.stringify({
+      unreadOnly: query?.unreadOnly ?? false,
+      type: query?.type || '',
+      limit: query?.limit || 50,
+      cursor: query?.cursor || '',
+    });
+    if (!this.tenantCache || !userId) return this.loadPage(currentUser, query);
+    return this.tenantCache.rememberForUser(orgId, userId, variant, 8, () => this.loadPage(currentUser, query));
+  }
+
+  private async loadPage(
     currentUser: any,
     query?: {
       unreadOnly?: boolean;
@@ -94,17 +133,19 @@ export class NotificationsService {
 
     const limit = query?.limit ? Math.max(1, Math.min(100, Number(query.limit))) : 50;
 
-    const items = await this.notificationModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .exec();
-
-    const unreadCount = await this.notificationModel.countDocuments({
-      orgId,
-      userId,
-      readAt: null,
-    }).exec();
+    const [items, unreadCount] = await Promise.all([
+      this.notificationModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.notificationModel.countDocuments({
+        orgId,
+        userId,
+        readAt: null,
+      }).exec(),
+    ]);
 
     return {
       items: items.map((item) => this.sanitizeNotification(item)),
@@ -161,6 +202,7 @@ export class NotificationsService {
       throw new NotFoundException(`Notification '${id}' not found or access denied`);
     }
 
+    await this.tenantCache?.invalidateNotifications(orgId, userId);
     return this.sanitizeNotification(updated);
   }
 
@@ -179,6 +221,7 @@ export class NotificationsService {
       { readAt: new Date() },
     ).exec();
 
+    await this.tenantCache?.invalidateNotifications(orgId, userId);
     return {
       message: 'All notifications marked as read',
       updatedCount: result.modifiedCount || 0,
@@ -204,6 +247,7 @@ export class NotificationsService {
       throw new NotFoundException(`Notification '${id}' not found`);
     }
 
+    await this.tenantCache?.invalidateNotifications(orgId, userId);
     return { message: `Notification '${id}' removed successfully` };
   }
 }

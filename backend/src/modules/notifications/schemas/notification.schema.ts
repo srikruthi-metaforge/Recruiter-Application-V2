@@ -14,6 +14,7 @@ export type NotificationType =
   | 'requirement_assigned'
   | 'requirement_created'
   | 'lead_approval_requested'
+  | 'client_submit_approval_requested'
   | 'candidate_created'
   | 'candidate_updated'
   | 'recruiter_missing_login'
@@ -42,6 +43,7 @@ export class Notification {
       'requirement_assigned',
       'requirement_created',
       'lead_approval_requested',
+      'client_submit_approval_requested',
       'candidate_created',
       'candidate_updated',
       'recruiter_missing_login',

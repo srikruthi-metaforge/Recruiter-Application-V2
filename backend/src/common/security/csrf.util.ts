@@ -76,6 +76,7 @@ export function isCsrfExemptPath(path: string): boolean {
   const exempt = [
     '/health',
     '/health/db',
+    '/health/metrics',
     '/api/v1/auth/login',
     '/api/v1/auth/request-login-otp',
     '/api/v1/auth/verify-login-otp',

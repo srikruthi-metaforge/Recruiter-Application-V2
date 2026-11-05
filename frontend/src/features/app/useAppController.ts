@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from '../../types'
-import { workspaceService } from '../../services/workspace.service'
+import { workspaceService, type WorkspacePayload } from '../../services/workspace.service'
+import { bindWorkspaceLoader, fetchWorkspace, resetWorkspaceRefresh } from '../../lib/workspaceRefresh'
 import { restoreSession } from '../../data/authService'
 import { getSessionUser } from '../../store/session'
 import { titleForRole } from '../../data/roleMeta'
@@ -31,9 +32,11 @@ export function useAppController() {
   const [admins, setAdmins] = useState<Admin[]>([])
   const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [workspaceStats, setWorkspaceStats] = useState<{
+    totalCandidates?: number
+    myCandidatesCount?: number
+  }>({})
   const [currentUser, setCurrentUser] = useState(emptyUser)
-  // Ignore stale workspace responses when login + restoreSession + nav refresh overlap.
-  const workspaceLoadSeq = useRef(0)
 
   const handleAddActivityLog = (newLog: ActivityLogItem) => {
     setActivityLogs(prev => [newLog, ...prev])
@@ -54,10 +57,7 @@ export function useAppController() {
   const [isCandidateDetailOpen, setIsCandidateDetailOpen] = useState(false)
   const [selectedSubmissionForDetail, setSelectedSubmissionForDetail] = useState<Submission | null>(null)
 
-  const applyWorkspace = async () => {
-    const seq = ++workspaceLoadSeq.current
-    const payload = await workspaceService.load()
-    if (seq !== workspaceLoadSeq.current) return
+  const copyWorkspace = (payload: WorkspacePayload) => {
     setRequirements(payload.requirements || [])
     setSubmissions(payload.submissions || [])
     saveSubmissionsStore(payload.submissions || [], { silent: true })
@@ -67,6 +67,16 @@ export function useAppController() {
     setAdmins(payload.admins || [])
     setActivityLogs(payload.activityLogs || [])
     setCandidates(payload.candidates || [])
+    setWorkspaceStats({
+      totalCandidates: payload.stats?.totalCandidates,
+      myCandidatesCount: payload.stats?.myCandidatesCount,
+    })
+  }
+
+  const applyWorkspace = (opts?: { force?: boolean }) => {
+    const id = getSessionUser()?.id
+    if (!id) return Promise.resolve()
+    return fetchWorkspace(id, opts).then(() => undefined)
   }
 
   useEffect(() => {
@@ -89,7 +99,7 @@ export function useAppController() {
         syncBrowserPath(targetNav, 'replace')
         setScreen('app')
         try {
-          await applyWorkspace()
+          await applyWorkspace({ force: true })
           if (!cancelled) setWorkspaceReady(true)
         } catch {
           if (!cancelled) setWorkspaceError('Workspace API unavailable')
@@ -113,28 +123,31 @@ export function useAppController() {
         syncBrowserPath(fallback, 'replace')
         return
       }
-      if (key === 'Requirements' || key === 'Dashboard' || key === 'Reports' || key === 'Reports & Analytics') {
-        applyWorkspace().catch(() => undefined)
+      // Only refresh workspace for dashboard/requirements — Reports reuses in-memory data
+      // (full reload on every Candidates→Reports switch was causing heavy re-fetch storms).
+      if (key === 'Requirements' || key === 'Dashboard') {
+        void applyWorkspace().catch(() => undefined)
       }
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  // Keep recruiter KPI cards in sync after submit / assign / interview work.
+  // submissions_updated must not reload /workspace — that loop burned the API rate limit.
   useEffect(() => {
     const refresh = () => {
-      applyWorkspace().catch(() => undefined)
+      void applyWorkspace({ force: true }).catch(() => undefined)
     }
-    window.addEventListener('submissions_updated', refresh)
     window.addEventListener('workspace_refresh', refresh)
+    const unbind = bindWorkspaceLoader(copyWorkspace)
     return () => {
-      window.removeEventListener('submissions_updated', refresh)
       window.removeEventListener('workspace_refresh', refresh)
+      unbind()
     }
   }, [])
 
   const handleLogout = () => {
+    resetWorkspaceRefresh()
     createLogoutHandler(setScreen, setActiveNav)()
     resetBrowserPathToRoot()
   }
@@ -155,7 +168,7 @@ export function useAppController() {
     setActiveNav(targetNav)
     syncBrowserPath(targetNav, 'replace')
     setWorkspaceReady(false)
-    applyWorkspace()
+    applyWorkspace({ force: true })
       .then(() => setWorkspaceReady(true))
       .catch(() => setWorkspaceError('Workspace API unavailable'))
   }
@@ -170,16 +183,11 @@ export function useAppController() {
     }
     createNavSelectHandler(setSelectedReqIdForSubmit, setActiveNav)(key)
     syncBrowserPath(key, 'push')
-    if (
-      key === 'Requirements' ||
-      key === 'Dashboard' ||
-      key === 'Reports' ||
-      key === 'Reports & Analytics' ||
-      key === 'Submissions' ||
-      key === 'History' ||
-      key === 'Performance History'
-    ) {
-      applyWorkspace().catch(() => undefined)
+    // Avoid full workspace reload when opening Reports/Submissions/History — those pages
+    // already receive requirements/submissions/interviews from memory. Mutations still
+    // refresh via workspace_refresh / submissions_updated listeners above.
+    if (key === 'Requirements' || key === 'Dashboard') {
+      void applyWorkspace().catch(() => undefined)
     }
   }
 
@@ -209,7 +217,7 @@ export function useAppController() {
           ),
         )
       }
-      await applyWorkspace().catch(() => undefined)
+      await applyWorkspace({ force: true }).catch(() => undefined)
     } catch (err) {
       setRequirements(prev => prev.filter(r => r.id !== enrichedReq.id))
       throw err
@@ -272,6 +280,7 @@ export function useAppController() {
     activityLogs,
     candidates,
     setCandidates,
+    workspaceStats,
     workspaceReady,
     workspaceError,
     isNewReqOpen,

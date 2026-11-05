@@ -1,11 +1,13 @@
 import React from 'react'
-import { ArrowLeft, Search, UserPlus, Calendar } from 'lucide-react'
+import { Search, UserPlus, Calendar } from 'lucide-react'
+import { BackButton } from '../../ui/BackButton'
 import { CandidateRepoVm } from './useCandidateRepository'
 import { hasCapability } from '../../../store/session'
 
 export function CandidateListHeader({ vm }: { vm: CandidateRepoVm }) {
   const {
     onBackToDashboard,
+    backButtonLabel,
     onOpenAddForm,
     role,
     searchQuery,
@@ -18,20 +20,23 @@ export function CandidateListHeader({ vm }: { vm: CandidateRepoVm }) {
     setCustomEndDate,
     totalExpFilter,
     setTotalExpFilter,
+    createdByFilter,
+    setCreatedByFilter,
+    creatorOptions = [],
   } = vm
+  const roleKey = String(role || '').toLowerCase()
+  const showCreatedByFilter =
+    roleKey === 'superadmin' || roleKey === 'admin' || roleKey === 'devteam'
   return (
     <>
       {/* 1. HEADER TITLE — Back only for nested flows (e.g. Dashboard → Repository) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-2">
           {onBackToDashboard && (
-            <button
+            <BackButton
+              label={backButtonLabel || 'Back to My Workspace'}
               onClick={onBackToDashboard}
-              className="inline-flex items-center gap-2 px-4 py-1.5 border border-slate-200/80 rounded-full text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shadow-2xs cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-slate-600" />
-              <span>Back</span>
-            </button>
+            />
           )}
 
           <div>
@@ -108,6 +113,26 @@ export function CandidateListHeader({ vm }: { vm: CandidateRepoVm }) {
                 <option value="10+ years">10+ Years</option>
               </select>
             </div>
+
+            {showCreatedByFilter && (
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Created by
+                </label>
+                <select
+                  value={createdByFilter}
+                  onChange={e => setCreatedByFilter(e.target.value)}
+                  className="h-9 min-w-[160px] max-w-[220px] px-3 text-xs bg-white border border-slate-200/90 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#4F46E5] cursor-pointer shadow-2xs"
+                >
+                  <option value="All">All creators</option>
+                  {creatorOptions.map(user => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 
 export type CandidateDocumentRecordDocument = CandidateDocumentRecord & Document;
 
@@ -30,4 +31,4 @@ export class CandidateDocumentRecord {
 
 export const CandidateDocumentRecordSchema = SchemaFactory.createForClass(CandidateDocumentRecord);
 CandidateDocumentRecordSchema.index({ orgId: 1, candidateId: 1, documentType: 1, deletedAt: 1 });
-CandidateDocumentRecordSchema.plugin(DataScopePlugin);
+CandidateDocumentRecordSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

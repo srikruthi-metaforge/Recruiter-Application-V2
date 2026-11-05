@@ -37,7 +37,7 @@ export function LandingWorkflow({ vm }: { vm: LandingVm }) {
             {RECRUITMENT_WORKFLOW.map(stage => (
               <div
                 key={stage.title}
-                className="bg-slate-800/60 border border-slate-700/70 rounded-3xl p-5 hover:border-blue-500/50 hover:bg-slate-800/90 transition-all duration-200 space-y-3"
+                className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/70 ring-1 ring-inset ring-white/10 rounded-3xl p-5 shadow-md hover:border-blue-500/50 hover:bg-slate-800/75 transition-all duration-200 space-y-3"
               >
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">

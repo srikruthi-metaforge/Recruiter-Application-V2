@@ -23,7 +23,7 @@ export function LandingAi({ vm }: { vm: LandingVm }) {
             {AI_CAPABILITIES.map(item => (
               <div
                 key={item.title}
-                className="group bg-slate-50/80 border border-slate-200/90 rounded-3xl p-6 shadow-2xs hover:shadow-xl hover:-translate-y-0.5 hover:border-blue-500/40 hover:bg-white transition-all duration-200"
+                className="group bg-slate-50/70 backdrop-blur-xl border border-slate-200/90 ring-1 ring-inset ring-white/60 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-0.5 hover:border-blue-500/40 hover:bg-white/80 transition-all duration-200"
               >
                 <div
                   className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-105 shadow-2xs"

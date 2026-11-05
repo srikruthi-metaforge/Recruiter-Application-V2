@@ -65,8 +65,42 @@ export function assertCanAccessRequirement(doc: any, currentUser: any): void {
   }
 }
 
+/** True when the caller is listed on the requirement's assignedRecruiterIds. */
+export function isRequirementAssignee(doc: any, currentUser: any): boolean {
+  const uid = callerUserObjectId(currentUser);
+  if (!uid || !doc) return false;
+  const ids = Array.isArray(doc.assignedRecruiterIds) ? doc.assignedRecruiterIds : [];
+  return ids.some((id: any) => idsEqual(id, uid));
+}
+
 /**
- * Submission visibility within an org.
+ * Mutating work on a requirement (add candidates, edit JD, submit).
+ * Admins/leads may always work. Recruiters must be an assignee.
+ * View-only access for non-assignees remains via assertCanAccessRequirement.
+ */
+export function assertCanWorkOnRequirement(doc: any, currentUser: any): void {
+  assertCanAccessRequirement(doc, currentUser);
+  const role = roleOf(currentUser);
+  if (isOrgAdminRole(role) || role === 'lead') return;
+  if (role === 'recruiter') {
+    if (String(doc?.assignmentStatus || '') === 'Unassigned') {
+      throw new ForbiddenException(
+        'This requirement is unassigned. You cannot work on it until it is assigned to you.',
+      );
+    }
+    if (!isRequirementAssignee(doc, currentUser)) {
+      throw new ForbiddenException(
+        'You are not assigned to this requirement. You can view it, but cannot add candidates or make changes.',
+      );
+    }
+    return;
+  }
+  throw new ForbiddenException('You do not have permission to work on this requirement');
+}
+
+/**
+ * Submission visibility within an org (mutations: stage moves, schedule, etc.).
+ * Recruiters may only mutate their own submissions.
  */
 export function assertCanAccessSubmission(doc: any, currentUser: any): void {
   assertSameOrg(doc, currentUser, 'Submission');
@@ -78,6 +112,21 @@ export function assertCanAccessSubmission(doc: any, currentUser: any): void {
     if (uid && idsEqual(doc.recruiterId, uid)) return;
     throw new NotFoundException('Submission not found');
   }
+
+  if (role === 'client') {
+    if (currentUser.clientId && idsEqual(doc.clientId, currentUser.clientId)) return;
+    throw new NotFoundException('Submission not found');
+  }
+}
+
+/**
+ * Read-only submission access: any same-org recruiter/lead/admin may view
+ * peer submissions on a requirement (UI stays view-only for non-owners).
+ */
+export function assertCanViewSubmission(doc: any, currentUser: any): void {
+  assertSameOrg(doc, currentUser, 'Submission');
+  const role = roleOf(currentUser);
+  if (isOrgAdminRole(role) || role === 'lead' || role === 'recruiter') return;
 
   if (role === 'client') {
     if (currentUser.clientId && idsEqual(doc.clientId, currentUser.clientId)) return;

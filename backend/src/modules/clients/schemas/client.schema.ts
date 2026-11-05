@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type ClientDocument = Client & Document;
@@ -61,4 +62,4 @@ ClientSchema.index({ orgId: 1, clientName: 1, deletedAt: 1 }, { unique: true });
 ClientSchema.index({ orgId: 1, status: 1, deletedAt: 1 });
 applyOrgLegacyPostgresIdIndex(ClientSchema);
 
-ClientSchema.plugin(DataScopePlugin);
+ClientSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

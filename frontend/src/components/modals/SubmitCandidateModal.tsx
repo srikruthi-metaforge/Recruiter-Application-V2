@@ -26,6 +26,7 @@ export function SubmitCandidateModal({
   currentRecruiterName,
 }: SubmitCandidateModalProps) {
   const m = useSubmitCandidateModal({
+    isOpen,
     requirements,
     selectedReqId,
     onSubmit,
@@ -72,7 +73,7 @@ export function SubmitCandidateModal({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-4 sm:p-6 overflow-y-auto bg-slate-50/40">
+          <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto bg-slate-50/40">
             <SubmitToLeadPage
               selectedCandidates={m.forwardCandidates}
               requirement={m.targetReq}
@@ -140,7 +141,7 @@ export function SubmitCandidateModal({
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-4">
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto space-y-4">
           {m.pathMode === 'existing' && (
             <SubmitCandidateExistingPath
               searchQuery={m.searchQuery}

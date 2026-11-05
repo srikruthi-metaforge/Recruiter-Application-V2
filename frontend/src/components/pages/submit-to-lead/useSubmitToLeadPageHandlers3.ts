@@ -1,8 +1,9 @@
 import React, { useMemo, useRef } from 'react'
 import { addSubmissionToStore } from '../../../data/submissionsStore'
+import { clientSubmitApprovalService } from '../../../services/clientSubmitApproval.service'
 import { workspaceService } from '../../../services/workspace.service'
 import { ApiError } from '../../../lib/api'
-import { hasCapability } from '../../../store/session'
+import { getSessionUser, hasCapability } from '../../../store/session'
 import { applyBillRate, buildTrackerRow } from './trackerPresets.data'
 import type { SubmitToLeadVmState } from './useSubmitToLeadPageState'
 
@@ -106,6 +107,30 @@ export function useSubmitToLeadPageHandlers3(s: SubmitToLeadVmState & Record<str
   const validCandidatesToSubmit = useMemo(() => validCandidateResults.map((r: any) => r.candidate), [validCandidateResults])
   const allCandidatesAreDuplicates = useMemo(() => duplicateCheckResults.length > 0 && duplicateCheckResults.every((r: any) => r.isDuplicate), [duplicateCheckResults])
 
+  const handleRequestClientSubmitApproval = async () => {
+    const reqId = String(
+      currentReqId || (requirement as any)?.reqCode || (requirement as any)?.id || '',
+    ).trim()
+    if (!reqId) {
+      showToast('Select a requirement before requesting client-submit approval.')
+      return
+    }
+    const names = (Array.isArray(selectedCandidates) ? selectedCandidates : [])
+      .map((c: any) => String(c?.name || '').trim())
+      .filter(Boolean)
+    try {
+      await clientSubmitApprovalService.request(reqId, { candidateNames: names })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('forward_requests_updated'))
+      }
+      showToast(
+        'Approval requested. Lead / Admin / Super Admin can approve client submit for this requirement.',
+      )
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to request client-submit approval.')
+    }
+  }
+
   const handleSubmitFinal = async (mode: 'lead' | 'client' = 'client') => {
     if (submittingRef.current) return
 
@@ -125,6 +150,10 @@ export function useSubmitToLeadPageHandlers3(s: SubmitToLeadVmState & Record<str
     }
 
     const toLead = mode === 'lead'
+    if (!toLead && !s.canSubmitToClient) {
+      showToast('Submit to Client is disabled. Request approval from Lead / Admin / Super Admin first.')
+      return
+    }
     const selectedLeadId = String(s.selectedLeadId || '').trim()
     const selectedLead = (Array.isArray(s.availableLeads) ? s.availableLeads : []).find(
       (l: { id: string }) => l.id === selectedLeadId,
@@ -285,7 +314,7 @@ export function useSubmitToLeadPageHandlers3(s: SubmitToLeadVmState & Record<str
   return {
     handleUpdateCell, handleAddTrackerRow, duplicateCheckResults, hasDuplicateSubmission,
     firstDuplicate, validCandidateResults, validCandidatesToSubmit, allCandidatesAreDuplicates,
-    handleSubmitFinal, visibleColumns
+    handleSubmitFinal, handleRequestClientSubmitApproval, visibleColumns
   }
 }
 

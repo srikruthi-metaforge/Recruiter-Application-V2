@@ -1,8 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CandidateRepoItem } from './types'
 import { getCandidateSubmissionsHistory } from './history'
 
-export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
+type FilterOptions = {
+  /** When true, repoList is already one server page — search/paging happen via API. */
+  serverPaged?: boolean
+  serverTotal?: number
+}
+
+function readPendingRepoScope(): { createdBy: string; from: string; to: string } {
+  if (typeof window === 'undefined') return { createdBy: 'All', from: '', to: '' }
+  try {
+    const createdBy = sessionStorage.getItem('pending_repo_created_by') || ''
+    const from = sessionStorage.getItem('pending_repo_from') || ''
+    const to = sessionStorage.getItem('pending_repo_to') || ''
+    if (createdBy) sessionStorage.removeItem('pending_repo_created_by')
+    if (from) sessionStorage.removeItem('pending_repo_from')
+    if (to) sessionStorage.removeItem('pending_repo_to')
+    return { createdBy: createdBy || 'All', from, to }
+  } catch {
+    return { createdBy: 'All', from: '', to: '' }
+  }
+}
+
+export function useCandidateRepoFilters(repoList: CandidateRepoItem[], options: FilterOptions = {}) {
+  const serverPaged = Boolean(options.serverPaged)
+  const [pendingScope] = useState(readPendingRepoScope)
   const [searchQuery, setSearchQuery] = useState('')
   const [submittedPeriod, setSubmittedPeriod] = useState('All time')
   const [customStartDate, setCustomStartDate] = useState('')
@@ -10,8 +33,39 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
   const [totalExpFilter, setTotalExpFilter] = useState('All experience')
   const [submissionCountFilter, setSubmissionCountFilter] = useState('All Submissions')
   const [submittedClientFilter, setSubmittedClientFilter] = useState('All Clients')
+  /** User id of the recruiter who added the candidate; empty / 'All' = no filter */
+  const [createdByFilter, setCreatedByFilter] = useState(pendingScope.createdBy)
+  /** Analytics period passed to sourced-by (createdAt from/to). Empty = all time. */
+  const [sourcedFrom, setSourcedFrom] = useState(pendingScope.from)
+  const [sourcedTo, setSourcedTo] = useState(pendingScope.to)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
+
+  // Apply recruiter + period when navigating from Individual Analytics → Sourced KPI.
+  useEffect(() => {
+    const applyPending = () => {
+      try {
+        const pending = sessionStorage.getItem('pending_repo_created_by')
+        const from = sessionStorage.getItem('pending_repo_from') || ''
+        const to = sessionStorage.getItem('pending_repo_to') || ''
+        if (!pending && !from && !to) return
+        if (pending) {
+          sessionStorage.removeItem('pending_repo_created_by')
+          setCreatedByFilter(pending)
+        }
+        sessionStorage.removeItem('pending_repo_from')
+        sessionStorage.removeItem('pending_repo_to')
+        setSourcedFrom(from)
+        setSourcedTo(to)
+        setCurrentPage(1)
+      } catch {
+        // ignore
+      }
+    }
+    applyPending()
+    window.addEventListener('notification_navigate', applyPending as EventListener)
+    return () => window.removeEventListener('notification_navigate', applyPending as EventListener)
+  }, [])
 
   const uniqueSubmittedClients = useMemo(() => {
     const set = new Set<string>()
@@ -22,11 +76,10 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
     return Array.from(set).sort()
   }, [repoList])
 
-  // Filter repo list dynamically
+  // Filter repo list dynamically (search is server-side when serverPaged).
   const filteredList = useMemo(() => {
     return repoList.filter(item => {
-      // 1. Search Query Filter
-      if (searchQuery.trim()) {
+      if (!serverPaged && searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchName = item.name.toLowerCase().includes(q)
         const matchId = item.candidateId.toLowerCase().includes(q)
@@ -75,7 +128,6 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
 
       const subHistory = getCandidateSubmissionsHistory(item)
 
-      // 2. Submission Count Filter
       if (submissionCountFilter !== 'All Submissions') {
         if (submissionCountFilter === 'Not Submitted Yet' && subHistory.count !== 0) return false
         if (submissionCountFilter === 'Submitted 1+ times' && subHistory.count < 1) return false
@@ -83,14 +135,12 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
         if (submissionCountFilter === 'Submitted 3+ times' && subHistory.count < 3) return false
       }
 
-      // 3. Submitted Client Filter
       if (submittedClientFilter !== 'All Clients') {
         const clientTarget = submittedClientFilter.toLowerCase()
         const matchesClient = subHistory.companies.some(c => c.toLowerCase().includes(clientTarget))
         if (!matchesClient) return false
       }
 
-      // 4. Total Experience Filter
       if (totalExpFilter !== 'All experience') {
         const expMatch = item.totalExperience.match(/\d+/)
         const years = expMatch ? parseInt(expMatch[0], 10) : 0
@@ -103,12 +153,27 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
 
       return true
     })
-  }, [repoList, searchQuery, submittedPeriod, customStartDate, customEndDate, submissionCountFilter, submittedClientFilter, totalExpFilter])
+  }, [
+    repoList,
+    serverPaged,
+    searchQuery,
+    submittedPeriod,
+    customStartDate,
+    customEndDate,
+    submissionCountFilter,
+    submittedClientFilter,
+    totalExpFilter,
+  ])
 
   const paginatedRepoList = useMemo(() => {
+    if (serverPaged) return filteredList
     const start = (currentPage - 1) * pageSize
     return filteredList.slice(start, start + pageSize)
-  }, [filteredList, currentPage, pageSize])
+  }, [filteredList, currentPage, pageSize, serverPaged])
+
+  const totalItems = serverPaged
+    ? Number(options.serverTotal || filteredList.length)
+    : filteredList.length
 
   return {
     searchQuery,
@@ -125,6 +190,10 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
     setSubmissionCountFilter,
     submittedClientFilter,
     setSubmittedClientFilter,
+    createdByFilter,
+    setCreatedByFilter,
+    sourcedFrom,
+    sourcedTo,
     uniqueSubmittedClients,
     filteredList,
     currentPage,
@@ -132,5 +201,7 @@ export function useCandidateRepoFilters(repoList: CandidateRepoItem[]) {
     pageSize,
     setPageSize,
     paginatedRepoList,
+    totalItems,
+    serverPaged,
   }
 }

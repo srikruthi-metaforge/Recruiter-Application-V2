@@ -5,6 +5,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -14,8 +15,12 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
  * Phase 1: Super Admin only.
  * @Roles + @RequirePermission block other roles at the guard layer;
  * AnalyticsService also asserts Super Admin so access cannot rely on UI hiding alone.
+ *
+ * SkipThrottle: Reports/Analytics opens several GETs; do not burn the global budget
+ * (same pattern as workspace + candidates list).
  */
 @Controller('analytics')
+@SkipThrottle()
 @UseGuards(JwtAuthGuard)
 @Roles('superadmin')
 @RequirePermission('analytics_view_company')

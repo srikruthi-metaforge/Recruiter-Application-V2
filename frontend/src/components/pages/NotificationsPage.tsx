@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import {
   Bell,
   CheckCircle2,
@@ -17,10 +18,10 @@ import {
   Tag,
   FileText,
 } from 'lucide-react'
-import { notificationsService } from '../../services/workspace.service'
-import { brand } from '../../theme'
+import { useNotifications } from '../../hooks/notificationContext'
 import { PaginationFooter } from '../ui/PaginationFooter'
-import { isAuditLogNotification, isRequirementNotification } from '../ui/NotificationPopover'
+import { hidesAuditNotifications, isAuditLogNotification, isRequirementNotification } from '../ui/NotificationPopover'
+import { Role } from '../../types'
 import {
   dispatchNotificationNavigate,
   resolveNotificationNavigation,
@@ -67,87 +68,61 @@ function formatTimeAgo(dateStr?: string): string {
   return `${days}d ago`
 }
 
-export function NotificationsPage() {
-  const [notifications, setNotifications] = useState<StoredNotification[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+export function NotificationsPage({ role }: { role?: Role }) {
+  const showAudit = !hidesAuditNotifications(role)
+  const {
+    notifications: sharedNotifications,
+    loading,
+    errorMsg,
+    clearError,
+    fetchNotifications,
+    retainFastPoll,
+    markAllAsRead,
+    markRead,
+    removeNotification,
+  } = useNotifications()
+  const notifications: StoredNotification[] = sharedNotifications
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const debouncedSearch = useDebouncedValue(searchQuery, 300)
   const [activeToggle, setActiveToggle] = useState<'all' | 'requirements' | 'audit_logs'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
 
-  const fetchNotifications = async () => {
-    setLoading(true)
-    setErrorMsg(null)
-    try {
-      const res = await notificationsService.list()
-      const rawItems = Array.isArray(res) ? res : res?.items || []
-      const items: StoredNotification[] = rawItems.map((n: any) => ({
-        id: n._id || n.id || String(Math.random()),
-        title: n.title || 'Notification',
-        message: n.message || n.body || '',
-        type: n.type || 'system',
-        entityType: n.entityType || 'system',
-        entityId: n.entityId || null,
-        read: Boolean(n.read || n.readAt),
-        readAt: n.readAt || null,
-        createdAt: n.createdAt,
-        updatedAt: n.updatedAt,
-      }))
-      setNotifications(items)
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to fetch stored notifications')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => retainFastPoll(), [retainFastPoll])
 
-  useEffect(() => {
-    fetchNotifications()
-  }, [])
-
-  const markAllAsRead = async () => {
-    try {
-      await notificationsService.markAllAsRead()
-      setNotifications(prev => prev.map(n => ({ ...n, read: true, readAt: new Date().toISOString() })))
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to mark all read')
-    }
+  const handleRefresh = () => {
+    clearError()
+    void fetchNotifications()
   }
 
   const handleMarkRead = async (id: string, currentlyRead: boolean) => {
-    if (currentlyRead) return
-    try {
-      await notificationsService.markRead(id)
-      setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n))
-      )
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to mark read')
-    }
+    await markRead(id, currentlyRead)
   }
 
   const handleDelete = async (id: string) => {
-    try {
-      await notificationsService.remove(id)
-      setNotifications(prev => prev.filter(n => n.id !== id))
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to delete notification')
-    }
+    const item = notifications.find(n => n.id === id)
+    await removeNotification(id, Boolean(item && !item.read))
   }
 
-  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications])
-  const readCount = useMemo(() => notifications.filter(n => n.read).length, [notifications])
-  const reqCount = useMemo(() => notifications.filter(n => isRequirementNotification(n as any)).length, [notifications])
-  const auditCount = useMemo(() => notifications.filter(n => isAuditLogNotification(n as any)).length, [notifications])
+  const visibleNotifications = useMemo(
+    () => (showAudit ? notifications : notifications.filter(n => !isAuditLogNotification(n as any))),
+    [notifications, showAudit],
+  )
+  const unreadCount = useMemo(() => visibleNotifications.filter(n => !n.read).length, [visibleNotifications])
+  const readCount = useMemo(() => visibleNotifications.filter(n => n.read).length, [visibleNotifications])
+  const reqCount = useMemo(() => visibleNotifications.filter(n => isRequirementNotification(n as any)).length, [visibleNotifications])
+  const auditCount = useMemo(
+    () => (showAudit ? visibleNotifications.filter(n => isAuditLogNotification(n as any)).length : 0),
+    [visibleNotifications, showAudit],
+  )
 
   const filteredNotifications = useMemo(() => {
-    return notifications.filter(item => {
+    return visibleNotifications.filter(item => {
       // Toggle filter
       if (activeToggle === 'requirements' && !isRequirementNotification(item as any)) return false
-      if (activeToggle === 'audit_logs' && !isAuditLogNotification(item as any)) return false
+      if (showAudit && activeToggle === 'audit_logs' && !isAuditLogNotification(item as any)) return false
 
       // Status filter
       if (statusFilter === 'unread' && item.read) return false
@@ -164,8 +139,8 @@ export function NotificationsPage() {
       }
 
       // Search query
-      if (searchQuery.trim()) {
-        const term = searchQuery.toLowerCase().trim()
+      if (debouncedSearch.trim()) {
+        const term = debouncedSearch.toLowerCase().trim()
         const titleMatch = item.title.toLowerCase().includes(term)
         const messageMatch = item.message.toLowerCase().includes(term)
         return titleMatch || messageMatch
@@ -173,7 +148,7 @@ export function NotificationsPage() {
 
       return true
     })
-  }, [notifications, activeToggle, statusFilter, categoryFilter, searchQuery])
+  }, [visibleNotifications, activeToggle, statusFilter, categoryFilter, debouncedSearch, showAudit])
 
   const totalPages = Math.ceil(filteredNotifications.length / pageSize) || 1
   const paginatedNotifications = useMemo(() => {
@@ -183,7 +158,7 @@ export function NotificationsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, categoryFilter, pageSize])
+  }, [debouncedSearch, statusFilter, categoryFilter, pageSize])
 
   return (
     <div className="space-y-6 pb-12">
@@ -210,7 +185,7 @@ export function NotificationsPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchNotifications}
+            onClick={handleRefresh}
             className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-2 transition-colors border border-white/10"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -239,7 +214,7 @@ export function NotificationsPage() {
         >
           <span>All</span>
           <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-200 text-slate-800">
-            {notifications.length}
+            {visibleNotifications.length}
           </span>
         </button>
 
@@ -263,6 +238,7 @@ export function NotificationsPage() {
           </span>
         </button>
 
+        {showAudit && (
         <button
           type="button"
           onClick={() => setActiveToggle('audit_logs')}
@@ -282,6 +258,7 @@ export function NotificationsPage() {
             {auditCount}
           </span>
         </button>
+        )}
       </div>
 
       {/* Metrics Summary Row */}
@@ -289,7 +266,7 @@ export function NotificationsPage() {
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-medium font-sans">Total Notifications</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1 font-mono">{notifications.length}</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1 font-mono">{visibleNotifications.length}</p>
           </div>
           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
             <Inbox className="w-5 h-5" />
@@ -347,7 +324,7 @@ export function NotificationsPage() {
                 statusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              All ({notifications.length})
+              All ({visibleNotifications.length})
             </button>
             <button
               onClick={() => setStatusFilter('unread')}
@@ -376,7 +353,7 @@ export function NotificationsPage() {
               className="bg-transparent focus:outline-none text-slate-800 font-semibold cursor-pointer"
             >
               <option value="all">All Categories</option>
-              <option value="attendance">Attendance & Login Alerts</option>
+              {showAudit && <option value="attendance">Attendance & Login Alerts</option>}
               <option value="requirement">Requirements</option>
               <option value="submission">Submissions</option>
               <option value="interview">Interviews</option>
@@ -390,7 +367,7 @@ export function NotificationsPage() {
       {errorMsg && (
         <div className="p-4 rounded-xl bg-red-50 text-red-700 text-xs font-medium border border-red-200 flex items-center justify-between">
           <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-800">
+          <button onClick={clearError} className="text-red-500 hover:text-red-800">
             <X className="w-4 h-4" />
           </button>
         </div>

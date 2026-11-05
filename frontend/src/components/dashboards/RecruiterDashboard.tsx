@@ -1,12 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Interview, Requirement, Submission, ActivityLogItem, Candidate, Role } from '../../types'
-import { RequirementDetailOverview } from '../pages/RequirementDetailOverview'
+import { RequirementDetailOverview, RequirementsPage, AddCandidatePage, CandidateRepositoryPage, SubmissionsPage, InterviewTrackingPage } from '../pages/lazyPages'
 import { workspaceService, usersService } from '../../services/workspace.service'
 import { getSessionUser } from '../../store/session'
-import { CandidateRepositoryPage } from '../pages/CandidateRepositoryPage'
-import { SubmissionsPage } from '../pages/SubmissionsPage'
-import { InterviewTrackingPage } from '../pages/InterviewTrackingPage'
-import { RequirementsPage } from '../pages/RequirementsPage'
 import { RevokeRequirementModal } from '../modals/RevokeRequirementModal'
 import {
   Send,
@@ -14,7 +10,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Search,
-  ChevronLeft,
   ChevronRight,
   X,
   UserPlus,
@@ -25,7 +20,9 @@ import {
   Calendar,
 } from 'lucide-react'
 import { PaginationFooter } from '../ui/PaginationFooter'
+import { BackButton } from '../ui/BackButton'
 import { PageHeader } from '../layout/PageHeader'
+import { ClientSubmitApprovalPanel } from '../pages/submit-to-lead/ClientSubmitApprovalPanel'
 import { useScrollReveal, useStaggerEnter } from '../../lib/animations'
 import {
   isOnboardingStage,
@@ -35,6 +32,8 @@ import {
 
 interface Props {
   candidates?: Candidate[]
+  /** From workspace stats — avoids loading full candidate dump for KPI. */
+  myCandidatesCount?: number
   submissions: Submission[]
   interviews: Interview[]
   requirements: Requirement[]
@@ -60,6 +59,7 @@ interface ActiveReqRow {
 
 export function RecruiterDashboard({
   candidates,
+  myCandidatesCount,
   submissions,
   interviews,
   requirements,
@@ -218,8 +218,9 @@ export function RecruiterDashboard({
     }
   }
 
-  // Inline Candidate Repository & Submission workflow state (kept strictly inside My Work page)
+  // Inline Candidate Repository & Add Candidate (kept inside My Workspace, same as the repo view)
   const [inlineReqId, setInlineReqId] = useState<string | null>(null)
+  const [inlineAddFrom, setInlineAddFrom] = useState<'requirement' | 'repository' | null>(null)
 
   // Hooks must stay above any early returns (selectedReqForDetail / inlineView).
   const activeReqsRef = useScrollReveal<HTMLElement>({ y: 20, duration: 0.6 })
@@ -243,26 +244,19 @@ export function RecruiterDashboard({
         ((!r.owner || r.owner === 'Unassigned') && ids.length === 0)
       if (isUnassigned) return false
 
-      // Lead / admin My Workspace: team work I own + anything assigned to me
-      if (isLeadOrAdmin) {
-        const leadId = String((r as any).assignedLeadId || '')
-        if (myUserId && leadId && leadId === myUserId) return true
-        if (myUserId && ids.some((id: string) => id === myUserId)) return true
-        const leadName = String((r as any).assignedLead || '').trim().toLowerCase()
-        const meLower = meName.toLowerCase()
-        if (meLower && leadName && (leadName === meLower || leadName.includes(meLower) || meLower.includes(leadName))) {
-          return true
-        }
-        // Legacy rows with recruiters but no lead stamped — still show for leads
-        if (sessionRole === 'lead' && ids.length > 0 && !leadId) return true
-        if (['admin', 'superadmin', 'devteam'].includes(sessionRole) && ids.length > 0) return true
-        return false
+      // Admin / SA / Dev: org-wide assigned requirements (oversight).
+      if (['admin', 'superadmin', 'devteam'].includes(sessionRole)) {
+        return ids.length > 0 || r.assignmentStatus === 'Assigned'
       }
 
-      // Recruiter My Work: only requirements assigned to this recruiter
+      // Lead + Recruiter: only requirements mapped to THIS user
+      // (in assignedRecruiterIds or assignedLeadId) — never the shared 677 dump.
+      const leadId = String((r as any).assignedLeadId || '')
+      if (myUserId && leadId && leadId === myUserId) return true
+      if (myUserId && ids.some((id: string) => id === myUserId)) return true
       return requirementAssignedToRecruiter(r as any, meIdentity)
     })
-  }, [requirements, myUserId, meName, meIdentity, isLeadOrAdmin, sessionRole])
+  }, [requirements, myUserId, meIdentity, sessionRole])
 
   const mySubmissions = useMemo(
     () =>
@@ -278,6 +272,13 @@ export function RecruiterDashboard({
       ),
     [submissions, meIdentity],
   )
+
+  /**
+   * Total Submissions KPI = every submission owned by this user (all stages).
+   * Previously only counted client+ stages (~251 for Lakshmi) and dropped
+   * Submitted / Submitted to Lead / Rejected, under-counting the true total (~330).
+   */
+  const countedSubmissions = mySubmissions
 
   const myInterviews = useMemo(
     () =>
@@ -300,22 +301,21 @@ export function RecruiterDashboard({
   )
 
   const kpiAssignedCount = assignedRequirements.length
-  const kpiSubmissionsCount = mySubmissions.length
+  const kpiSubmissionsCount = countedSubmissions.length
   const kpiInterviewsCount = myInterviews.length
   const kpiOnboardingCount = myOnboardingSubmissions.length
-  const myRepositoryCount = useMemo(
-    () =>
-      (candidates || []).filter(c =>
-        ownsByRecruiter(
-          {
-            id: (c as any).sourcedByRecruiterId,
-            name: (c as any).createdByName,
-          },
-          meIdentity,
-        ),
-      ).length,
-    [candidates, meIdentity],
-  )
+  const myRepositoryCount = useMemo(() => {
+    if (typeof myCandidatesCount === 'number') return myCandidatesCount
+    return (candidates || []).filter(c =>
+      ownsByRecruiter(
+        {
+          id: (c as any).sourcedByRecruiterId,
+          name: (c as any).createdByName,
+        },
+        meIdentity,
+      ),
+    ).length
+  }, [candidates, meIdentity, myCandidatesCount])
 
   const handleOpenInlineCandidateRepo = (reqId: string) => {
     setInlineReqId(reqId)
@@ -509,6 +509,40 @@ export function RecruiterDashboard({
     })
   }
 
+  if (inlineAddFrom) {
+    const addReqId =
+      inlineAddFrom === 'repository'
+        ? inlineReqId
+        : selectedReqForDetail?.id || inlineReqId
+    return (
+      <div className="w-full pb-12 font-sans animate-in fade-in duration-200">
+        <AddCandidatePage
+          requirements={requirements}
+          selectedReqId={addReqId}
+          showBack
+          backLabel={
+            inlineAddFrom === 'repository'
+              ? 'Back to Candidate Repository'
+              : 'Back to Requirement'
+          }
+          pageTitle="Add Candidate"
+          onBack={() => {
+            setInlineAddFrom(null)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          onOpenRepository={() => {
+            const id = addReqId
+            setInlineAddFrom(null)
+            setSelectedReqForDetail(null)
+            if (id) setInlineReqId(id)
+            else setInlineReqId(null)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
+      </div>
+    )
+  }
+
   if (selectedReqForDetail) {
     return (
       <>
@@ -523,13 +557,7 @@ export function RecruiterDashboard({
             setIsAssignModalOpen(true)
           }}
           onRevokeRequirement={() => setIsRevokeModalOpen(true)}
-          onAddCandidate={() =>
-            onOpenSubmitCandidate?.(
-              (selectedReqForDetail as any)._id ||
-                (selectedReqForDetail as any).reqCode ||
-                selectedReqForDetail.id,
-            )
-          }
+          onAddCandidate={() => setInlineAddFrom('requirement')}
           onRequirementUpdated={updated => {
             setSelectedReqForDetail(updated)
           }}
@@ -753,16 +781,13 @@ export function RecruiterDashboard({
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
         <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-3">
-            <button
+            <BackButton
+              label="Back to My Workspace"
               onClick={() => {
                 handleSetInlineView(null)
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4 text-slate-500" />
-              <span>Back to My Workspace</span>
-            </button>
+            />
             <span className="text-xs font-bold text-slate-300">|</span>
             <span className="text-xs font-bold text-slate-700">Assigned Requirements Overview</span>
           </div>
@@ -789,16 +814,13 @@ export function RecruiterDashboard({
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
         <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-3">
-            <button
+            <BackButton
+              label="Back to My Workspace"
               onClick={() => {
                 handleSetInlineView(null)
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4 text-slate-500" />
-              <span>Back to My Workspace</span>
-            </button>
+            />
             <span className="text-xs font-bold text-slate-300">|</span>
             <span className="text-xs font-bold text-slate-700">Total Submissions Overview</span>
           </div>
@@ -808,6 +830,7 @@ export function RecruiterDashboard({
           role="recruiter"
           currentUserName={currentUserName}
           submissions={mySubmissions}
+          interviews={myInterviews}
           requirements={assignedRequirements}
           includeAllMySubmissions
           onOpenSubmitCandidate={onOpenSubmitCandidate}
@@ -821,16 +844,13 @@ export function RecruiterDashboard({
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
         <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-3">
-            <button
+            <BackButton
+              label="Back to My Workspace"
               onClick={() => {
                 handleSetInlineView(null)
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4 text-slate-500" />
-              <span>Back to My Workspace</span>
-            </button>
+            />
             <span className="text-xs font-bold text-slate-300">|</span>
             <span className="text-xs font-bold text-slate-700">Interview Tracking Overview</span>
           </div>
@@ -852,18 +872,17 @@ export function RecruiterDashboard({
       <div className="w-full pb-12 font-sans animate-in fade-in duration-200 space-y-4">
         <div className="flex items-center justify-between bg-white px-5 py-3.5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-3">
-            <button
+            <BackButton
+              label="Back to My Workspace"
               onClick={() => {
                 handleSetInlineView(null)
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4 text-slate-500" />
-              <span>Back to My Workspace</span>
-            </button>
+            />
             <span className="text-xs font-bold text-slate-300">|</span>
-            <span className="text-xs font-bold text-slate-700">Onboarding Overview</span>
+            <span className="text-xs font-bold text-slate-700">
+              Onboarding Overview · {myOnboardingSubmissions.length} offered / placed / selected
+            </span>
           </div>
         </div>
 
@@ -872,8 +891,10 @@ export function RecruiterDashboard({
           role="recruiter"
           currentUserName={currentUserName}
           submissions={myOnboardingSubmissions}
+          interviews={myInterviews}
           requirements={assignedRequirements}
           includeAllMySubmissions
+          initialStatusFilter="Selected"
           onOpenSubmitCandidate={onOpenSubmitCandidate}
         />
       </div>
@@ -892,9 +913,7 @@ export function RecruiterDashboard({
             setInlineReqId(null)
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
-          onOpenAddForm={() => {
-            showToast('Use candidate upload form to add new candidate profiles.')
-          }}
+          onOpenAddForm={() => setInlineAddFrom('repository')}
         />
       </div>
     )
@@ -907,6 +926,8 @@ export function RecruiterDashboard({
         title="My Workspace"
         subtitle="Your personal assignments, submissions, and daily activity"
       />
+
+      <ClientSubmitApprovalPanel role={sessionRole} onToast={showToast} />
 
       {/* Performance Summary Section */}
       <section>

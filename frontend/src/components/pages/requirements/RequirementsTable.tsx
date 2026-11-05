@@ -32,12 +32,22 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden w-full">
+        <div className="w-full">
+          <table className="w-full table-fixed text-left text-xs border-collapse">
+            <colgroup>
+              <col style={{ width: '3%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '12%' }} />
+            </colgroup>
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
-                <th className="py-3.5 px-3 w-10 text-center">
+                <th className="py-3 px-2 text-center">
                   <input
                     type="checkbox"
                     checked={isAllSelected}
@@ -46,7 +56,7 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                   />
                 </th>
                 <th
-                  className="py-3.5 px-4 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                  className="py-3 px-2 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
                   onClick={() => handleSort && handleSort('reqId')}
                   title="Click to toggle sorting by Requirement ID"
                 >
@@ -58,20 +68,20 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                   </span>
                 </th>
                 <th
-                  className="py-3.5 px-4 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                  className="py-3 px-2 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
                   onClick={() => handleSort && handleSort('client')}
                   title="Click to toggle sorting by Client Name"
                 >
                   <span className="inline-flex items-center gap-1">
-                    <span>CLIENT NAME</span>
+                    <span>CLIENT</span>
                     {sortField === 'client' && (
                       <span className="text-[10px] text-[#6B3BF6] font-extrabold">{sortOrder === 'desc' ? '▼' : '▲'}</span>
                     )}
                   </span>
                 </th>
-                <th className="py-3.5 px-4 font-bold">CLIENT EMAIL ID</th>
+                <th className="py-3 px-2 font-bold">CLIENT EMAIL</th>
                 <th
-                  className="py-3.5 px-4 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                  className="py-3 px-2 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
                   onClick={() => handleSort && handleSort('role')}
                   title="Click to toggle sorting by Role"
                 >
@@ -82,20 +92,20 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                     )}
                   </span>
                 </th>
-                <th className="py-3.5 px-4 font-bold">ASSIGNED TO RECRUITER</th>
+                <th className="py-3 px-2 font-bold">ASSIGNED TO</th>
                 <th
-                  className="py-3.5 px-4 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                  className="py-3 px-2 font-bold cursor-pointer select-none hover:bg-slate-100 transition-colors"
                   onClick={() => handleSort && handleSort('arrivedTime')}
                   title="Click to toggle sorting by Email Arrival Time"
                 >
                   <span className="inline-flex items-center gap-1">
-                    <span>EMAIL ARRIVED TIME</span>
+                    <span>ARRIVED TIME</span>
                     {sortField === 'arrivedTime' && (
                       <span className="text-[10px] text-[#6B3BF6] font-extrabold">{sortOrder === 'desc' ? '▼' : '▲'}</span>
                     )}
                   </span>
                 </th>
-                <th className="py-3.5 px-4 font-bold text-center">UPDATE STATUS</th>
+                <th className="py-3 px-2 font-bold text-center">STATUS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
@@ -104,6 +114,9 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     <p className="text-xs font-semibold">
                       No requirements match your current search or filter.
+                    </p>
+                    <p className="text-[11px] font-medium text-slate-400 mt-1.5">
+                      Try All Dates, All Statuses, or a wider custom date range.
                     </p>
                   </td>
                 </tr>
@@ -167,7 +180,7 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                       }`}
                     >
                       {/* Checkbox */}
-                      <td className="py-3.5 px-3 text-center">
+                      <td className="py-3 px-2 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -181,17 +194,17 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                       </td>
 
                       {/* Requirement ID */}
-                      <td className="py-3.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className="py-3 px-2 font-semibold text-slate-900">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <button
                             onClick={() => setSelectedReqForDetail(req)}
-                            className="text-xs font-bold text-slate-900 hover:text-[#6B3BF6] hover:underline cursor-pointer flex items-center gap-1.5 group text-left"
-                            title="Click to view full requirement overview"
+                            className="text-xs font-bold text-slate-900 hover:text-[#6B3BF6] hover:underline cursor-pointer text-left truncate min-w-0"
+                            title={displayId}
                           >
-                            <span>{displayId}</span>
+                            {displayId}
                           </button>
                           {isNew && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide bg-[#00a86b] text-white leading-none shadow-2xs">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide bg-[#00a86b] text-white leading-none shadow-2xs shrink-0">
                               NEW
                             </span>
                           )}
@@ -199,14 +212,16 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                       </td>
 
                       {/* Client Name */}
-                      <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap text-xs">
-                        {req.client}
+                      <td className="py-3 px-2 font-bold text-slate-900 text-xs">
+                        <span className="block truncate" title={req.client}>
+                          {req.client}
+                        </span>
                       </td>
 
                       {/* Client Email ID */}
-                      <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
+                      <td className="py-3 px-2 text-slate-700">
                         <span
-                          className="text-xs font-normal text-slate-600 block max-w-[240px] truncate"
+                          className="text-xs font-normal text-slate-600 block truncate"
                           title={clientEmailDisplay}
                         >
                           {clientEmailDisplay}
@@ -214,8 +229,8 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                       </td>
 
                       {/* Role & Skills Snippet */}
-                      <td className="py-3.5 px-4 max-w-sm">
-                        <div className="font-bold text-slate-900 leading-snug line-clamp-1 text-xs" title={req.title}>
+                      <td className="py-3 px-2">
+                        <div className="font-bold text-slate-900 leading-snug truncate text-xs" title={req.title}>
                           {req.title}
                         </div>
                         {roleSnippet && (
@@ -226,42 +241,42 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                       </td>
 
                       {/* Assigned to Recruiter (Display only - manual dropdown removed) */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                      <td className="py-3 px-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-[10px] shrink-0 ${
                             isUnassigned ? 'bg-slate-100 text-slate-500 border border-slate-200' : 'bg-purple-100 text-[#6B3BF6] border border-purple-200 shadow-2xs'
                           }`}>
                             {isUnassigned ? '?' : (assigneeLabel || 'R').charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <div className={`text-xs ${isUnassigned ? 'text-slate-400 italic font-medium' : 'text-slate-900 font-extrabold'}`}>
+                          <div className="min-w-0">
+                            <div className={`text-xs truncate ${isUnassigned ? 'text-slate-400 italic font-medium' : 'text-slate-900 font-extrabold'}`} title={assigneeLabel}>
                               {assigneeLabel}
                             </div>
-                            <div className="text-[10px] text-slate-400 font-normal">
-                              {isUnassigned ? 'Pending assignment' : 'Assigned Recruiter'}
+                            <div className="text-[10px] text-slate-400 font-normal truncate">
+                              {isUnassigned ? 'Pending' : 'Assigned'}
                             </div>
                           </div>
                         </div>
                       </td>
 
                       {/* Email Arrived Time & Open Since */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="space-y-1.5">
-                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <td className="py-3 px-2">
+                        <div className="space-y-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1 min-w-0">
                             <Clock className="w-3.5 h-3.5 text-[#6B3BF6] shrink-0" />
-                            <span>{req.emailArrivedTime || '—'}</span>
+                            <span className="truncate" title={req.emailArrivedTime || '—'}>{req.emailArrivedTime || '—'}</span>
                           </div>
-                          <div className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#5B51D8] bg-[#EEF2FF] border border-[#C7D2FE] px-2.5 py-0.5 rounded-lg shadow-2xs">
-                            <span className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Open Since:</span>
-                            <span className="font-mono">{req.openDays !== undefined ? `${req.openDays} days` : '0 days'}</span>
+                          <div className="inline-flex max-w-full items-center gap-1 text-[10px] font-extrabold text-[#5B51D8] bg-[#EEF2FF] border border-[#C7D2FE] px-1.5 py-0.5 rounded-md shadow-2xs">
+                            <span className="text-slate-500 font-bold uppercase tracking-wider shrink-0">Open:</span>
+                            <span className="font-mono truncate">{req.openDays !== undefined ? `${req.openDays}d` : '0d'}</span>
                           </div>
                         </div>
                       </td>
 
                       {/* Requirement Status Dropdown (Only manually editable column) */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <div className="space-y-1 flex flex-col items-center">
-                          <div className="relative inline-block text-left">
+                      <td className="py-3 px-2 text-center">
+                        <div className="space-y-1 flex flex-col items-center min-w-0">
+                          <div className="relative inline-block text-left max-w-full">
                             <select
                               value={displaySelectVal}
                               onChange={e => {
@@ -273,7 +288,7 @@ export function RequirementsTable({ vm }: { vm: RequirementsVm }) {
                                   handleUpdateReqStatus?.(req.id, val)
                                 }
                               }}
-                              className={`appearance-none pl-3 pr-7 py-1.5 rounded-xl text-xs font-extrabold border cursor-pointer transition-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 ${
+                              className={`appearance-none max-w-full pl-2.5 pr-6 py-1.5 rounded-xl text-[11px] font-extrabold border cursor-pointer transition-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 ${
                                 isHold
                                   ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
                                   : displaySelectVal === 'Custom'

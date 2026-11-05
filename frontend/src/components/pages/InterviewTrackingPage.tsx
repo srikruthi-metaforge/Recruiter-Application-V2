@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -42,6 +42,7 @@ import { PaginationFooter } from '../ui/PaginationFooter'
 import { interviewsService, offersService, submissionsService } from '../../services/workspace.service'
 import { apiErrorMessage } from './submissions/preamble'
 import { getSessionUser } from '../../store/session'
+import { isInterviewRejectedStatus } from '../../utils/interviewStatus'
 
 export function mapBackendOfferToOfferRow(item: any): OfferLetterRowItem {
   const candidateName = item.candidateName || item.candidate || '—'
@@ -73,14 +74,69 @@ export function mapBackendOfferToOfferRow(item: any): OfferLetterRowItem {
   }
 }
 
+/** Resolve a real Date for interview filtering (workspace often only has a display `date` string). */
+export function resolveInterviewDate(item: any, displayDate?: string): Date | null {
+  const candidates = [
+    item?.dateTime,
+    item?.scheduledAt,
+    item?.raw?.dateTime,
+    item?.raw?.scheduledAt,
+    displayDate,
+    item?.date,
+  ]
+  for (const value of candidates) {
+    if (value == null || value === '') continue
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+    const d = new Date(value)
+    if (!Number.isNaN(d.getTime())) return d
+  }
+  return null
+}
+
+/** Round dropdown values are L1 / L2 / Final — workspace rounds are often "Technical Round 1/2". */
+export function matchesInterviewRoundFilter(round: string, filter: string): boolean {
+  if (!filter || filter === 'All Rounds') return true
+  const r = String(round || '').toLowerCase()
+  const f = filter.toLowerCase().trim()
+  if (f === 'l1') {
+    return (
+      r.includes('l1') ||
+      r.includes('technical round 1') ||
+      r.includes('technical 1') ||
+      r.includes('screening')
+    )
+  }
+  if (f === 'l2') {
+    return r.includes('l2') || r.includes('technical round 2') || r.includes('technical 2')
+  }
+  if (f === 'final') {
+    return (
+      r.includes('final') ||
+      r.includes('l3') ||
+      r.includes('hr') ||
+      r.includes('client') ||
+      r.includes('manager') ||
+      r.includes('executive')
+    )
+  }
+  return r.includes(f)
+}
+
 export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
   const candidateName = item.candidateName || item.candidate || '—'
   const position = item.requirementTitle || item.position || 'Software Engineer'
   const company = item.clientName || item.client || 'Client'
   const round = item.round || item.stage || 'L1 Technical'
-  const dateTimeStr = item.dateTime
-    ? new Date(item.dateTime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : (item.date || 'Today')
+  const resolved = resolveInterviewDate(item)
+  const dateTimeStr = resolved
+    ? resolved.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : item.date || item.dateTime || '—'
   const mode = item.mode || 'Online'
   const rawStatus = item.status || 'Scheduled'
 
@@ -114,6 +170,7 @@ export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
     company,
     round,
     dateTime: dateTimeStr,
+    sortAt: resolved ? resolved.toISOString() : undefined,
     mode,
     status,
     requirementId: typeof item.requirementId === 'string' ? item.requirementId : item.requirementId?.reqCode || item.requirementId?._id || '',
@@ -127,6 +184,7 @@ export function mapBackendInterviewToScheduleRow(item: any): ScheduleRowItem {
     rejectionReason: item.status === 'Cancelled' ? 'Interview Cancelled' : item.rejectionReason,
     raw: {
       ...item,
+      dateTime: item.dateTime || (resolved ? resolved.toISOString() : item.dateTime),
       recruiterId: recruiterId || item.recruiterId,
       recruiterEmail: item.recruiterEmail || (typeof item.recruiterId === 'object' ? item.recruiterId?.email : undefined),
     },
@@ -144,6 +202,8 @@ export interface ScheduleRowItem {
   company: string
   round: string // 'L1' | 'Final'
   dateTime: string
+  /** ISO timestamp used by date filters (display dateTime alone is ambiguous). */
+  sortAt?: string
   mode: string // 'Online' | 'In-Person'
   status: 'Upcoming' | 'In Progress' | 'Completed' | 'Scheduled' | 'Rejected'
   requirementId?: string
@@ -189,6 +249,71 @@ export interface RejectedCandidateRowItem {
   rejectionDate: string
   requirementId: string
   candidateId?: string
+  /** Ownership — used when scoping Rejections Track for recruiter/lead. */
+  recruiterId?: string
+  /** True when row came from API/props (not only this browser session). */
+  persisted?: boolean
+  interviewId?: string
+}
+
+export function normalizeRejectionStage(roundOrStage?: string | null): RejectionStageType {
+  const r = String(roundOrStage || '').toLowerCase()
+  if (r.includes('screen')) return 'Screening'
+  if (r.includes('l1') || r.includes('technical round 1') || r.includes('technical 1')) return 'L1 Technical'
+  if (r.includes('l2') || r.includes('technical round 2') || r.includes('technical 2')) return 'L2 Technical'
+  if (r.includes('l3') || r.includes('manager')) return 'L3 / Manager'
+  if (r.includes('final') || r.includes('hr') || r.includes('client') || r.includes('executive')) {
+    return 'Final HR Round'
+  }
+  return 'L1 Technical'
+}
+
+/** Build a Rejections Track row from a schedule/interview row (Rejected / Cancelled). */
+export function mapScheduleRowToRejected(row: ScheduleRowItem): RejectedCandidateRowItem {
+  const raw = (row as any).raw || {}
+  const rawStatus = String(raw.status || row.status || '').toLowerCase()
+  const reason =
+    row.rejectionReason ||
+    raw.rejectionReason ||
+    raw.notes ||
+    (rawStatus.includes('cancel') ? 'Interview cancelled' : 'Candidate rejected during interview evaluation')
+  const when =
+    resolveInterviewDate(row, row.sortAt || row.dateTime) ||
+    (row.dateTime ? new Date(row.dateTime) : null)
+  const rejectionDate =
+    when && !Number.isNaN(when.getTime())
+      ? when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : row.dateTime || '—'
+  const recruiterId = String(
+    raw.recruiterId?._id || raw.recruiterId?.id || raw.recruiterId || (row as any).recruiterId || '',
+  ).trim()
+
+  return {
+    id: String(row.id || row.interviewId || `rej-${row.candidateName}`),
+    interviewId: String(row.interviewId || row.id || ''),
+    candidateName: row.candidateName,
+    candidateId: row.candidateId ? String(row.candidateId) : undefined,
+    position: row.position,
+    company: row.company,
+    rejectedStage: normalizeRejectionStage(row.round),
+    rejectionReason: reason,
+    evaluatorNotes: String(raw.notes || row.remark || reason),
+    evaluatedBy: row.interviewerName || row.submittedBy || 'Evaluator',
+    submittedBy: row.submittedBy || 'Recruiter',
+    teamLead: row.teamLead || '—',
+    rejectionDate,
+    requirementId: row.requirementId || '',
+    recruiterId: recruiterId || undefined,
+    persisted: true,
+  }
+}
+
+export function isRejectedScheduleRow(row: ScheduleRowItem): boolean {
+  // Canonical field: interview.status (Cancelled maps to Rejected in workspace).
+  return (
+    isInterviewRejectedStatus(row.status) ||
+    isInterviewRejectedStatus((row as any).raw?.status)
+  )
 }
 
 export interface OfferLetterRowItem {
@@ -245,7 +370,48 @@ export function InterviewTrackingPage({
   const [scopeTab, setScopeTab] = useState<'my_interviews' | 'team_members' | 'all'>('my_interviews')
 
   // Toggle Switcher ('upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding')
-  const [statusToggle, setStatusToggle] = useState<'upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding'>(initialStatusToggle || 'all')
+  const [statusToggle, setStatusToggle] = useState<'upcoming' | 'completed' | 'rejections' | 'all' | 'onboarding'>(() => {
+    try {
+      const pending = sessionStorage.getItem('pending_interview_status_toggle')
+      if (
+        pending === 'upcoming' ||
+        pending === 'completed' ||
+        pending === 'rejections' ||
+        pending === 'all' ||
+        pending === 'onboarding'
+      ) {
+        sessionStorage.removeItem('pending_interview_status_toggle')
+        return pending
+      }
+    } catch {
+      // ignore
+    }
+    return initialStatusToggle || 'all'
+  })
+
+  // Analytics / Workspace KPI deep-link → correct Interview Tracking pill
+  useEffect(() => {
+    const applyPending = () => {
+      try {
+        const pending = sessionStorage.getItem('pending_interview_status_toggle')
+        if (
+          pending === 'upcoming' ||
+          pending === 'completed' ||
+          pending === 'rejections' ||
+          pending === 'all' ||
+          pending === 'onboarding'
+        ) {
+          setStatusToggle(pending)
+          sessionStorage.removeItem('pending_interview_status_toggle')
+        }
+      } catch {
+        // ignore
+      }
+    }
+    applyPending()
+    window.addEventListener('notification_navigate', applyPending as EventListener)
+    return () => window.removeEventListener('notification_navigate', applyPending as EventListener)
+  }, [])
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('')
@@ -261,6 +427,8 @@ export function InterviewTrackingPage({
   const [finalDecisions, setFinalDecisions] = useState<FinalDecisionRowItem[]>([])
   const [offerLetters, setOfferLetters] = useState<OfferLetterRowItem[]>([])
   const [rejectedList, setRejectedList] = useState<RejectedCandidateRowItem[]>([])
+  /** Owned Rejected/Cancelled interviews loaded from API (fills Rejections Track after refresh). */
+  const [apiRejectedRows, setApiRejectedRows] = useState<RejectedCandidateRowItem[]>([])
 
   // Modals & Requirement Overview State
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false)
@@ -286,11 +454,13 @@ export function InterviewTrackingPage({
     setModalStatusChoice(item.status === 'Rejected' || !!item.rejectionReason ? 'Rejected' : 'Remark')
   }
 
-  const handleSaveCandidateRemark = () => {
+  const handleSaveCandidateRemark = async () => {
     if (!selectedCandidateDetailModal) return
     const targetId = selectedCandidateDetailModal.id
     const updatedText = modalRemarkText.trim()
     const isRejected = modalStatusChoice === 'Rejected'
+    const reason = updatedText || 'Candidate rejected during evaluation'
+    const stage = normalizeRejectionStage(selectedCandidateDetailModal.round)
 
     setScheduleList(prev =>
       prev.map(row => {
@@ -298,7 +468,7 @@ export function InterviewTrackingPage({
           return {
             ...row,
             status: isRejected ? ('Rejected' as const) : row.status,
-            rejectionReason: isRejected ? updatedText || 'Candidate rejected during evaluation' : undefined,
+            rejectionReason: isRejected ? reason : undefined,
             remark: !isRejected ? updatedText : undefined,
           }
         }
@@ -307,24 +477,61 @@ export function InterviewTrackingPage({
     )
 
     if (isRejected) {
-      setRejectedList(prev => [
-        {
-          id: `rej-${Date.now()}`,
-          candidateName: selectedCandidateDetailModal.candidateName,
-          candidateId: `CAND-${selectedCandidateDetailModal.id}`,
-          position: selectedCandidateDetailModal.position,
-          company: selectedCandidateDetailModal.company,
-          rejectedStage: selectedCandidateDetailModal.round === 'L1' ? 'L1 Technical' : 'L2 Technical',
-          rejectionReason: updatedText || 'Candidate rejected during evaluation',
-          evaluatorNotes: updatedText || 'Candidate evaluation notes updated by recruiter.',
-          evaluatedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
-          submittedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
-          teamLead: selectedCandidateDetailModal.teamLead || 'Team Lead',
-          rejectionDate: '—',
-          requirementId: selectedCandidateDetailModal.requirementId || '',
-        },
-        ...prev,
-      ])
+      const stableId = String(
+        selectedCandidateDetailModal.interviewId || selectedCandidateDetailModal.id,
+      )
+      setRejectedList(prev => {
+        const without = prev.filter(
+          r => String(r.interviewId || r.id) !== stableId && r.id !== `rej-${stableId}`,
+        )
+        return [
+          {
+            id: stableId,
+            interviewId: stableId,
+            candidateName: selectedCandidateDetailModal.candidateName,
+            candidateId: selectedCandidateDetailModal.candidateId
+              ? String(selectedCandidateDetailModal.candidateId)
+              : undefined,
+            position: selectedCandidateDetailModal.position,
+            company: selectedCandidateDetailModal.company,
+            rejectedStage: stage,
+            rejectionReason: reason,
+            evaluatorNotes: updatedText || `Candidate rejected during ${stage} evaluation.`,
+            evaluatedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
+            submittedBy: selectedCandidateDetailModal.submittedBy || 'Recruiter',
+            teamLead: selectedCandidateDetailModal.teamLead || 'Team Lead',
+            rejectionDate: new Date().toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            }),
+            requirementId: selectedCandidateDetailModal.requirementId || '',
+            recruiterId: String((selectedCandidateDetailModal as any).raw?.recruiterId || '').trim() || undefined,
+            persisted: false,
+          },
+          ...without,
+        ]
+      })
+
+      try {
+        await interviewsService.submitFeedback(targetId, {
+          recommendation: 'Rejected',
+          rejectionReason: reason,
+          feedbackNotes: updatedText || `Rejected at ${stage}`,
+          notes: updatedText || `Rejected at ${stage}`,
+        })
+        if (!lockToPropInterviews) {
+          const data = await interviewsService.list().catch(() => null)
+          if (Array.isArray(data)) {
+            setScheduleList(data.map(mapBackendInterviewToScheduleRow))
+          }
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workspace_refresh'))
+        }
+      } catch (err) {
+        showToast(apiErrorMessage(err))
+      }
     }
 
     showToast(`Saved remark & details for candidate ${selectedCandidateDetailModal.candidateName}!`)
@@ -369,11 +576,34 @@ export function InterviewTrackingPage({
 
   React.useEffect(() => {
     let active = true
+    const ownedRejection = (row: RejectedCandidateRowItem) => {
+      if (!isRecruiter && !isLead) return true
+      const recId = String(row.recruiterId || '').trim()
+      if (activeUserId && recId && recId === activeUserId) return true
+      const by = (row.submittedBy || '').toLowerCase().trim()
+      if (activeUserEmail && by && by.includes(activeUserEmail)) return true
+      if (!activeUserName) return !isRecruiter
+      if (!by) return true
+      return by.includes(activeUserName) || activeUserName.includes(by)
+    }
+    const hydrateRejectedFromInterviews = (intData: any[]) => {
+      const rows = intData
+        .map(mapBackendInterviewToScheduleRow)
+        .filter(isRejectedScheduleRow)
+        .map(mapScheduleRowToRejected)
+        .filter(ownedRejection)
+      setApiRejectedRows(rows)
+    }
     const fetchInit = async () => {
       try {
         if (lockToPropInterviews) {
+          // Reuse workspace interview props — do not re-list /interviews (Candidates→Reports storm).
+          if (Array.isArray(interviews) && interviews.length > 0) {
+            hydrateRejectedFromInterviews(interviews as any[])
+          }
           const offerData = await offersService.list().catch(() => [])
-          if (active && Array.isArray(offerData)) {
+          if (!active) return
+          if (Array.isArray(offerData)) {
             setOfferLetters(offerData.map(mapBackendOfferToOfferRow))
           }
           return
@@ -382,10 +612,12 @@ export function InterviewTrackingPage({
           interviewsService.list().catch(() => []),
           offersService.list().catch(() => []),
         ])
-        if (active && Array.isArray(intData)) {
+        if (!active) return
+        if (Array.isArray(intData)) {
           setScheduleList(intData.map(mapBackendInterviewToScheduleRow))
+          hydrateRejectedFromInterviews(intData)
         }
-        if (active && Array.isArray(offerData)) {
+        if (Array.isArray(offerData)) {
           setOfferLetters(offerData.map(mapBackendOfferToOfferRow))
         }
       } catch (err) {
@@ -396,7 +628,7 @@ export function InterviewTrackingPage({
     return () => {
       active = false
     }
-  }, [lockToPropInterviews])
+  }, [lockToPropInterviews, isRecruiter, isLead, activeUserId, activeUserEmail, activeUserName, interviews])
 
   const handleRescheduleInterview = async (id: string, dateTimeIso: string, reason?: string) => {
     try {
@@ -452,7 +684,9 @@ export function InterviewTrackingPage({
         position: iv.position,
         client: iv.client,
         stage: iv.stage,
+        round: (iv as any).round || iv.stage,
         date: iv.date,
+        dateTime: (iv as any).dateTime,
         recruiter: iv.recruiter,
         recruiterId: (iv as any).recruiterId,
         recruiterEmail: (iv as any).recruiterEmail,
@@ -533,15 +767,26 @@ export function InterviewTrackingPage({
   }, [offerLetters, isLead, isRecruiter, scopeTab, activeUserName, activeUserId, activeUserEmail])
 
   const checkDateMatch = (
-    rawDateStr: string | undefined,
+    rowOrDate:
+      | string
+      | undefined
+      | ScheduleRowItem
+      | { dateTime?: string; sortAt?: string; raw?: any },
     filter: 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom_range',
     customStart?: string,
     customEnd?: string
   ): boolean => {
     if (filter === 'all') return true
-    if (!rawDateStr) return false
-    const d = new Date(rawDateStr)
-    if (isNaN(d.getTime())) return false
+    let d: Date | null = null
+    if (typeof rowOrDate === 'string') {
+      const parsed = new Date(rowOrDate)
+      d = Number.isNaN(parsed.getTime()) ? null : parsed
+    } else if (rowOrDate && typeof rowOrDate === 'object') {
+      d =
+        resolveInterviewDate(rowOrDate, (rowOrDate as ScheduleRowItem).sortAt || rowOrDate.dateTime) ||
+        (rowOrDate.dateTime ? new Date(rowOrDate.dateTime) : null)
+    }
+    if (!d || Number.isNaN(d.getTime())) return false
 
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -613,6 +858,15 @@ export function InterviewTrackingPage({
     })
   }, [scopeOfferLetters, searchQuery, clientFilter, offerOutcomeFilter, dateFilter, customStartDate, customEndDate])
 
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+
+  const offerTotalPages = Math.ceil(filteredOfferLetters.length / pageSize) || 1
+  const paginatedOfferLetters = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return filteredOfferLetters.slice(start, start + pageSize)
+  }, [filteredOfferLetters, currentPage, pageSize])
+
   // Scope final decisions by role
   const scopeFinalDecisions = useMemo(() => {
     if (isLead) {
@@ -636,73 +890,52 @@ export function InterviewTrackingPage({
     return finalDecisions
   }, [finalDecisions, isLead, isRecruiter, scopeTab, activeUserName, activeUserId])
 
-  // Evaluated Schedule List:
-  // 1. Scheduled in future -> Upcoming
-  // 2. Intermediate rounds (L1, L2, Screening, Tech 1/2) -> In Progress
-  // 3. Completed all rounds (L3, Final Round, Final HR, Offer Released) -> Completed
+  // Evaluated Schedule List — terminal interview status always wins over round heuristics.
+  // (Previously L1/L2 "Passed/Completed" were forced back to In Progress, so Completed filter looked empty.)
   const evaluatedScheduleList = useMemo(() => {
     const now = new Date()
 
     return scopeScheduleList.map(row => {
       const roundLower = (row.round || '').toLowerCase()
+      const statusLower = String(row.status || '').toLowerCase()
 
-      // Check if all rounds are completed (L3, Final, HR Round, Offer Released, Cleared All Rounds)
-      const isCompletedAllRounds =
-        roundLower.includes('l3') ||
-        roundLower.includes('final') ||
-        roundLower.includes('offer released') ||
-        roundLower.includes('completed all')
-
-      // Check if intermediate round (L1, L2, Screening, Technical Round 1, Technical Round 2)
-      const isIntermediateRound =
-        roundLower.includes('l1') ||
-        roundLower.includes('l2') ||
-        roundLower.includes('screening') ||
-        roundLower.includes('technical round 1') ||
-        roundLower.includes('technical round 2') ||
-        roundLower.includes('evaluation')
-
-      // If round explicitly indicates all rounds finished OR explicitly marked Completed for non-intermediate round
-      if (isCompletedAllRounds || (row.status === 'Completed' && !isIntermediateRound)) {
-        return { ...row, status: 'Completed' as const }
+      // Explicit outcome from feedback / cancel / API — do not rewrite by round.
+      if (statusLower === 'rejected' || statusLower === 'cancelled') {
+        return { ...row, status: 'Rejected' as const }
       }
-
-      // If intermediate round, keep as In Progress (or Upcoming if explicitly scheduled in future)
-      if (isIntermediateRound) {
-        if (row.status === 'Upcoming') {
-          const timeStr = row.dateTime || ''
-          if (timeStr.toLowerCase().includes('today')) {
-            const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-            if (match) {
-              let hour = parseInt(match[1], 10)
-              const min = parseInt(match[2], 10)
-              const ampm = match[3].toUpperCase()
-              if (ampm === 'PM' && hour < 12) hour += 12
-              if (ampm === 'AM' && hour === 12) hour = 0
-
-              const schedTime = new Date()
-              schedTime.setHours(hour, min, 0, 0)
-
-              if (now >= schedTime) {
-                return { ...row, status: 'In Progress' as const }
-              }
-            }
-          }
-          return { ...row, status: 'Upcoming' as const }
-        }
-        return { ...row, status: 'In Progress' as const }
-      }
-
       if (
-        row.status === 'Completed' ||
-        (row.status as string) === 'Selected' ||
-        (row.status as string) === 'Rejected'
+        statusLower === 'completed' ||
+        statusLower === 'passed' ||
+        statusLower === 'selected' ||
+        statusLower === 'confirmed'
       ) {
         return { ...row, status: 'Completed' as const }
       }
 
-      if (row.status === 'In Progress') {
+      const when = resolveInterviewDate(row, row.sortAt || row.dateTime)
+      if (when && !Number.isNaN(when.getTime())) {
+        if (when.getTime() > now.getTime() + 60_000) {
+          return { ...row, status: 'Upcoming' as const }
+        }
+        // Started / past slot without a final outcome → still active
         return { ...row, status: 'In Progress' as const }
+      }
+
+      if (statusLower === 'in progress' || statusLower === 'pending') {
+        return { ...row, status: 'In Progress' as const }
+      }
+      if (statusLower === 'upcoming' || statusLower === 'scheduled' || statusLower === 'rescheduled') {
+        return { ...row, status: 'Upcoming' as const }
+      }
+
+      // Round-only fallback when status/date are ambiguous
+      const looksFinal =
+        roundLower.includes('l3') ||
+        roundLower.includes('final') ||
+        roundLower.includes('offer released') ||
+        roundLower.includes('completed all')
+      if (looksFinal) {
+        return { ...row, status: 'Completed' as const }
       }
 
       return { ...row, status: 'Upcoming' as const }
@@ -712,7 +945,7 @@ export function InterviewTrackingPage({
   // Filter Schedule Rows according to selected statusToggle, searchQuery, clientFilter, roundFilter, and dateFilter
   const filteredScheduleList = useMemo(() => {
     return evaluatedScheduleList.filter(row => {
-      if (!checkDateMatch(row.dateTime, dateFilter, customStartDate, customEndDate)) {
+      if (!checkDateMatch(row, dateFilter, customStartDate, customEndDate)) {
         return false
       }
 
@@ -729,12 +962,17 @@ export function InterviewTrackingPage({
         return false
       }
 
-      if (roundFilter !== 'All Rounds' && !row.round.toLowerCase().includes(roundFilter.toLowerCase())) {
+      if (!matchesInterviewRoundFilter(row.round, roundFilter)) {
         return false
       }
 
       if (statusToggle === 'upcoming') {
-        return (row.status as string) === 'Upcoming' || (row.status as string) === 'Scheduled'
+        // No separate "In Progress" pill — active interviews belong under Upcoming.
+        return (
+          (row.status as string) === 'Upcoming' ||
+          (row.status as string) === 'Scheduled' ||
+          (row.status as string) === 'In Progress'
+        )
       }
       if (statusToggle === 'completed') {
         return row.status === 'Completed'
@@ -742,10 +980,6 @@ export function InterviewTrackingPage({
       return true
     })
   }, [evaluatedScheduleList, searchQuery, statusToggle, clientFilter, roundFilter, dateFilter, customStartDate, customEndDate])
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(5)
 
   const totalPages = Math.ceil(filteredScheduleList.length / pageSize) || 1
 
@@ -762,10 +996,36 @@ export function InterviewTrackingPage({
     return 'bg-slate-100 text-slate-800 border-slate-200'
   }
 
+  /**
+   * Rejections Track source:
+   * 1) Persisted Rejected/Cancelled interviews (API list + My Workspace props)
+   * 2) Session-only rows from reject actions this visit
+   * Merged by interview id so refresh shows saved rejections without duplicating in-session adds.
+   */
+  const mergedRejectedList = useMemo(() => {
+    const fromSchedule = combinedScheduleList
+      .filter(isRejectedScheduleRow)
+      .map(mapScheduleRowToRejected)
+
+    const byId = new Map<string, RejectedCandidateRowItem>()
+    for (const row of [...fromSchedule, ...apiRejectedRows]) {
+      const key = String(row.interviewId || row.id)
+      if (key) byId.set(key, row)
+    }
+    for (const row of rejectedList) {
+      const key = String(row.interviewId || row.id)
+      if (!key) continue
+      // Session row wins on reason/stage if user just edited; else keep persisted.
+      const existing = byId.get(key)
+      byId.set(key, existing ? { ...existing, ...row, persisted: existing.persisted || row.persisted } : row)
+    }
+    return Array.from(byId.values())
+  }, [combinedScheduleList, apiRejectedRows, rejectedList])
+
   // Scope rejected list by role
   const scopeRejectedList = useMemo(() => {
     if (isLead) {
-      return rejectedList.filter(r => {
+      return mergedRejectedList.filter(r => {
         const by = (r.submittedBy || '').toLowerCase()
         const isLeadSub = activeUserName ? by.includes(activeUserName) : true
         if (scopeTab === 'my_interviews') return isLeadSub
@@ -774,16 +1034,27 @@ export function InterviewTrackingPage({
       })
     }
     if (isRecruiter) {
-      return rejectedList.filter(r => {
-        const recId = String((r as any).recruiterId || '').trim()
+      // My Workspace passes already-owned interviews via lockToPropInterviews —
+      // don't drop persisted rows that lack recruiterId/name on the rejection row.
+      if (lockToPropInterviews) return mergedRejectedList
+      return mergedRejectedList.filter(r => {
+        const recId = String(r.recruiterId || '').trim()
         if (activeUserId && recId && recId === activeUserId) return true
         const by = (r.submittedBy || '').toLowerCase()
         if (!activeUserName) return true
         return !by || by.includes(activeUserName) || activeUserName.includes(by)
       })
     }
-    return rejectedList
-  }, [rejectedList, isLead, isRecruiter, scopeTab, activeUserName, activeUserId])
+    return mergedRejectedList
+  }, [
+    mergedRejectedList,
+    isLead,
+    isRecruiter,
+    scopeTab,
+    activeUserName,
+    activeUserId,
+    lockToPropInterviews,
+  ])
 
   const filteredRejectedList = useMemo(() => {
     return scopeRejectedList.filter(item => {
@@ -904,15 +1175,20 @@ export function InterviewTrackingPage({
     setRejectModalCandidate(row)
   }
 
-  // Confirm and save rejection with reason
-  const handleConfirmRejectCandidate = () => {
+  // Confirm and save rejection with reason (local track + API so Rejections Track survives refresh)
+  const handleConfirmRejectCandidate = async () => {
     if (!rejectModalCandidate) return
     const finalReason = selectedRejectionReason === 'Other' && customRejectionNote.trim()
       ? customRejectionNote.trim()
       : selectedRejectionReason
+    const stableId = String(rejectModalCandidate.interviewId || rejectModalCandidate.id)
 
     setScheduleList(prev =>
-      prev.map(item => (item.id === rejectModalCandidate.id ? { ...item, status: 'Completed' } : item))
+      prev.map(item =>
+        item.id === rejectModalCandidate.id
+          ? { ...item, status: 'Rejected' as const, rejectionReason: finalReason }
+          : item,
+      ),
     )
     setFinalDecisions(prev => [
       {
@@ -928,23 +1204,59 @@ export function InterviewTrackingPage({
     ])
 
     const newRejectedItem: RejectedCandidateRowItem = {
-      id: `rej-${Date.now()}`,
+      id: stableId,
+      interviewId: stableId,
       candidateName: rejectModalCandidate.candidateName,
-      candidateId: `CAND-${Math.floor(Math.random() * 9000 + 10000)}`,
+      candidateId: rejectModalCandidate.candidateId
+        ? String(rejectModalCandidate.candidateId)
+        : undefined,
       position: rejectModalCandidate.position,
       company: rejectModalCandidate.company,
       rejectedStage: selectedRejectionStage,
       rejectionReason: finalReason,
-      evaluatorNotes: customRejectionNote.trim() || `Candidate rejected during ${selectedRejectionStage} evaluation.`,
+      evaluatorNotes:
+        customRejectionNote.trim() ||
+        `Candidate rejected during ${selectedRejectionStage} evaluation.`,
       evaluatedBy: rejectModalCandidate.submittedBy || 'Tech Evaluation Panel',
       submittedBy: rejectModalCandidate.submittedBy || 'Recruiter',
       teamLead: rejectModalCandidate.teamLead || '—',
-      rejectionDate: '—',
+      rejectionDate: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }),
       requirementId: rejectModalCandidate.requirementId || '',
+      recruiterId: String((rejectModalCandidate as any).raw?.recruiterId || '').trim() || undefined,
+      persisted: false,
     }
 
-    setRejectedList(prev => [newRejectedItem, ...prev])
-    showToast(`Rejection recorded for ${rejectModalCandidate.candidateName} at stage [${selectedRejectionStage}]: "${finalReason}"!`)
+    setRejectedList(prev => {
+      const without = prev.filter(r => String(r.interviewId || r.id) !== stableId)
+      return [newRejectedItem, ...without]
+    })
+
+    try {
+      await interviewsService.submitFeedback(rejectModalCandidate.id, {
+        recommendation: 'Rejected',
+        rejectionReason: `${selectedRejectionStage}: ${finalReason}`,
+        feedbackNotes:
+          customRejectionNote.trim() ||
+          `Rejected at ${selectedRejectionStage}: ${finalReason}`,
+        notes:
+          customRejectionNote.trim() ||
+          `Rejected at ${selectedRejectionStage}: ${finalReason}`,
+      })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace_refresh'))
+      }
+      await reloadInterviews()
+      showToast(
+        `Rejection recorded for ${rejectModalCandidate.candidateName} at stage [${selectedRejectionStage}]: "${finalReason}"!`,
+      )
+    } catch (err) {
+      showToast(apiErrorMessage(err))
+    }
+
     setRejectModalCandidate(null)
     setCustomRejectionNote('')
   }
@@ -1228,8 +1540,14 @@ export function InterviewTrackingPage({
               <option value="All Clients">All Client Partners</option>
               {Array.from(
                 new Set(
-                  [...scheduleList.map(r => r.company), ...offerLetters.map(r => r.client), ...finalDecisions.map(r => r.client), ...rejectedList.map(r => r.company)]
-                    .filter((c): c is string => Boolean(c) && c !== '—'),
+                  [
+                    ...scopeScheduleList.map(r => r.company),
+                    ...scheduleList.map(r => r.company),
+                    ...scopeOfferLetters.map(r => r.client),
+                    ...offerLetters.map(r => r.client),
+                    ...finalDecisions.map(r => r.client),
+                    ...mergedRejectedList.map(r => r.company),
+                  ].filter((c): c is string => Boolean(c) && c !== '—'),
                 ),
               )
                 .sort()
@@ -2085,7 +2403,7 @@ export function InterviewTrackingPage({
                     </td>
                   </tr>
                 ) : (
-                  filteredOfferLetters.map(item => (
+                  paginatedOfferLetters.map(item => (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition-colors align-top">
                       {/* 1. CANDIDATE NAME */}
                       <td className="px-4 py-4">
@@ -2190,6 +2508,18 @@ export function InterviewTrackingPage({
               </tbody>
             </table>
           </div>
+          <PaginationFooter
+            currentPage={currentPage}
+            totalPages={offerTotalPages}
+            totalItems={filteredOfferLetters.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={size => {
+              setPageSize(size)
+              setCurrentPage(1)
+            }}
+            itemLabel="offers"
+          />
         </div>
       )}
 

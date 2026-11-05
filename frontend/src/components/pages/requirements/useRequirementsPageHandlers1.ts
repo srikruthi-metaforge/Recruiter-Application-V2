@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Requirement } from '../../../types'
 import type { RequirementsVmState } from './useRequirementsPageState'
 import { workspaceService } from '../../../services/workspace.service'
+import { requestWorkspaceRefresh } from '../../../lib/workspaceRefresh'
 import { ApiError } from '../../../lib/api'
 import { getSessionUser } from '../../../store/session'
 
@@ -28,15 +29,8 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
       onUpdateRequirements?.(optimistic)
     }
     try {
-      const payload = await workspaceService.load()
-      if (payload?.requirements) {
-        setLocalRequirements(payload.requirements)
-        onUpdateRequirements?.(payload.requirements)
-      }
-      // Refresh App-level workspace so recruiter KPI cards update after assign.
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('workspace_refresh'))
-      }
+      // App shell owns GET /workspace. Optimistic rows stay until that response arrives.
+      await requestWorkspaceRefresh({ force: true })
     } catch {
       // The assignment is already saved. Keep the optimistic list if refresh fails.
     }
@@ -49,6 +43,7 @@ export function useRequirementsPageHandlers1(s: RequirementsVmState) {
   isSyncingMailRef.current = isSyncingMail
   useEffect(() => {
     const check = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       if (isSyncingMailRef.current) return
       try {
         const status = await workspaceService.getRequirementsSyncStatus()

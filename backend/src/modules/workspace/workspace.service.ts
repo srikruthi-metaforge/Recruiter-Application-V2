@@ -11,13 +11,13 @@ import { ActivityLog, ActivityLogDocument } from '../audit/schemas/activity-log.
 import { Team, TeamDocument } from '../teams/schemas/team.schema';
 import {
   mapActivityLog,
-  mapCandidate,
   mapClient,
   mapInterview,
   mapRequirement,
   mapSubmission,
 } from './workspace.mapper';
 import { orgScope } from '../../common/security/resource-access.util';
+import { TenantCacheService } from '../redis/tenant-cache.service';
 
 @Injectable()
 export class WorkspaceService {
@@ -30,6 +30,7 @@ export class WorkspaceService {
     @InjectModel(Client.name) private readonly clientModel: Model<ClientDocument>,
     @InjectModel(ActivityLog.name) private readonly activityLogModel: Model<ActivityLogDocument>,
     @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
+    private readonly tenantCache: TenantCacheService,
   ) {}
 
   private orgFilter(currentUser: any) {
@@ -38,26 +39,48 @@ export class WorkspaceService {
   }
 
   async getWorkspacePayload(currentUser: any) {
+    const orgId = currentUser?.orgId ? String(currentUser.orgId) : '';
+    const variant = [
+      String(currentUser?.role || ''),
+      String(currentUser?.id || currentUser?.sub || currentUser?.userId || ''),
+      String(currentUser?.clientId || ''),
+    ].join('|');
+    return this.tenantCache.remember(orgId, 'workspace', variant, 15, () => this.loadWorkspacePayload(currentUser));
+  }
+
+  private async loadWorkspacePayload(currentUser: any) {
     const base = this.orgFilter(currentUser);
     const role = String(currentUser?.role || '').toLowerCase();
-    const userObjectId = currentUser?.id || currentUser?.userId
-      ? new Types.ObjectId((currentUser.id || currentUser.userId).toString())
-      : null;
+    // Prefer JWT Mongo id (sub/id). Never cast business userId (e.g. v1-user-014) to ObjectId.
+    const rawUserId = String(currentUser?.id || currentUser?.sub || '').trim();
+    const userObjectId =
+      Types.ObjectId.isValid(rawUserId) && String(new Types.ObjectId(rawUserId)) === rawUserId
+        ? new Types.ObjectId(rawUserId)
+        : null;
 
     const reqFilter: Record<string, any> = { ...base };
     if (role === 'client' && currentUser.clientId) {
       reqFilter.clientId = new Types.ObjectId(currentUser.clientId);
     }
 
+    // Do NOT load all candidates into workspace — V1 imports are ~20k and freeze the SPA.
+    // Candidate Repository loads pages from GET /candidates instead.
+    // myCandidatesCount must always be THIS user's sourced repo count — never the org total.
+    const myCandidateFilter = userObjectId
+      ? { ...base, sourcedByRecruiterId: userObjectId, deletedAt: null }
+      : { ...base, deletedAt: null, _id: null };
+
     const [
       requirements,
       submissions,
       interviews,
       users,
-      candidates,
+      totalCandidates,
+      myCandidatesCount,
       clients,
       activityLogs,
       teams,
+      requirementCounts,
     ] = await Promise.all([
       this.requirementModel
         .find(reqFilter)
@@ -84,16 +107,23 @@ export class WorkspaceService {
         .lean()
         .exec(),
       this.userModel.find({ ...base }).lean().exec(),
-      this.candidateModel
-        .find(base)
-        .populate('sourcedByRecruiterId', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(500)
-        .lean()
-        .exec(),
+      this.candidateModel.countDocuments({ ...base, deletedAt: null }).exec(),
+      this.candidateModel.countDocuments(myCandidateFilter).exec(),
       this.clientModel.find(base).sort({ clientName: 1 }).lean().exec(),
       this.activityLogModel.find({ orgId: base.orgId }).sort({ createdAt: -1 }).limit(200).lean().exec(),
       this.teamModel.find(base).populate('leadId', 'name email').populate('recruiterIds', 'name email').lean().exec(),
+      this.submissionModel.aggregate([
+        { $match: base },
+        {
+          $group: {
+            _id: '$requirementId',
+            submissions: { $sum: 1 },
+            placed: {
+              $sum: { $cond: [{ $in: ['$stage', ['Placed', 'Offered']] }, 1, 0] },
+            },
+          },
+        },
+      ]).exec(),
     ]);
 
     const usersById = new Map(users.map((u: any) => [String(u._id), u]));
@@ -105,21 +135,13 @@ export class WorkspaceService {
     const reqIntCounts = new Map<string, number>();
     const reqPlacedCounts = new Map<string, number>();
 
-    // Org-wide active submissions so requirement.submissions in reports stays accurate
-    // even when the caller's submission list is role-scoped (e.g. recruiter).
-    const allOrgSubs = await this.submissionModel
-      .find({ ...base, deletedAt: null })
-      .select('requirementId recruiterId stage')
-      .lean()
-      .exec();
-    for (const s of allOrgSubs as any[]) {
-      const reqKey = s.requirementId ? String(s.requirementId) : '';
-      if (reqKey) {
-        reqSubCounts.set(reqKey, (reqSubCounts.get(reqKey) || 0) + 1);
-        if (s.stage === 'Placed' || s.stage === 'Offered') {
-          reqPlacedCounts.set(reqKey, (reqPlacedCounts.get(reqKey) || 0) + 1);
-        }
-      }
+    // One grouped read for requirement submission counts. Role-scoped submission
+    // documents above stay the list the caller is allowed to see.
+    for (const row of requirementCounts as Array<{ _id?: unknown; submissions?: number; placed?: number }>) {
+      const reqKey = row._id ? String(row._id) : '';
+      if (!reqKey) continue;
+      reqSubCounts.set(reqKey, Number(row.submissions) || 0);
+      if (row.placed) reqPlacedCounts.set(reqKey, Number(row.placed) || 0);
     }
     for (const iv of interviews as any[]) {
       const reqKey = iv.requirementId?._id
@@ -337,7 +359,8 @@ export class WorkspaceService {
       leads,
       admins,
       activityLogs: activityLogs.map(mapActivityLog),
-      candidates: candidates.map(mapCandidate),
+      // Empty by design — repository uses paged /candidates. Counts live in stats.
+      candidates: [],
       clients: clients.map((c: any) => mapClient(c, clientStats.get(String(c._id)))),
       teams: mappedTeams,
       users: users.map((u: any) => ({
@@ -361,6 +384,8 @@ export class WorkspaceService {
         activeRequirements: mappedReqs.filter((r) => r.status === 'Open' || r.status === 'Active').length,
         totalOpenings: mappedReqs.reduce((a, r) => a + (r.openings || 1), 0),
         totalPlaced: mappedReqs.reduce((a, r) => a + (r.placed || 0), 0),
+        totalCandidates,
+        myCandidatesCount,
       },
     };
   }

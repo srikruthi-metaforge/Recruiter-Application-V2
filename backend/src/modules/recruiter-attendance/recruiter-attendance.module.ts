@@ -15,6 +15,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { RecruiterAttendanceService } from './recruiter-attendance.service';
 import { RecruiterAttendanceSchedulerService } from './recruiter-attendance-scheduler.service';
 import { RecruiterAttendanceController } from './recruiter-attendance.controller';
+import { JobsModule } from '../../jobs/jobs.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { RecruiterAttendanceController } from './recruiter-attendance.controller
     ]),
     MailModule,
     NotificationsModule,
+    JobsModule,
   ],
   controllers: [RecruiterAttendanceController],
   providers: [RecruiterAttendanceService, RecruiterAttendanceSchedulerService],

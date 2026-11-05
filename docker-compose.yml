@@ -33,10 +33,13 @@ services:
       MONGODB_URI: mongodb://mongo:27017/metaforge_recruiter_v2
       MONGODB_DB_NAME: metaforge_recruiter_v2
       REDIS_URL: redis://redis:6379
+      WORKER_IN_API: "false"
       # Required: set JWT_SECRET in .env / vault (min 32 chars, not a placeholder).
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via env or vault}
       JWT_EXPIRES_IN: 8h
-      CORS_ORIGINS: http://localhost:3000,http://localhost:8080
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://192.168.1.129:3000,http://192.168.1.109:3000,http://192.168.1.129:8080,http://192.168.1.109:8080
+      FORCE_HTTPS: "false"
+      COOKIE_SECURE: "false"
       AI_GATEWAY_URL: http://ai-service:3002
       AI_GATEWAY_TOKEN: ${AI_GATEWAY_TOKEN:-}
       STORAGE_ROOT: /data/storage
@@ -50,12 +53,17 @@ services:
       - "3001:3001"
 
   workers:
-    build: ./workers
+    build: ./backend
+    command: ["node", "dist/worker.js"]
     depends_on:
+      - mongo
       - redis
     environment:
+      PROCESS_ROLE: worker
+      MONGODB_URI: mongodb://mongo:27017/metaforge_recruiter_v2
+      MONGODB_DB_NAME: metaforge_recruiter_v2
       REDIS_URL: redis://redis:6379
-      WORKER_QUEUE: mrap:jobs
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set via env or vault}
 
   frontend:
     build: ./frontend
@@ -64,6 +72,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: /api/v1
       API_PROXY_URL: http://backend:3001
+      FORCE_HTTPS: "false"
+      HOSTNAME: "0.0.0.0"
     ports:
       - "3000:3000"
 

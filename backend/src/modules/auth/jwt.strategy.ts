@@ -29,6 +29,9 @@ function cookieExtractor(req: { headers?: { cookie?: string } }): string | null 
   return null;
 }
 
+const USER_CACHE_MS = 15_000;
+const userCache = new Map<string, { at: number; value: Record<string, unknown> }>();
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -51,24 +54,35 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid JWT payload format');
     }
 
-    let capabilities = {};
-    const dbUser = await this.userModel.findOne({
-      $or: [
-        ...(Types.ObjectId.isValid(payload.sub) ? [{ _id: payload.sub }] : []),
-        { userId: payload.sub },
-        { email: payload.email },
-      ],
-      deletedAt: null,
-    }).exec();
-
-    if (dbUser) {
-      if (dbUser.active === false) {
-        throw new UnauthorizedException('User account has been deactivated or deleted');
-      }
-      capabilities = dbUser.capabilities || {};
+    const cacheKey = String(payload.sub);
+    const cached = userCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < USER_CACHE_MS) {
+      return cached.value;
     }
 
-    return {
+    const subIsObjectId =
+      Types.ObjectId.isValid(payload.sub) && String(new Types.ObjectId(payload.sub)) === payload.sub;
+    const projection = 'active capabilities orgId name clientId teamId';
+    let dbUser = subIsObjectId
+      ? await this.userModel.findOne({ _id: payload.sub, deletedAt: null }).select(projection).lean().exec()
+      : null;
+    if (!dbUser) {
+      dbUser = await this.userModel
+        .findOne({
+          deletedAt: null,
+          $or: [{ userId: payload.sub }, { email: payload.email }],
+        })
+        .select(projection)
+        .lean()
+        .exec();
+    }
+
+    if (dbUser?.active === false) {
+      userCache.delete(cacheKey);
+      throw new UnauthorizedException('User account has been deactivated or deleted');
+    }
+
+    const value = {
       id: payload.sub,
       userId: payload.userId || payload.sub,
       email: payload.email,
@@ -77,9 +91,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       orgId: dbUser?.orgId || payload.orgId,
       name: payload.name || dbUser?.name,
       permissions: payload.permissions || [],
-      capabilities,
-      clientId: (dbUser as any)?.clientId || undefined,
-      teamId: (dbUser as any)?.teamId || undefined,
+      capabilities: dbUser?.capabilities || {},
+      clientId: (dbUser as { clientId?: unknown } | null)?.clientId || undefined,
+      teamId: (dbUser as { teamId?: unknown } | null)?.teamId || undefined,
     };
+    userCache.set(cacheKey, { at: Date.now(), value });
+    return value;
   }
 }

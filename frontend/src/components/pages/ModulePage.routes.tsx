@@ -2,23 +2,23 @@ import React from 'react'
 import { Requirement, Submission, Interview, Recruiter, Candidate, ActivityLogItem, Role } from '../../types'
 import { upsertCandidate, UiCandidate } from '../../services/candidatePayload'
 import { PAGE_META, getPageTitle } from '../../config/navigation'
-import { Panel, DataTable, QuickActions } from '../wireframe/WireframeKit'
+import { Panel, QuickActions } from '../wireframe/WireframeKit'
 import { PageHeader } from '../layout/PageHeader'
-import { RequirementsPage } from './RequirementsPage'
-import { AddCandidatePage } from './AddCandidatePage'
-import { CandidateRepositoryPage } from './CandidateRepositoryPage'
-import { SubmissionsPage } from './SubmissionsPage'
-import { MyProfilePage } from './MyProfilePage'
-import { InterviewTrackingPage } from './InterviewTrackingPage'
-import { ReportsPage } from './ReportsPage'
-import { ClientsPage } from './ClientsPage'
-import { UserManagementPage } from './UserManagementPage'
-import { ActivityLogsPage } from './ActivityLogsPage'
-import { MyTeamPage } from './MyTeamPage'
-import { TeamsRecruitersPage } from './TeamsRecruitersPage'
-import { HistoryPage } from './HistoryPage'
-import { NotificationsPage } from './NotificationsPage'
-import { AnalyticsDashboardPage } from './analytics/AnalyticsDashboardPage'
+import {
+  ActivityLogsPage,
+  AddCandidatePage,
+  AnalyticsDashboardPage,
+  CandidateRepositoryPage,
+  ClientsPage,
+  MyProfilePage,
+  MyTeamPage,
+  NotificationsPage,
+  ReportsPage,
+  RequirementsPage,
+  TeamsRecruitersPage,
+  UserManagementPage,
+} from './lazyPages'
+import { navigateBackToReportsAnalytics } from '../../utils/notificationNavigation'
 
 export interface ModulePageRouteProps {
   pageKey: string
@@ -31,6 +31,7 @@ export interface ModulePageRouteProps {
   activityLogs: ActivityLogItem[]
   currentUserName?: string
   currentUserEmail?: string
+  myCandidatesCount?: number
   candidatesList: Candidate[]
   candidateViewMode: 'add' | 'repository'
   onOpenSubmit?: (reqId?: string) => void
@@ -45,6 +46,8 @@ export interface ModulePageRouteProps {
   setCandidatesList: React.Dispatch<React.SetStateAction<Candidate[]>>
   /** True when Add Candidate was opened from Repository (nested), not from sidebar */
   addOpenedFromRepository?: boolean
+  /** True only after a reports drill-down, not a direct sidebar visit */
+  returnToReports?: boolean
 }
 
 export function renderModulePage(props: ModulePageRouteProps) {
@@ -59,6 +62,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
     activityLogs,
     currentUserName,
     currentUserEmail,
+    myCandidatesCount,
     candidatesList,
     candidateViewMode,
     onOpenSubmit,
@@ -71,10 +75,11 @@ export function renderModulePage(props: ModulePageRouteProps) {
     handleCandidateViewModeChange,
     setCandidatesList,
     addOpenedFromRepository = false,
+    returnToReports = false,
   } = props
 
   if (pageKey === 'Notifications') {
-    return <NotificationsPage />
+    return <NotificationsPage role={role} />
   }
 
   if (pageKey === 'My Profile' || pageKey === 'Profile') {
@@ -102,6 +107,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         candidates={candidatesList}
         currentUserName={currentUserName}
         currentUserEmail={currentUserEmail}
+        myCandidatesCount={myCandidatesCount}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}
@@ -129,36 +135,24 @@ export function renderModulePage(props: ModulePageRouteProps) {
     return <ActivityLogsPage role={role} logs={activityLogs} />
   }
 
+  // Legacy History nav → Individual Performance Analytics (History UI removed).
   if (pageKey === 'History' || pageKey === 'Recruiter History' || pageKey === 'Performance History') {
-    if (role !== 'recruiter') {
-      return (
-        <ReportsPage
-          role={role}
-          initialReportsTab="reports"
-          initialMainTab="history"
-          requirements={requirements}
-          submissions={submissions}
-          interviews={interviews}
-          recruiters={recruiters}
-          candidates={candidatesList}
-          currentUserName={currentUserName}
-          currentUserEmail={currentUserEmail}
-          onOpenSubmit={onOpenSubmit}
-          onOpenFeedback={onOpenFeedback}
-          onUpdateRequirements={onUpdateRequirements}
-        />
-      )
-    }
     return (
-      <HistoryPage
+      <ReportsPage
         role={role}
-        currentUserName={currentUserName}
-        currentUserEmail={currentUserEmail}
-        recruiters={recruiters}
+        initialReportsTab="reports"
+        initialMainTab="individual_analytics"
         requirements={requirements}
         submissions={submissions}
-        candidates={candidatesList}
         interviews={interviews}
+        recruiters={recruiters}
+        candidates={candidatesList}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
+        myCandidatesCount={myCandidatesCount}
+        onOpenSubmit={onOpenSubmit}
+        onOpenFeedback={onOpenFeedback}
+        onUpdateRequirements={onUpdateRequirements}
       />
     )
   }
@@ -197,7 +191,14 @@ export function renderModulePage(props: ModulePageRouteProps) {
             setCandidatesList(prev => upsertCandidate(prev as UiCandidate[], saved))
           }}
           onSelectRequirement={onSelectRequirement}
-          onBackToDashboard={selectedReqId ? onNavigateToDashboard : undefined}
+          backButtonLabel={returnToReports ? 'Back to Reports & Analytics' : undefined}
+          onBackToDashboard={
+            returnToReports
+              ? navigateBackToReportsAnalytics
+              : selectedReqId
+                ? onNavigateToDashboard
+                : undefined
+          }
         />
       )
     }
@@ -227,6 +228,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         candidates={candidatesList}
         currentUserName={currentUserName}
         currentUserEmail={currentUserEmail}
+        myCandidatesCount={myCandidatesCount}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}
@@ -246,6 +248,7 @@ export function renderModulePage(props: ModulePageRouteProps) {
         candidates={candidatesList}
         currentUserName={currentUserName}
         currentUserEmail={currentUserEmail}
+        myCandidatesCount={myCandidatesCount}
         onOpenSubmit={onOpenSubmit}
         onOpenFeedback={onOpenFeedback}
         onUpdateRequirements={onUpdateRequirements}

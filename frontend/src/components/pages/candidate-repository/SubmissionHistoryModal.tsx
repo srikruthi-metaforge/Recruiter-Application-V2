@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Building, Search, Send, X } from 'lucide-react'
 import { getCandidateSubmissionsHistory } from './history'
 import { CandidateRepoVm } from './useCandidateRepository'
+import { PaginationFooter } from '../../ui/PaginationFooter'
 
 export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
   const {
@@ -10,6 +11,13 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
     setSelectedSubmissionHistoryCandidate,
     setSubmissionModalSearchQuery,
   } = vm
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedSubmissionHistoryCandidate?.id, selectedSubmissionHistoryCandidate?.candidateId, submissionModalSearchQuery, pageSize])
+
   return (
     <>
       {selectedSubmissionHistoryCandidate && (() => {
@@ -25,6 +33,10 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
             r.status.toLowerCase().includes(q)
           )
         })
+        const paginatedRecords = filteredRecords.slice(
+          (currentPage - 1) * pageSize,
+          currentPage * pageSize,
+        )
 
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
@@ -52,6 +64,7 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
                   onClick={() => {
                     setSelectedSubmissionHistoryCandidate(null)
                     setSubmissionModalSearchQuery('')
+                    setCurrentPage(1)
                   }}
                   className="p-2 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-all cursor-pointer"
                 >
@@ -80,7 +93,10 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
                   type="text"
                   placeholder="Filter submissions by client, requirement, recruiter, or status..."
                   value={submissionModalSearchQuery}
-                  onChange={e => setSubmissionModalSearchQuery(e.target.value)}
+                  onChange={e => {
+                    setSubmissionModalSearchQuery(e.target.value)
+                    setCurrentPage(1)
+                  }}
                   className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#6B3BF6] text-slate-800 font-medium"
                 />
               </div>
@@ -105,7 +121,7 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
                         </td>
                       </tr>
                     ) : (
-                      filteredRecords.map(rec => (
+                      paginatedRecords.map(rec => (
                         <tr key={rec.id} className="hover:bg-white transition-colors">
                           <td className="py-3 px-3.5 whitespace-nowrap">
                             <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white border border-purple-200 text-purple-900 inline-flex items-center gap-1.5 shadow-2xs">
@@ -133,6 +149,18 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
                     )}
                   </tbody>
                 </table>
+                <PaginationFooter
+                  currentPage={currentPage}
+                  totalPages={Math.max(1, Math.ceil(filteredRecords.length / pageSize))}
+                  totalItems={filteredRecords.length}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={size => {
+                    setPageSize(size)
+                    setCurrentPage(1)
+                  }}
+                  itemLabel="submissions"
+                />
               </div>
 
               {/* Modal Footer */}
@@ -141,6 +169,7 @@ export function SubmissionHistoryModal({ vm }: { vm: CandidateRepoVm }) {
                   onClick={() => {
                     setSelectedSubmissionHistoryCandidate(null)
                     setSubmissionModalSearchQuery('')
+                    setCurrentPage(1)
                   }}
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-2xs"
                 >

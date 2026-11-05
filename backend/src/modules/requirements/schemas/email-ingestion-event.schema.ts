@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type EmailIngestionEventDocument = EmailIngestionEvent & Document;
@@ -66,4 +67,4 @@ EmailIngestionEventSchema.index({ orgId: 1, graphMessageId: 1 });
 EmailIngestionEventSchema.index({ orgId: 1, status: 1, createdAt: -1 });
 applyOrgLegacyPostgresIdIndex(EmailIngestionEventSchema);
 
-EmailIngestionEventSchema.plugin(DataScopePlugin);
+EmailIngestionEventSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

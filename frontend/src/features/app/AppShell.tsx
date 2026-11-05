@@ -9,6 +9,7 @@ import { InterviewFeedbackModal } from '../../components/modals/InterviewFeedbac
 import { CandidateDetailModal } from '../../components/modals/CandidateDetailModal'
 import { AppShellContent } from './AppShell.content'
 import { AnimatedPage } from '../../lib/animations'
+import { NotificationProvider } from '../../hooks/notificationContext'
 
 export interface AppShellProps {
   role: Role
@@ -51,7 +52,8 @@ export interface AppShellProps {
 
 export function AppShell(props: AppShellProps) {
   return (
-    <div className="flex h-screen overflow-hidden font-body" style={{ background: brand.background }}>
+    <NotificationProvider role={props.role}>
+    <div className="flex h-dvh overflow-hidden font-body" style={{ background: brand.background }}>
       <Sidebar
         role={props.role}
         onLogout={props.onLogout}
@@ -61,8 +63,11 @@ export function AppShell(props: AppShellProps) {
         onToggleCollapse={props.onToggleCollapse}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <main className="flex-1 overflow-y-auto w-full min-w-0 px-4 py-5 lg:px-6 xl:px-8 app-main-content">
+      <div
+        className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0"
+        style={{ ['--app-sidebar-offset' as string]: props.isSidebarCollapsed ? '72px' : '260px' }}
+      >
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full min-w-0 px-4 py-5 lg:px-6 xl:px-8 app-main-content">
           <PageContainer>
             <AnimatedPage animationKey={`${props.role}:${props.activeNav}`}>
               <AppShellContent {...props} />
@@ -72,14 +77,16 @@ export function AppShell(props: AppShellProps) {
       </div>
 
       <NewRequirementModal isOpen={props.isNewReqOpen} onClose={() => props.setIsNewReqOpen(false)} onAdd={props.handleAddRequirement} />
-      <SubmitCandidateModal
-        isOpen={props.isSubmitCandidateOpen}
-        onClose={() => props.setIsSubmitCandidateOpen(false)}
-        requirements={props.requirements}
-        selectedReqId={props.selectedReqIdForSubmit}
-        onSubmit={props.handleSubmitCandidate}
-        currentRecruiterName={props.currentUser.name}
-      />
+      {props.isSubmitCandidateOpen && (
+        <SubmitCandidateModal
+          isOpen
+          onClose={() => props.setIsSubmitCandidateOpen(false)}
+          requirements={props.requirements}
+          selectedReqId={props.selectedReqIdForSubmit}
+          onSubmit={props.handleSubmitCandidate}
+          currentRecruiterName={props.currentUser.name}
+        />
+      )}
       <InterviewFeedbackModal
         isOpen={props.isFeedbackModalOpen}
         onClose={() => props.setIsFeedbackModalOpen(false)}
@@ -92,5 +99,6 @@ export function AppShell(props: AppShellProps) {
         submission={props.selectedSubmissionForDetail}
       />
     </div>
+    </NotificationProvider>
   )
 }
