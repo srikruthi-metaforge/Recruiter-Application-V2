@@ -23,7 +23,7 @@ export function LandingCapabilities({ vm }: { vm: LandingVm }) {
             {ENTERPRISE_CAPABILITIES.map(cap => (
               <div
                 key={cap.title}
-                className="p-6 bg-white rounded-3xl border border-slate-200/90 shadow-2xs hover:shadow-lg hover:border-purple-300 transition-all duration-200 space-y-2.5"
+                className="p-6 bg-white/70 backdrop-blur-xl rounded-3xl border border-slate-200/90 ring-1 ring-inset ring-white/60 shadow-sm hover:shadow-lg hover:border-purple-300 hover:bg-white/85 transition-all duration-200 space-y-2.5"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-purple-50 text-[#6B3BF6] border border-purple-200/80 flex items-center justify-center shrink-0">

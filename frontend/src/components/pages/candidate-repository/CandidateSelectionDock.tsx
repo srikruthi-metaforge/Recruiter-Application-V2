@@ -1,10 +1,12 @@
 import React from 'react'
 import { Send, X } from 'lucide-react'
 import { CandidateRepoVm } from './useCandidateRepository'
-import { hasCapability } from '../../../store/session'
+import { getSessionUser, hasCapability } from '../../../store/session'
+import { canWorkOnRequirement } from '../../../utils/recruiterOwnership'
 
 export function CandidateSelectionDock({ vm }: { vm: CandidateRepoVm }) {
   const {
+    role,
     activeRequirement,
     selectedIds,
     viewMode,
@@ -47,9 +49,22 @@ export function CandidateSelectionDock({ vm }: { vm: CandidateRepoVm }) {
                   showToast('Select at least one candidate.')
                   return
                 }
+                const session = getSessionUser()
+                const me = {
+                  id: session?.id || null,
+                  email: session?.email || null,
+                  name: session?.name || null,
+                }
                 if (!activeRequirement?.id) {
                   setIsChangeReqModalOpen(true)
-                  showToast('Please select a requirement to forward candidate(s).')
+                  showToast('Please select a requirement assigned to you to forward candidate(s).')
+                  return
+                }
+                if (!canWorkOnRequirement(activeRequirement, me, role)) {
+                  setIsChangeReqModalOpen(true)
+                  showToast(
+                    'You are not assigned to this requirement. Select one assigned to you before submitting.',
+                  )
                   return
                 }
                 setSelectedCandidatesForSubmit(items)

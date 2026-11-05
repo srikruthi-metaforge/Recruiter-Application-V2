@@ -1,6 +1,7 @@
 import React from 'react'
 import { ArrowRight, Bookmark, ShieldAlert } from 'lucide-react'
 import { AddCandidateVm } from './useAddCandidatePage'
+import { FixedPageActionBar } from '../../layout/FixedPageActionBar'
 
 export function AddCandidateActions({ vm }: { vm: AddCandidateVm }) {
   const {
@@ -9,8 +10,8 @@ export function AddCandidateActions({ vm }: { vm: AddCandidateVm }) {
   } = vm
   return (
     <>
-        {/* BOTTOM ACTION BAR (MATCHING SCREENSHOT 3) */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+        <FixedPageActionBar>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-2xl border border-slate-200/90 bg-white/95 px-6 py-3.5 shadow-xl backdrop-blur-md">
           <p className="text-xs text-slate-500">
             Fill only what you know, then review and submit, or save for later to work on it anytime.
           </p>
@@ -51,6 +52,7 @@ export function AddCandidateActions({ vm }: { vm: AddCandidateVm }) {
             </button>
           </div>
         </div>
+        </FixedPageActionBar>
     </>
   )
 }

@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { ScheduleInterviewFormFields } from './ScheduleInterviewModal.fields'
 import { interviewsService, submissionsService, candidatesService } from '../../services/workspace.service'
 import { apiErrorMessage } from '../pages/submissions/preamble'
+import { isAbortError } from '../../lib/api'
 
 interface ScheduleInterviewModalProps {
   isOpen: boolean
@@ -48,17 +49,20 @@ export function ScheduleInterviewModal({
   const [rawCandidates, setRawCandidates] = useState<any[]>([])
 
   React.useEffect(() => {
-    if (isOpen) {
-      if (initialSubmission) setSubmission(initialSubmission)
-      setDate(getTodayDateString())
-      setErrorMsg(null)
+    if (!isOpen) return
+    const controller = new AbortController()
+    let active = true
+    if (initialSubmission) setSubmission(initialSubmission)
+    setDate(getTodayDateString())
+    setErrorMsg(null)
 
-      Promise.all([
-        submissionsService.list().catch(() => []),
-        candidatesService.list().catch(() => ({ data: [] })),
-      ]).then(([subs, candRes]) => {
-        const subsArr: any[] = Array.isArray(subs) ? subs : []
-        const candsArr: any[] = Array.isArray(candRes) ? candRes : (candRes?.data || [])
+    Promise.all([
+      submissionsService.list('', { signal: controller.signal }).catch(err => (isAbortError(err) ? null : [])),
+      candidatesService.listPage({ page: 1, limit: 100, signal: controller.signal }).catch(err => (isAbortError(err) ? null : { items: [] })),
+    ]).then(([subs, candRes]) => {
+      if (!active || subs == null || candRes == null) return
+      const subsArr: any[] = Array.isArray(subs) ? subs : []
+      const candsArr: any[] = Array.isArray(candRes) ? candRes : (candRes.items || [])
         setRawSubmissions(subsArr)
         setRawCandidates(candsArr)
 
@@ -114,7 +118,10 @@ export function ScheduleInterviewModal({
             if (foundCand.phone) setCandidatePhone(foundCand.phone)
           }
         }
-      }).catch(() => undefined)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      controller.abort()
     }
   }, [isOpen, initialSubmission])
 

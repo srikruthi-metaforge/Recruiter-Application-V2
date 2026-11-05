@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { CandidatesService } from './candidates.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -29,8 +30,9 @@ import { BulkUploadCandidatesDto } from './dto/bulk-upload.dto';
 export class CandidatesController {
   constructor(private readonly candidatesService: CandidatesService) {}
 
-  /** GET /api/v1/candidates */
+  /** GET /api/v1/candidates — paged repository reads; do not burn global throttle budget. */
   @Get()
+  @SkipThrottle()
   async findAll(
     @Req() req: any,
     @Query('search') search?: string,
@@ -40,6 +42,7 @@ export class CandidatesController {
     @Query('noticePeriod') noticePeriod?: number,
     @Query('location') location?: string,
     @Query('status') status?: string,
+    @Query('createdBy') createdBy?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
@@ -51,6 +54,7 @@ export class CandidatesController {
       noticePeriod,
       location,
       status,
+      createdBy,
       page,
       limit,
     });
@@ -68,6 +72,49 @@ export class CandidatesController {
   @HttpCode(HttpStatus.OK)
   async bulkUpload(@Body() payload: any, @Req() req: any) {
     return this.candidatesService.bulkUpload(payload, req.user);
+  }
+
+  /**
+   * GET /api/v1/candidates/sourced-counts
+   * Must be registered before :id so "sourced-counts" is not treated as an id.
+   */
+  @Get('sourced-counts')
+  @SkipThrottle()
+  async sourcedCounts(@Req() req: any) {
+    return this.candidatesService.sourcedCountsByRecruiter(req.user);
+  }
+
+  /**
+   * GET /api/v1/candidates/sourced-by/:recruiterId
+   * Must be registered before :id.
+   */
+  @Get('sourced-by/:recruiterId')
+  @SkipThrottle()
+  async sourcedByRecruiter(
+    @Req() req: any,
+    @Param('recruiterId') recruiterId: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.candidatesService.findSourcedByRecruiter(
+      req.user,
+      recruiterId,
+      page,
+      limit,
+      from,
+      to,
+    );
+  }
+
+  /**
+   * GET /api/v1/candidates/:id/resume
+   * Must stay ahead of GET :id so the extra path is not swallowed.
+   */
+  @Get(':id/resume')
+  async downloadResume(@Param('id') id: string, @Req() req: any) {
+    return this.candidatesService.createResumeDownload(id, req.user);
   }
 
   /** GET /api/v1/candidates/:id */

@@ -23,6 +23,7 @@ import { RequestLoginOtpDto } from './dto/request-login-otp.dto';
 import { VerifyLoginOtpDto } from './dto/verify-login-otp.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
+import { perAccountThrottle } from '../../common/security/throttle-tracker.util';
 import {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
@@ -60,7 +61,7 @@ function setSessionCookies(res: Response, result: { accessToken: string; refresh
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle(perAccountThrottle(20))
   @Post('request-login-otp')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request login OTP' })
@@ -68,7 +69,7 @@ export class AuthController {
     return this.authService.requestLoginOtp(dto);
   }
 
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle(perAccountThrottle(60))
   @Post('verify-login-otp')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify login OTP and start session' })
@@ -89,7 +90,7 @@ export class AuthController {
     return publicAuthPayload(result, req);
   }
 
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle(perAccountThrottle(60))
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Email/password login' })
@@ -132,24 +133,28 @@ export class AuthController {
     return result;
   }
 
+  @Throttle(perAccountThrottle(20))
   @Post('register-request')
   @HttpCode(HttpStatus.CREATED)
   async registerRequest(@Body() dto: RegisterRequestDto) {
     return this.authService.registerRequest(dto);
   }
 
+  @Throttle(perAccountThrottle(20))
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
+  @Throttle(perAccountThrottle(20))
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyOtp(dto);
   }
 
+  @Throttle(perAccountThrottle(20))
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {

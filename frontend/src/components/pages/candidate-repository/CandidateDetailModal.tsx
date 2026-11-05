@@ -42,7 +42,7 @@ export function CandidateDetailModal({ vm }: { vm: CandidateRepoVm }) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-        <div className="p-6 overflow-y-auto space-y-4 max-h-[calc(90vh-140px)]">
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto space-y-4">
           <CandidateDetailDupHistory vm={vm} viewingCandidateDetail={viewingCandidateDetail} />
           <CandidateDetailContact vm={vm} viewingCandidateDetail={viewingCandidateDetail} />
           <CandidateDetailProfile viewingCandidateDetail={viewingCandidateDetail} />

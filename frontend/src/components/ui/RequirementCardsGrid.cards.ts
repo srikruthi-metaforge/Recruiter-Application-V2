@@ -16,6 +16,7 @@ import {
   requirementHasSelections,
   requirementHasRejection,
 } from './requirementAssignment'
+import { isFinalOrSelectedStage } from '../../utils/submissionStatusFilter'
 
 export type CardFilterType =
   | 'ALL'
@@ -32,14 +33,24 @@ export function buildRequirementCards(
   submissions: Submission[],
   interviews: Interview[],
 ) {
-  // Every KPI value = number of requirement rows shown when that card is clicked
+  // Most KPI values = requirement rows shown when that card is clicked.
+  // Selected = offered/selected/placed candidate (submission) count so Super Admin
+  // sees every final candidate (e.g. both of Laxmi's Offered on the same req).
   const totalReqs = requirements.length
   const submissionsReqCount = requirements.filter(r => (r.submissions || 0) > 0).length
   const unassignedCount = requirements.filter(isRequirementUnassigned).length
   const assignedCount = requirements.filter(isRequirementAssigned).length
   const inProgressCount = requirements.filter(isRequirementInProgress).length
   const interviewsReqCount = requirements.filter(r => (r.interviews || 0) > 0).length
-  const selectionsReqCount = requirements.filter(requirementHasSelections).length
+  const selectionsCandidateCount = submissions.filter(s =>
+    isFinalOrSelectedStage(s.stage),
+  ).length
+  const selectionsReqCount = requirements.filter(r =>
+    requirementHasSelections(r, submissions),
+  ).length
+  // Prefer live candidate count; fall back to requirement-with-selection count if submissions empty.
+  const selectedCardValue =
+    selectionsCandidateCount > 0 ? selectionsCandidateCount : selectionsReqCount
   const rejectionsReqCount = requirements.filter(r =>
     requirementHasRejection(r, interviews, submissions),
   ).length
@@ -102,7 +113,7 @@ export function buildRequirementCards(
     {
       key: 'SELECTIONS' as CardFilterType,
       label: 'Selected',
-      value: selectionsReqCount,
+      value: selectedCardValue,
       icon: CheckCircle2,
       bg: '#E6F8F0',
       borderColor: '#A7F3D0',

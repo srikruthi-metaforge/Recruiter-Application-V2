@@ -162,12 +162,20 @@ export function ActivityLogsPage({ role = 'superadmin', logs = [] }: ActivityLog
     fetchAuditLogs(false)
   }, [fetchAuditLogs])
 
-  // Auto-refresh every 15 seconds to automatically update user statuses using live database data
+  // Auto-refresh every 15 seconds while the tab is visible. Hidden tabs do not poll.
   useEffect(() => {
     const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
       fetchAuditLogs(true)
     }, 15000)
-    return () => clearInterval(timer)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchAuditLogs(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [fetchAuditLogs])
 
   // Manual Refresh

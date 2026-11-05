@@ -1,60 +1,65 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAbortError } from '../lib/api'
+import { getSessionUser } from '../store/session'
 import { notificationsService } from '../services/workspace.service'
 import { ToastItem } from '../components/ui/NotificationToast'
+import {
+  NOTIFICATION_FAST_MS,
+  NOTIFICATION_GC_MS,
+  NOTIFICATION_IDLE_MS,
+  queryKeys,
+} from '../lib/queryKeys'
+import {
+  fetchNotificationList,
+  markAllReadInList,
+  markReadInList,
+  removeFromList,
+  type NotificationItem,
+  type NotificationList,
+} from '../lib/notificationCache'
 
-export interface NotificationItem {
-  id: string
-  title: string
-  message: string
-  time: string
-  type: string
-  entityType?: string
-  entityId?: string
-  read: boolean
-  createdAt?: string
-}
+export type { NotificationItem }
 
 const LAST_VIEWED_KEY = 'metaforge_notif_last_viewed'
 
-function formatTimeAgo(dateStr?: string): string {
-  if (!dateStr) return 'Just now'
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return dateStr
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
-  if (seconds < 60) return 'Just now'
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
-}
-
-export function useNotificationSystem() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const [unreadCount, setUnreadCount] = useState<number>(0)
-  const [newNotificationCount, setNewNotificationCount] = useState<number>(0)
-  const [loading, setLoading] = useState<boolean>(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [toasts, setToasts] = useState<ToastItem[]>([])
-
-  const seenIdsRef = useRef<Set<string>>(new Set())
-  const isInitialLoadRef = useRef<boolean>(true)
-  const lastViewedTimeRef = useRef<number>(
-    typeof window !== 'undefined'
-      ? parseInt(localStorage.getItem(LAST_VIEWED_KEY) || '0', 10) || 0
-      : 0
+export function useNotificationSystem(excludeNotification?: (n: NotificationItem) => boolean) {
+  const excludeRef = useRef(excludeNotification)
+  excludeRef.current = excludeNotification
+  const queryClient = useQueryClient()
+  const userId = getSessionUser()?.id || ''
+  const queryKey = useMemo(
+    () => queryKeys.notifications(userId || 'signed-out'),
+    [userId],
   )
 
-  const triggerToast = useCallback((item: {
-    id: string
-    title: string
-    message: string
-    type: string
-    entityType?: string
-    entityId?: string
-    createdAt?: string
-  }) => {
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [manualLoading, setManualLoading] = useState(false)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const [fastPollers, setFastPollers] = useState(0)
+  const seenIdsRef = useRef<Set<string>>(new Set())
+  const isInitialLoadRef = useRef(true)
+  const tabReturnRef = useRef(false)
+  const fastPollersRef = useRef(0)
+  const [lastViewedAt, setLastViewedAt] = useState(
+    typeof window !== 'undefined'
+      ? parseInt(localStorage.getItem(LAST_VIEWED_KEY) || '0', 10) || 0
+      : 0,
+  )
+
+  const notificationQuery = useQuery({
+    queryKey,
+    enabled: Boolean(userId),
+    staleTime: fastPollers > 0 ? NOTIFICATION_FAST_MS : NOTIFICATION_IDLE_MS,
+    gcTime: NOTIFICATION_GC_MS,
+    queryFn: ({ signal }) => fetchNotificationList(signal),
+    refetchInterval: () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
+      return fastPollersRef.current > 0 ? NOTIFICATION_FAST_MS : NOTIFICATION_IDLE_MS
+    },
+  })
+
+  const triggerToast = useCallback((item: NotificationItem) => {
     const toastId = item.id
     setToasts(prev => {
       if (prev.some(t => t.id === toastId)) return prev
@@ -68,150 +73,152 @@ export function useNotificationSystem() {
         createdAt: item.createdAt,
       }]
     })
-
-    // Auto-dismiss toast popup after 5 seconds without altering permanent MongoDB storage status
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== toastId))
     }, 5000)
   }, [])
 
+  useEffect(() => {
+    const items = notificationQuery.data?.items
+    if (!items) return
+    const tabReturn = tabReturnRef.current
+    tabReturnRef.current = false
+    const exclude = excludeRef.current
+    items.forEach(item => {
+      if (!item.read) {
+        if (!seenIdsRef.current.has(item.id)) {
+          seenIdsRef.current.add(item.id)
+          const hidden = exclude?.(item)
+          if (!hidden && (!isInitialLoadRef.current || tabReturn)) {
+            triggerToast(item)
+          }
+        }
+      } else {
+        seenIdsRef.current.add(item.id)
+      }
+    })
+    if (isInitialLoadRef.current) isInitialLoadRef.current = false
+  }, [notificationQuery.data, triggerToast])
+
   const dismissToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
-  // Call when user clicks/opens the Notifications feed
   const markFeedAsViewed = useCallback(() => {
     const now = Date.now()
-    lastViewedTimeRef.current = now
+    setLastViewedAt(now)
     if (typeof window !== 'undefined') {
       localStorage.setItem(LAST_VIEWED_KEY, String(now))
     }
-    setNewNotificationCount(0)
   }, [])
 
-  const fetchNotifications = useCallback(async (isTabReturn = false) => {
+  const fetchNotifications = useCallback(async (isTabReturn: boolean | unknown = false, silent = false) => {
+    if (!userId) return
+    if (isTabReturn === true) tabReturnRef.current = true
+    const background = silent === true
+    if (background && queryClient.isFetching({ queryKey }) > 0) return
+    const force = isTabReturn === true || !background
+    if (!background) setManualLoading(true)
     try {
-      setLoading(true)
-      const res = await notificationsService.list()
-      const rawItems = Array.isArray(res) ? res : res?.items || []
-
-      const items: NotificationItem[] = rawItems.map((n: any) => ({
-        id: n._id || n.id || String(Math.random()),
-        title: n.title || 'Notification',
-        message: n.message || n.body || '',
-        time: formatTimeAgo(n.createdAt || n.updatedAt),
-        type: n.type || 'system',
-        entityType: n.entityType ? String(n.entityType) : undefined,
-        entityId: n.entityId ? String(n.entityId) : undefined,
-        read: Boolean(n.read || n.readAt),
-        createdAt: n.createdAt,
-      }))
-
-      setNotifications(items)
-      const totalUnread = typeof res?.unreadCount === 'number'
-        ? res.unreadCount
-        : items.filter(n => !n.read).length
-      setUnreadCount(totalUnread)
-
-      const lastViewed = lastViewedTimeRef.current
-
-      // Calculate count of NEW unread notifications received after last view
-      const newItemsAfterView = items.filter(n => {
-        if (n.read) return false
-        if (!n.createdAt) return lastViewed === 0
-        const createdMs = new Date(n.createdAt).getTime()
-        return isNaN(createdMs) || createdMs > lastViewed
+      await queryClient.fetchQuery({
+        queryKey,
+        staleTime: force ? 0 : NOTIFICATION_IDLE_MS,
+        queryFn: ({ signal }) => fetchNotificationList(signal),
       })
-
-      setNewNotificationCount(newItemsAfterView.length)
-
-      // Identify unread notifications not previously seen
-      items.forEach(item => {
-        if (!item.read) {
-          if (!seenIdsRef.current.has(item.id)) {
-            seenIdsRef.current.add(item.id)
-
-            // Trigger temporary 5-second popup toast for new notifications (not initial boot unless returning to tab)
-            if (!isInitialLoadRef.current || isTabReturn) {
-              triggerToast(item)
-            }
-          }
-        } else {
-          seenIdsRef.current.add(item.id)
-        }
-      })
-
-      if (isInitialLoadRef.current) {
-        isInitialLoadRef.current = false
-      }
+      setErrorMsg(null)
     } catch (err: any) {
+      if (isAbortError(err)) return
       setErrorMsg(err?.message || 'Failed to sync notifications')
     } finally {
-      setLoading(false)
+      if (!background) setManualLoading(false)
     }
-  }, [triggerToast])
+  }, [queryClient, queryKey, userId])
 
-  // Polling & Visibility Listener
-  useEffect(() => {
-    fetchNotifications()
+  const clearError = useCallback(() => setErrorMsg(null), [])
 
-    const interval = setInterval(() => {
-      fetchNotifications()
-    }, 8000)
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // User returned to application tab: sync notifications and show any that arrived while away
-        fetchNotifications(true)
+  const retainFastPoll = useCallback(() => {
+    const wasIdle = fastPollersRef.current === 0
+    fastPollersRef.current += 1
+    setFastPollers(count => count + 1)
+    if (wasIdle && userId && queryClient.isFetching({ queryKey }) === 0) {
+      const updatedAt = queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0
+      if (Date.now() - updatedAt >= NOTIFICATION_FAST_MS) {
+        void queryClient.refetchQueries({ queryKey, type: 'active' })
       }
     }
-
-    const handleNotificationsUpdated = () => {
-      fetchNotifications(true)
+    return () => {
+      fastPollersRef.current = Math.max(0, fastPollersRef.current - 1)
+      setFastPollers(count => Math.max(0, count - 1))
     }
+  }, [queryClient, queryKey, userId])
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible' || !userId) return
+      tabReturnRef.current = true
+      void fetchNotifications(true, true)
+    }
+    const handleNotificationsUpdated = () => {
+      tabReturnRef.current = true
+      void fetchNotifications(true, false)
+    }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('notifications_updated', handleNotificationsUpdated)
-
     return () => {
-      clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('notifications_updated', handleNotificationsUpdated)
     }
-  }, [fetchNotifications])
+  }, [fetchNotifications, userId])
+
+  const allItems = notificationQuery.data?.items ?? []
+  const notifications = excludeNotification ? allItems.filter(item => !excludeNotification(item)) : allItems
+  const unreadCount = excludeNotification
+    ? notifications.filter(item => !item.read).length
+    : notificationQuery.data?.unreadCount ?? notifications.filter(item => !item.read).length
+  const newNotificationCount = notifications.filter(item => {
+    if (item.read) return false
+    if (!item.createdAt) return lastViewedAt === 0
+    const createdMs = new Date(item.createdAt).getTime()
+    return isNaN(createdMs) || createdMs > lastViewedAt
+  }).length
+
+  const rollback = (previous: NotificationList | undefined) => {
+    queryClient.setQueryData(queryKey, previous)
+  }
 
   const markAllAsRead = async () => {
+    const previous = queryClient.getQueryData<NotificationList>(queryKey)
+    queryClient.setQueryData(queryKey, markAllReadInList(previous))
     try {
       await notificationsService.markAllAsRead()
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-      setUnreadCount(0)
-      setNewNotificationCount(0)
+      await queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
     } catch (err: any) {
+      rollback(previous)
       setErrorMsg(err?.message || 'Failed to mark notifications read')
     }
   }
 
   const markRead = async (id: string, currentlyRead: boolean) => {
     if (currentlyRead) return
+    const previous = queryClient.getQueryData<NotificationList>(queryKey)
+    queryClient.setQueryData(queryKey, markReadInList(previous, id))
     try {
       await notificationsService.markRead(id)
-      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)))
-      setUnreadCount(prev => Math.max(0, prev - 1))
-      setNewNotificationCount(prev => Math.max(0, prev - 1))
+      await queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
     } catch (err: any) {
+      rollback(previous)
       setErrorMsg(err?.message || 'Failed to mark notification read')
     }
   }
 
   const removeNotification = async (id: string, wasUnread: boolean) => {
+    const previous = queryClient.getQueryData<NotificationList>(queryKey)
+    queryClient.setQueryData(queryKey, removeFromList(previous, id, wasUnread))
     try {
       await notificationsService.remove(id)
-      setNotifications(prev => prev.filter(n => n.id !== id))
-      if (wasUnread) {
-        setUnreadCount(prev => Math.max(0, prev - 1))
-        setNewNotificationCount(prev => Math.max(0, prev - 1))
-      }
+      await queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
     } catch (err: any) {
+      rollback(previous)
       setErrorMsg(err?.message || 'Failed to delete notification')
     }
   }
@@ -220,11 +227,13 @@ export function useNotificationSystem() {
     notifications,
     unreadCount,
     newNotificationCount,
-    loading,
+    loading: notificationQuery.isPending || manualLoading,
     errorMsg,
     toasts,
     dismissToast,
     fetchNotifications,
+    clearError,
+    retainFastPoll,
     markFeedAsViewed,
     markAllAsRead,
     markRead,

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Users, Check, X, AlertTriangle } from 'lucide-react'
 import { RequirementDetailVm } from './useRequirementDetailOverview'
 import { PipelineCandidateItem } from './useRequirementDetailOverviewState'
+import { PaginationFooter } from '../../ui/PaginationFooter'
 
 export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
   const {
@@ -10,15 +11,27 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
     setIsScheduleModalOpen,
     setSchedulingCandidateRow,
     pipelineCandidates,
+    paginatedPipelineCandidates,
+    pipelinePage,
+    setPipelinePage,
+    pipelinePageSize,
+    setPipelinePageSize,
     rejectionModalData,
     setRejectionModalData,
     handleUpdatePipelineStage,
     handleConfirmRejection,
     handleUpdateOfferLetterStatus,
   } = vm
+  const pipelineRows = paginatedPipelineCandidates || pipelineCandidates
+
+  const canMutateRow = (row: PipelineCandidateItem) =>
+    row.action !== 'View only' && row.isOwnedByMe !== false
 
   const renderL1Cell = (row: PipelineCandidateItem) => {
     if (row.l1Status === 'active') {
+      if (!canMutateRow(row)) {
+        return <span className="text-[10px] text-gray-400 font-medium">View only</span>
+      }
       return (
         <select
           defaultValue=""
@@ -62,6 +75,9 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
 
   const renderL2Cell = (row: PipelineCandidateItem) => {
     if (row.l2Status === 'active') {
+      if (!canMutateRow(row)) {
+        return <span className="text-[10px] text-gray-400 font-medium">View only</span>
+      }
       return (
         <select
           defaultValue=""
@@ -114,6 +130,9 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
 
   const renderFinalCell = (row: PipelineCandidateItem) => {
     if (row.finalStatus === 'active') {
+      if (!canMutateRow(row)) {
+        return <span className="text-[10px] text-gray-400 font-medium">View only</span>
+      }
       return (
         <select
           defaultValue=""
@@ -157,6 +176,13 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
   const renderOfferLetterCell = (row: PipelineCandidateItem) => {
     if (row.offerLetterStatus || row.finalStatus === 'completed') {
       const currentVal = row.offerLetterStatus || 'ready_to_release'
+      if (!canMutateRow(row)) {
+        return (
+          <span className="text-[10px] text-gray-500 font-medium">
+            {currentVal === 'released' ? 'Released' : 'Ready to release'}
+          </span>
+        )
+      }
       return (
         <select
           value={currentVal}
@@ -249,7 +275,13 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {pipelineCandidates.map((row) => (
+                {pipelineRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-10 text-center text-slate-400 font-medium">
+                      No candidates in the pipeline yet.
+                    </td>
+                  </tr>
+                ) : pipelineRows.map((row) => (
                   <tr key={row.id} className="hover:bg-blue-50/20 transition-colors">
                     <td className="py-2.5 px-2 font-bold text-gray-900">
                       <div className="truncate max-w-[130px]" title={row.name}>{row.name}</div>
@@ -305,6 +337,18 @@ export function ReqDetailPipeline({ vm }: { vm: RequirementDetailVm }) {
               </tbody>
             </table>
           </div>
+          <PaginationFooter
+            currentPage={pipelinePage || 1}
+            totalPages={Math.max(1, Math.ceil(pipelineCandidates.length / (pipelinePageSize || 5)))}
+            totalItems={pipelineCandidates.length}
+            pageSize={pipelinePageSize || 5}
+            onPageChange={setPipelinePage}
+            onPageSizeChange={size => {
+              setPipelinePageSize(size)
+              setPipelinePage(1)
+            }}
+            itemLabel="candidates"
+          />
         </div>
       )}
 

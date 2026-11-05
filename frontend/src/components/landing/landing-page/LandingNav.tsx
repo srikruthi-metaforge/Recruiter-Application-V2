@@ -18,7 +18,7 @@ export function LandingNav({ vm }: { vm: LandingVm }) {
       {/* ---------------------------------------------------------------- */}
       {/* Navigation Bar                                                    */}
       {/* ---------------------------------------------------------------- */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-xl border-b border-slate-200/90 shadow-2xs">
+      <header className="sticky top-0 z-50 bg-white/75 backdrop-blur-2xl border-b border-slate-200/80 shadow-sm">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 h-14 sm:h-15 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <MetaforgeLogo variant="dark" size="md" />
@@ -46,7 +46,7 @@ export function LandingNav({ vm }: { vm: LandingVm }) {
             <button
               type="button"
               onClick={onRequestAccess}
-              className="hidden sm:inline-flex h-10 items-center px-4 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 hover:border-slate-400 transition-all cursor-pointer shadow-2xs"
+              className="hidden sm:inline-flex h-10 items-center px-4 rounded-xl border border-slate-300 bg-white/70 backdrop-blur-md text-slate-700 text-xs font-bold hover:bg-slate-50 hover:border-slate-400 transition-all cursor-pointer shadow-sm"
             >
               Request Workspace Access
             </button>
@@ -61,7 +61,7 @@ export function LandingNav({ vm }: { vm: LandingVm }) {
               type="button"
               aria-label={menuOpen ? 'Close menu' : 'Open menu'}
               onClick={() => setMenuOpen(o => !o)}
-              className="lg:hidden w-10 h-10 rounded-xl border border-slate-300 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors cursor-pointer"
+              className="lg:hidden w-10 h-10 rounded-xl border border-slate-300 bg-white/70 backdrop-blur-md text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors cursor-pointer"
             >
               {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -69,7 +69,7 @@ export function LandingNav({ vm }: { vm: LandingVm }) {
         </div>
 
         {menuOpen && (
-          <div className="lg:hidden border-t border-slate-200/80 bg-white px-5 sm:px-8 py-4 space-y-1">
+          <div className="lg:hidden border-t border-slate-200/80 bg-white/70 backdrop-blur-2xl px-5 sm:px-8 py-4 space-y-1">
             {NAV_LINKS.map(link => (
               <a
                 key={link.href}
@@ -86,7 +86,7 @@ export function LandingNav({ vm }: { vm: LandingVm }) {
                 setMenuOpen(false)
                 onRequestAccess()
               }}
-              className="w-full mt-2 h-11 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer"
+              className="w-full mt-2 h-11 rounded-xl border border-slate-300 bg-white/70 backdrop-blur-md text-slate-700 text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
             >
               Request Workspace Access
             </button>

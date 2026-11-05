@@ -1,7 +1,46 @@
 import type { CreateJobDemandFormProps } from './preamble'
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import React from 'react'
 import { getClientEmailDefaults, isAccentureClient, sanitizeEmailList } from '../../../config/clientEmailDefaults'
+import {
+  JD_CREATE_FORM_SESSION_KEY,
+  clearSessionDraft,
+  jdEditFormSessionKey,
+  readSessionDraft,
+  writeSessionDraft,
+} from '../../../lib/formSessionDraft'
+
+type JdFormSessionDraft = {
+  reqId?: string
+  demandDate?: string
+  internalPoc?: string
+  requirementFrom?: string
+  customCompany?: string
+  toEmails?: string[]
+  ccEmails?: string[]
+  clientLeadPoc?: string
+  clientPoc?: string
+  jobTitle?: string
+  jobStatus?: string
+  closedDate?: string
+  typeOfDemand?: string
+  priority?: 'High' | 'Medium' | 'Low'
+  openings?: number
+  relevantExp?: string
+  employmentType?: string
+  workMode?: string
+  budgetCurrency?: string
+  yearlyBudget?: string
+  locationInput?: string
+  locations?: string[]
+  overallExp?: string
+  noticePeriod?: string
+  mandatorySkills?: string[]
+  skills?: string[]
+  rolesAndResponsibilities?: string
+  jdDescription?: string
+  jdText?: string
+}
 
 export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
   const {
@@ -12,33 +51,50 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
   initialData = null,
 }: CreateJobDemandFormProps = props as CreateJobDemandFormProps & Record<string, never>
   const isEdit = mode === 'edit' || !!initialData
+  const draftKey = isEdit && initialData?.id
+    ? jdEditFormSessionKey(String(initialData.id))
+    : JD_CREATE_FORM_SESSION_KEY
+  const sessionDraft = useRef(
+    typeof window !== 'undefined' ? readSessionDraft<JdFormSessionDraft>(draftKey) : null,
+  ).current
+  const skipClientEmailDefaultsRef = useRef(Boolean(sessionDraft))
 
-  // Form State
+  // Form State — prefer session draft (user corrections) over parse/initial defaults
   const [reqId, setReqId] = useState(
-    initialData?.id || `REQ-${new Date().toISOString().split('T')[0]}-001`
+    () => sessionDraft?.reqId || initialData?.id || `REQ-${new Date().toISOString().split('T')[0]}-001`,
   )
   const [demandDate, setDemandDate] = useState(
-    initialData?.dueDate || new Date().toISOString().split('T')[0]
+    () => sessionDraft?.demandDate || initialData?.dueDate || new Date().toISOString().split('T')[0],
   )
   const [internalPoc, setInternalPoc] = useState(
-    initialData?.assignedLead || 'offshore demands'
+    () => sessionDraft?.internalPoc || initialData?.assignedLead || 'offshore demands',
   )
   const [requirementFrom, setRequirementFrom] = useState(
-    initialData?.client || 'Other'
+    () => sessionDraft?.requirementFrom || initialData?.client || 'Other',
   )
   const [customCompany, setCustomCompany] = useState(
-    initialData?.client || ''
+    () => sessionDraft?.customCompany || initialData?.client || '',
   )
   
-  const [toEmails, setToEmails] = useState<string[]>(initialData?.toEmails || [])
-  const [ccEmails, setCcEmails] = useState<string[]>(initialData?.ccEmails || [])
+  const [toEmails, setToEmails] = useState<string[]>(
+    () => sessionDraft?.toEmails || initialData?.toEmails || [],
+  )
+  const [ccEmails, setCcEmails] = useState<string[]>(
+    () => sessionDraft?.ccEmails || initialData?.ccEmails || [],
+  )
   const [toEmailInput, setToEmailInput] = useState('')
   const [ccEmailInput, setCcEmailInput] = useState('')
   const [clientLeadPoc, setClientLeadPoc] = useState(
-    initialData?.clientEmail || ''
+    () => sessionDraft?.clientLeadPoc || initialData?.clientEmail || '',
   )
-  const [clientPoc, setClientPoc] = useState(initialData?.clientEmail || '')
+  const [clientPoc, setClientPoc] = useState(
+    () => sessionDraft?.clientPoc || initialData?.clientEmail || '',
+  )
   useEffect(() => {
+    if (skipClientEmailDefaultsRef.current) {
+      skipClientEmailDefaultsRef.current = false
+      return
+    }
     const finalClient = requirementFrom === 'Other' ? customCompany : requirementFrom
     const defaults = getClientEmailDefaults(finalClient)
     if (defaults) {
@@ -77,67 +133,165 @@ export function useCreateJobDemandFormState(props: CreateJobDemandFormProps) {
 
 
   const [jobTitle, setJobTitle] = useState(
-    initialData?.title || ''
+    () => sessionDraft?.jobTitle || initialData?.title || '',
   )
   const [jobStatus, setJobStatus] = useState(
-    initialData?.status === 'Closed' ? 'Closed' : 'Open'
+    () => sessionDraft?.jobStatus || (initialData?.status === 'Closed' ? 'Closed' : 'Open'),
   )
-  const [closedDate, setClosedDate] = useState('')
+  const [closedDate, setClosedDate] = useState(() => sessionDraft?.closedDate || '')
   const [typeOfDemand, setTypeOfDemand] = useState(
-    initialData?.openings && initialData.openings > 1 ? 'Multiple' : 'Single'
+    () =>
+      sessionDraft?.typeOfDemand ||
+      (initialData?.openings && initialData.openings > 1 ? 'Multiple' : 'Single'),
   )
   const [priority, setPriority] = useState<'High' | 'Medium' | 'Low'>(
-    initialData?.priority || 'Low'
+    () => sessionDraft?.priority || initialData?.priority || 'Low',
   )
 
-  const [openings, setOpenings] = useState<number>(initialData?.openings || 1)
-  const [relevantExp, setRelevantExp] = useState('Select relevant experience')
-  const [employmentType, setEmploymentType] = useState('Full-time')
-  const [workMode, setWorkMode] = useState('On-site')
-  const [budgetCurrency, setBudgetCurrency] = useState('INR (₹)')
-  const [yearlyBudget, setYearlyBudget] = useState(
-    initialData?.budget ? initialData.budget.replace(/[^0-9]/g, '') : ''
+  const [openings, setOpenings] = useState<number>(
+    () => sessionDraft?.openings ?? initialData?.openings ?? 1,
   )
-  const [locationInput, setLocationInput] = useState('')
+  const [relevantExp, setRelevantExp] = useState(
+    () => sessionDraft?.relevantExp || 'Select relevant experience',
+  )
+  const [employmentType, setEmploymentType] = useState(
+    () => sessionDraft?.employmentType || 'Full-time',
+  )
+  const [workMode, setWorkMode] = useState(() => sessionDraft?.workMode || 'On-site')
+  const [budgetCurrency, setBudgetCurrency] = useState(
+    () => sessionDraft?.budgetCurrency || 'INR (₹)',
+  )
+  const [yearlyBudget, setYearlyBudget] = useState(
+    () =>
+      sessionDraft?.yearlyBudget ||
+      (initialData?.budget ? initialData.budget.replace(/[^0-9]/g, '') : ''),
+  )
+  const [locationInput, setLocationInput] = useState(() => sessionDraft?.locationInput || '')
   const [locations, setLocations] = useState<string[]>(
-    initialData?.location
-      ? initialData.location.split(/[,;/|]/).map(s => s.trim()).filter(Boolean)
-      : []
+    () =>
+      sessionDraft?.locations ||
+      (initialData?.location
+        ? initialData.location.split(/[,;/|]/).map(s => s.trim()).filter(Boolean)
+        : []),
   )
   const [overallExp, setOverallExp] = useState(
-    initialData?.experience || ''
+    () => sessionDraft?.overallExp || initialData?.experience || '',
   )
   const [noticePeriod, setNoticePeriod] = useState(
-    initialData?.noticePeriod || ''
+    () => sessionDraft?.noticePeriod || initialData?.noticePeriod || '',
   )
 
   const [mandatorySkillInput, setMandatorySkillInput] = useState('')
   // Do not pre-fill sample skills — only populate after JD parse (or from edit initialData).
   const [mandatorySkills, setMandatorySkills] = useState<string[]>(
-    initialData?.mandatorySkills || initialData?.skills || []
+    () => sessionDraft?.mandatorySkills || initialData?.mandatorySkills || initialData?.skills || [],
   )
 
   const [skillInput, setSkillInput] = useState('')
-  const [skills, setSkills] = useState<string[]>(
-    initialData?.skills && initialData?.mandatorySkills
+  const [skills, setSkills] = useState<string[]>(() => {
+    if (sessionDraft?.skills) return sessionDraft.skills
+    return initialData?.skills && initialData?.mandatorySkills
       ? initialData.skills.filter(
           s => !(initialData.mandatorySkills || []).some(m => m.toLowerCase() === s.toLowerCase()),
         )
       : []
-  )
+  })
 
   /** Filled only after JD Extract & Auto-fill — persisted on create, no UI field yet. */
   const [rolesAndResponsibilities, setRolesAndResponsibilities] = useState(
-    initialData?.rolesAndResponsibilities || ''
+    () => sessionDraft?.rolesAndResponsibilities || initialData?.rolesAndResponsibilities || '',
   )
   const [jdDescription, setJdDescription] = useState(
-    initialData?.description || ''
+    () => sessionDraft?.jdDescription || initialData?.description || '',
   )
 
-  const [jdText, setJdText] = useState('')
+  const [jdText, setJdText] = useState(() => sessionDraft?.jdText || '')
   const [jdFile, setJdFile] = useState<File | null>(null)
   const [isExtracting, setIsExtracting] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+
+  // Autosave so refresh keeps corrected JD fields and stays usable on create/edit
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const hasContent = Boolean(
+        jobTitle.trim() ||
+          jdText.trim() ||
+          jdDescription.trim() ||
+          mandatorySkills.length ||
+          skills.length ||
+          locations.length ||
+          rolesAndResponsibilities.trim(),
+      )
+      if (!hasContent && !isEdit) {
+        clearSessionDraft(draftKey)
+        return
+      }
+      writeSessionDraft(draftKey, {
+        reqId,
+        demandDate,
+        internalPoc,
+        requirementFrom,
+        customCompany,
+        toEmails,
+        ccEmails,
+        clientLeadPoc,
+        clientPoc,
+        jobTitle,
+        jobStatus,
+        closedDate,
+        typeOfDemand,
+        priority,
+        openings,
+        relevantExp,
+        employmentType,
+        workMode,
+        budgetCurrency,
+        yearlyBudget,
+        locationInput,
+        locations,
+        overallExp,
+        noticePeriod,
+        mandatorySkills,
+        skills,
+        rolesAndResponsibilities,
+        jdDescription,
+        jdText,
+      } satisfies JdFormSessionDraft)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [
+    draftKey,
+    isEdit,
+    reqId,
+    demandDate,
+    internalPoc,
+    requirementFrom,
+    customCompany,
+    toEmails,
+    ccEmails,
+    clientLeadPoc,
+    clientPoc,
+    jobTitle,
+    jobStatus,
+    closedDate,
+    typeOfDemand,
+    priority,
+    openings,
+    relevantExp,
+    employmentType,
+    workMode,
+    budgetCurrency,
+    yearlyBudget,
+    locationInput,
+    locations,
+    overallExp,
+    noticePeriod,
+    mandatorySkills,
+    skills,
+    rolesAndResponsibilities,
+    jdDescription,
+    jdText,
+  ])
 
   const showToast = (msg: string) => {
     setToastMsg(msg)

@@ -13,7 +13,7 @@ import { AddCandidateDrafts } from './AddCandidateDrafts'
 export function AddCandidatePage(props: AddCandidatePageProps) {
   const vm = useAddCandidatePage(props)
   return (
-    <div className="space-y-6 w-full pb-16 font-sans">
+    <div className="space-y-6 w-full pb-32 font-sans">
       <AddCandidateChrome vm={vm} />
       <AddCandidateParser vm={vm} />
       {vm.importMode !== 'drafts' && (

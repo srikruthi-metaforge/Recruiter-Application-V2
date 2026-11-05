@@ -191,9 +191,19 @@ export function apiCandidateToUi(doc: ApiCandidate): UiCandidate {
 }
 
 export function uiCandidateToRepo(candidate: UiCandidate): CandidateRepoItem {
+  const mongoId = candidate._id || (typeof candidate.id === 'string' && /^[a-f\d]{24}$/i.test(candidate.id) ? candidate.id : undefined)
+  const businessId =
+    String(candidate.candidateId || '').trim() ||
+    (!mongoId && candidate.id ? String(candidate.id) : '') ||
+    String(candidate.id || '')
+  const resumeReference =
+    candidate.resumeName ||
+    (candidate as any).resumeFileName ||
+    (candidate as any).resumeReference ||
+    undefined
   return {
-    id: candidate._id || candidate.id,
-    candidateId: candidate.id,
+    id: mongoId || businessId,
+    candidateId: businessId,
     name: candidate.name,
     email: candidate.email || '',
     phone: candidate.phone || '',
@@ -215,8 +225,8 @@ export function uiCandidateToRepo(candidate: UiCandidate): CandidateRepoItem {
     interviewAvailability: candidate.interviewAvailability,
     reasonForChange: candidate.reasonForChange,
     offerInHand: candidate.offerInHand,
-    resumeReference: candidate.resumeName,
-    resumeFileId: candidate.resumeFileId,
+    resumeReference,
+    resumeFileId: candidate.resumeFileId || (candidate as any).resumeFileId || undefined,
     notes: candidate.notes,
   }
 }

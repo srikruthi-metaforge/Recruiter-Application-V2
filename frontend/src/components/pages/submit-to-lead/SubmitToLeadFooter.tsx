@@ -2,6 +2,7 @@ import React from 'react'
 import { Send, UserCheck, ShieldAlert } from 'lucide-react'
 import { SubmitToLeadVm } from './useSubmitToLeadPage'
 import { hasCapability } from '../../../store/session'
+import { FixedPageActionBar } from '../../layout/FixedPageActionBar'
 
 export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
   const {
@@ -22,6 +23,8 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
     availableLeads,
     setSubmitToLeadChecked,
     setForwardLoopChecked,
+    canSubmitToClient,
+    isApprovalRequested,
   } = vm
 
   const canSubmit = hasCapability('submitToClients')
@@ -36,23 +39,22 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
     : 0
   const selectedLead = (availableLeads || []).find((l: { id: string }) => l.id === selectedLeadId)
 
-  // Destination cards drive the mode; one primary CTA matches the selection.
   const leadMode = Boolean(submitToLeadChecked && !forwardLoopChecked)
-  const clientMode = Boolean(forwardLoopChecked) || !leadMode
+  const clientMode = Boolean(forwardLoopChecked && canSubmitToClient)
 
   const baseDisabled =
     !confirmForwardChecked || allCandidatesAreDuplicates || validCount === 0 || !canSubmit
   const leadDisabled = baseDisabled || !selectedLeadId
-  const clientDisabled = baseDisabled
+  const clientDisabled = baseDisabled || !canSubmitToClient
 
   const submitLead = () => {
     setSubmitToLeadChecked?.(true)
-    setForwardLoopChecked?.(false)
+    if (!canSubmitToClient) setForwardLoopChecked?.(false)
     handleSubmitFinal('lead')
   }
 
   const submitClient = () => {
-    setSubmitToLeadChecked?.(false)
+    if (!canSubmitToClient) return
     setForwardLoopChecked?.(true)
     handleSubmitFinal('client')
   }
@@ -78,8 +80,9 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
         </div>
       )}
 
+      <FixedPageActionBar>
       <div
-        className={`sticky bottom-4 z-30 border backdrop-blur-md py-3.5 px-6 rounded-2xl shadow-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 ${
+        className={`border backdrop-blur-md py-3.5 px-6 rounded-2xl shadow-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 ${
           hasDuplicateSubmission
             ? 'bg-rose-50/95 border-rose-300'
             : 'bg-white/95 border-slate-200/90'
@@ -90,7 +93,12 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
             <span className="text-rose-700 font-extrabold">
               All selected candidate(s) are already submitted. Submission is blocked.
             </span>
-          ) : leadMode ? (
+          ) : clientMode ? (
+            <span>
+              Ready to submit {validCount} candidate(s) to the client
+              {blockedCount > 0 ? ` (${blockedCount} duplicate blocked)` : ''}.
+            </span>
+          ) : (
             <span>
               Ready to send {validCount} candidate(s) to lead
               {selectedLead ? (
@@ -103,15 +111,16 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
               )}
               {blockedCount > 0 ? ` (${blockedCount} duplicate blocked)` : ''}.
             </span>
-          ) : (
-            <span>
-              Ready to submit {validCount} candidate(s) to the client
-              {blockedCount > 0 ? ` (${blockedCount} duplicate blocked)` : ''}.
-            </span>
           )}
           {!canSubmit ? (
             <span className="block text-[11px] text-rose-700 font-bold mt-0.5">
               Access Restricted: Super Admin has disabled submissions for your account.
+            </span>
+          ) : !canSubmitToClient ? (
+            <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
+              {isApprovalRequested
+                ? 'Client submit pending approval. You can still Submit to Lead.'
+                : 'Client submit is disabled by default. Request approval to unlock it.'}
             </span>
           ) : !confirmForwardChecked && !allCandidatesAreDuplicates ? (
             <span className="block text-[11px] text-amber-700 font-normal mt-0.5">
@@ -133,7 +142,7 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
             className={`px-5 py-2.5 font-extrabold text-xs rounded-xl transition-all flex items-center gap-2 ${
               leadDisabled
                 ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
-                : leadMode
+                : leadMode || !clientMode
                   ? 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-lg cursor-pointer active:scale-98'
                   : 'bg-white text-blue-700 border border-blue-300 hover:bg-blue-50 cursor-pointer'
             }`}
@@ -145,11 +154,15 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
             type="button"
             onClick={submitClient}
             disabled={clientDisabled}
-            title="Submit directly to client"
+            title={
+              canSubmitToClient
+                ? 'Submit directly to client'
+                : 'Request approval from Lead / Admin / Super Admin first'
+            }
             className={`px-5 py-2.5 font-extrabold text-xs rounded-xl transition-all flex items-center gap-2 ${
               clientDisabled
                 ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed opacity-60'
-                : clientMode && !leadMode
+                : clientMode
                   ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-lg cursor-pointer active:scale-98'
                   : 'bg-white text-amber-800 border border-amber-300 hover:bg-amber-50 cursor-pointer'
             }`}
@@ -159,9 +172,10 @@ export function SubmitToLeadFooter({ vm }: { vm: SubmitToLeadVm }) {
           </button>
         </div>
       </div>
+      </FixedPageActionBar>
 
       {toastMsg && (
-        <div className="fixed bottom-20 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs font-medium animate-in fade-in duration-200">
+        <div className="fixed bottom-28 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs font-medium animate-in fade-in duration-200">
           {toastMsg}
         </div>
       )}

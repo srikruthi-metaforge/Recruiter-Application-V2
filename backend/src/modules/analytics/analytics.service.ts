@@ -10,6 +10,7 @@ import { Client, ClientDocument } from '../clients/schemas/client.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { RecruiterAnalytics, RecruiterAnalyticsDocument } from './schemas/recruiter-analytics.schema';
 import { assertAnalyticsAccess } from './analytics.access';
+import { TenantCacheService } from '../redis/tenant-cache.service';
 
 @Injectable()
 export class AnalyticsService {
@@ -30,7 +31,15 @@ export class AnalyticsService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(RecruiterAnalytics.name)
     private readonly recruiterAnalyticsModel: Model<RecruiterAnalyticsDocument>,
+    private readonly tenantCache: TenantCacheService,
   ) {}
+
+  private useAnalyticsCache<T>(currentUser: any, method: string, query: unknown, loader: () => Promise<T>): Promise<T> {
+    assertAnalyticsAccess(currentUser);
+    const orgId = String(this.resolveOrgId(currentUser));
+    const variant = JSON.stringify({ method, query: query || {} });
+    return this.tenantCache.remember(orgId, 'analytics', variant, 30, loader);
+  }
 
   private parseDateFilter(startDate?: string, endDate?: string) {
     const filter: Record<string, any> = {};
@@ -53,6 +62,13 @@ export class AnalyticsService {
 
   /** GET /api/v1/analytics/dashboard */
   async getDashboardSummary(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; recruiterId?: string; clientId?: string },
+  ) {
+    return this.useAnalyticsCache(currentUser, 'dashboard', query, () => this.loadDashboardSummary(currentUser, query));
+  }
+
+  private async loadDashboardSummary(
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string; clientId?: string },
   ) {
@@ -87,21 +103,39 @@ export class AnalyticsService {
     }
 
     // Counts
-    const totalRequirements = await this.requirementModel.countDocuments(reqFilter).exec();
-    const activeRequirements = await this.requirementModel.countDocuments({
-      ...reqFilter,
-      status: { $in: ['Open', 'In Progress', 'Assigned', 'Active'] },
-    }).exec();
-
-    const requirements = await this.requirementModel.find(reqFilter, 'openings placedCount').exec();
-    const totalOpenings = requirements.reduce((acc, r) => acc + (r.openings || 1), 0);
-    const totalPlaced = requirements.reduce((acc, r) => acc + (r.placedCount || 0), 0);
-
-    const totalCandidates = await this.candidateModel.countDocuments(candFilter).exec();
-    const totalSubmissions = await this.submissionModel.countDocuments(subFilter).exec();
-    const totalInterviews = await this.interviewModel.countDocuments(intFilter).exec();
-    const totalOffers = await this.offerModel.countDocuments(offerFilter).exec();
-    const totalClients = await this.clientModel.countDocuments(clientFilter).exec();
+    const [
+      totalRequirements,
+      activeRequirements,
+      openingAgg,
+      totalCandidates,
+      totalSubmissions,
+      totalInterviews,
+      totalOffers,
+      totalClients,
+    ] = await Promise.all([
+      this.requirementModel.countDocuments(reqFilter).exec(),
+      this.requirementModel.countDocuments({
+        ...reqFilter,
+        status: { $in: ['Open', 'In Progress', 'Assigned', 'Active'] },
+      }).exec(),
+      this.requirementModel.aggregate([
+        { $match: reqFilter },
+        {
+          $group: {
+            _id: null,
+            totalOpenings: { $sum: { $ifNull: ['$openings', 1] } },
+            totalPlaced: { $sum: { $ifNull: ['$placedCount', 0] } },
+          },
+        },
+      ]).exec(),
+      this.candidateModel.countDocuments(candFilter).exec(),
+      this.submissionModel.countDocuments(subFilter).exec(),
+      this.interviewModel.countDocuments(intFilter).exec(),
+      this.offerModel.countDocuments(offerFilter).exec(),
+      this.clientModel.countDocuments(clientFilter).exec(),
+    ]);
+    const totalOpenings = Number(openingAgg[0]?.totalOpenings) || 0;
+    const totalPlaced = Number(openingAgg[0]?.totalPlaced) || 0;
 
     // Submission stage breakdown
     const submissionStages = await this.submissionModel.aggregate([
@@ -192,6 +226,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'trends', query, () => this.loadTrends(currentUser, query));
+  }
+
+  private async loadTrends(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -254,6 +295,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; clientId?: string; status?: string; priority?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'requirements', query, () => this.loadRequirementStats(currentUser, query));
+  }
+
+  private async loadRequirementStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; clientId?: string; status?: string; priority?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -309,6 +357,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'candidates', query, () => this.loadCandidateStats(currentUser, query));
+  }
+
+  private async loadCandidateStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; status?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -353,6 +408,13 @@ export class AnalyticsService {
 
   /** GET /api/v1/analytics/submissions */
   async getSubmissionStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; recruiterId?: string; leadId?: string; clientId?: string; stage?: string },
+  ) {
+    return this.useAnalyticsCache(currentUser, 'submissions', query, () => this.loadSubmissionStats(currentUser, query));
+  }
+
+  private async loadSubmissionStats(
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string; leadId?: string; clientId?: string; stage?: string },
   ) {
@@ -408,6 +470,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string; round?: string; interviewerEmail?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'interviews', query, () => this.loadInterviewStats(currentUser, query));
+  }
+
+  private async loadInterviewStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; status?: string; round?: string; interviewerEmail?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -453,6 +522,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; status?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'offers', query, () => this.loadOfferStats(currentUser, query));
+  }
+
+  private async loadOfferStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; status?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -494,6 +570,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; tier?: string; status?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'clients', query, () => this.loadClientStats(currentUser, query));
+  }
+
+  private async loadClientStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; tier?: string; status?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -524,6 +607,13 @@ export class AnalyticsService {
     currentUser: any,
     query?: { startDate?: string; endDate?: string; recruiterId?: string },
   ) {
+    return this.useAnalyticsCache(currentUser, 'recruiters', query, () => this.loadRecruiterStats(currentUser, query));
+  }
+
+  private async loadRecruiterStats(
+    currentUser: any,
+    query?: { startDate?: string; endDate?: string; recruiterId?: string },
+  ) {
     assertAnalyticsAccess(currentUser);
     const orgId = this.resolveOrgId(currentUser);
 
@@ -537,33 +627,45 @@ export class AnalyticsService {
     }
 
     const dateFilter = this.parseDateFilter(query?.startDate, query?.endDate);
-    const recruiters = await this.userModel.find(userFilter, 'name email role').exec();
+    const recruiters = await this.userModel.find(userFilter, 'name email role').lean().exec();
+    const recruiterIds = recruiters.map((r) => r._id as Types.ObjectId);
+    const subMatch: Record<string, any> = {
+      orgId,
+      deletedAt: null,
+      recruiterId: { $in: recruiterIds },
+    };
+    if (dateFilter) subMatch.createdAt = dateFilter;
+    const grouped = recruiterIds.length
+      ? await this.submissionModel.aggregate([
+          { $match: subMatch },
+          {
+            $group: {
+              _id: '$recruiterId',
+              submissionsCount: { $sum: 1 },
+              placementsCount: { $sum: { $cond: [{ $eq: ['$stage', 'Placed'] }, 1, 0] } },
+            },
+          },
+        ]).exec()
+      : [];
+    const byRecruiter = new Map<string, { submissionsCount: number; placementsCount: number }>();
+    for (const row of grouped) {
+      byRecruiter.set(String(row._id), {
+        submissionsCount: Number(row.submissionsCount) || 0,
+        placementsCount: Number(row.placementsCount) || 0,
+      });
+    }
 
-    const performanceList = [];
-    for (const r of recruiters) {
-      const rId = r._id as Types.ObjectId;
-      const subFilter: Record<string, any> = {
-        orgId,
-        recruiterId: rId,
-        deletedAt: null,
-      };
-      if (dateFilter) subFilter.createdAt = dateFilter;
-
-      const subCount = await this.submissionModel.countDocuments(subFilter).exec();
-      const placedCount = await this.submissionModel.countDocuments({
-        ...subFilter,
-        stage: 'Placed',
-      }).exec();
-
-      performanceList.push({
-        recruiterId: rId.toString(),
+    const performanceList = recruiters.map((r) => {
+      const stats = byRecruiter.get(String(r._id)) || { submissionsCount: 0, placementsCount: 0 };
+      return {
+        recruiterId: String(r._id),
         name: r.name,
         email: r.email,
         role: r.role,
-        submissionsCount: subCount,
-        placementsCount: placedCount,
-      });
-    }
+        submissionsCount: stats.submissionsCount,
+        placementsCount: stats.placementsCount,
+      };
+    });
 
     return performanceList.sort((a, b) => b.submissionsCount - a.submissionsCount);
   }

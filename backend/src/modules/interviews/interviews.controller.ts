@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { InterviewsService } from './interviews.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -26,8 +27,9 @@ import { CancelInterviewDto } from './dto/cancel-interview.dto';
 export class InterviewsController {
   constructor(private readonly interviewsService: InterviewsService) {}
 
-  /** GET /api/v1/interviews */
+  /** GET /api/v1/interviews — Reports / Interview Schedule list; skip global throttle. */
   @Get()
+  @SkipThrottle()
   async findAll(
     @Req() req: any,
     @Query('candidateId') candidateId?: string,
@@ -36,6 +38,8 @@ export class InterviewsController {
     @Query('status') status?: string,
     @Query('round') round?: string,
     @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.interviewsService.findAll(req.user, {
       candidateId,
@@ -44,6 +48,8 @@ export class InterviewsController {
       status,
       round,
       search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

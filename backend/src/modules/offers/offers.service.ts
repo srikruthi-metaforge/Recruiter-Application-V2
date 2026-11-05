@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 import { Offer, OfferDocument } from './schemas/offer.schema';
 import { OfferRepository } from './repositories/offer.repository';
 import { Submission, SubmissionDocument } from '../submissions/schemas/submission.schema';
@@ -106,6 +107,8 @@ export class OffersService {
       requirementId?: string;
       status?: string;
       search?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = requireOrgId(currentUser);
@@ -133,15 +136,22 @@ export class OffersService {
       filter.offerId = regex;
     }
 
-    const items = await this.offerModel
-      .find(filter)
-      .populate('candidateId', 'name fullName email phone')
-      .populate('requirementId', 'title reqCode clientName')
-      .populate('submissionId', 'submissionId stage')
-      .sort({ createdAt: -1 })
-      .exec();
+    const window = resolveListWindow(query?.page, query?.limit);
+    const listQuery = () =>
+      this.offerModel
+        .find(filter)
+        .populate('candidateId', 'name fullName email phone')
+        .populate('requirementId', 'title reqCode clientName')
+        .populate('submissionId', 'submissionId stage')
+        .sort({ createdAt: -1 })
+        .skip(window.skip)
+        .limit(window.limit)
+        .lean();
+    const [items, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.offerModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
 
-    return items.map((item) => this.sanitizeOffer(item));
+    return listResult(window, items.map((item) => this.sanitizeOffer(item)), total);
   }
 
   /** GET /api/v1/offers/:id */

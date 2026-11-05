@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
+import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import {
-  ArrowLeft,
   Building2,
   Briefcase,
   FileText,
@@ -46,6 +46,8 @@ import {
 } from 'recharts'
 import { Role, Requirement } from '../../types'
 import { PaginationFooter } from '../ui/PaginationFooter'
+import { BackButton } from '../ui/BackButton'
+import { canonicalizeClientName } from '../../utils/canonicalClientName'
 
 export interface ClientGapAnalysisProps {
   clientName: string
@@ -80,6 +82,26 @@ export interface ClientRequirementItem {
   }[]
 }
 
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? '' : String(value)
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function downloadCsvFile(filename: string, rows: Array<Array<string | number | null | undefined>>) {
+  const body = rows.map(row => row.map(csvCell).join(',')).join('\r\n')
+  const blob = new Blob(['\uFEFF' + body], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
 const STANDARDIZED_DOMAINS_LIST = [
   'Automotive / Mobility',
   'Aerospace & Defense',
@@ -101,10 +123,10 @@ export function getClientGapAnalysisDataset(
   requirements: Requirement[] = [],
   clientDomain?: string,
 ): ClientRequirementItem[] {
-  const name = (clientName || '').trim().toLowerCase()
+  const canonical = canonicalizeClientName(clientName)
   const domain = STANDARDIZED_DOMAINS_LIST.find(d => d.toLowerCase() === (clientDomain || '').trim().toLowerCase())
   return requirements
-    .filter(r => (r.client || '').trim().toLowerCase() === name)
+    .filter(r => canonicalizeClientName(r.client) === canonical)
     .map(r => {
       const positions = typeof r.openings === 'number' && r.openings > 0 ? r.openings : ('N/A' as const)
       return {
@@ -139,6 +161,7 @@ export function ClientDeliveryGapAnalysisPage({
   // Filters State
   const [dateRange, setDateRange] = useState(initialDateRange || 'All Time')
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebouncedValue(searchQuery, 300)
   const [selectedDomainFilter, setSelectedDomainFilter] = useState('All Domains')
   const [selectedSpocFilter, setSelectedSpocFilter] = useState('All SPOCs')
   const [selectedReqStatus, setSelectedReqStatus] = useState('All Statuses')
@@ -196,8 +219,8 @@ export function ClientDeliveryGapAnalysisPage({
   // Filtered Requirements Dataset
   const filteredRequirements = useMemo(() => {
     return rawClientRequirements.filter(req => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.toLowerCase()
         const matchTitle = req.title.toLowerCase().includes(q)
         const matchId = req.id.toLowerCase().includes(q)
         const matchSpoc = req.spoc.toLowerCase().includes(q)
@@ -247,7 +270,7 @@ export function ClientDeliveryGapAnalysisPage({
     })
   }, [
     rawClientRequirements,
-    searchQuery,
+    debouncedSearch,
     dateRange,
     selectedDomainFilter,
     selectedSpocFilter,
@@ -259,6 +282,10 @@ export function ClientDeliveryGapAnalysisPage({
   // Requirement Gap Analysis Pagination State (5 items limit)
   const [gapCurrentPage, setGapCurrentPage] = useState(1)
   const [gapPageSize, setGapPageSize] = useState(5)
+  const [domainPage, setDomainPage] = useState(1)
+  const [domainPageSize, setDomainPageSize] = useState(5)
+  const [spocPage, setSpocPage] = useState(1)
+  const [spocPageSize, setSpocPageSize] = useState(5)
 
   const gapTotalPages = Math.ceil(filteredRequirements.length / gapPageSize) || 1
 
@@ -405,6 +432,16 @@ export function ClientDeliveryGapAnalysisPage({
     })
   }, [filteredRequirements])
 
+  const paginatedDomainRows = useMemo(() => {
+    const start = (domainPage - 1) * domainPageSize
+    return domainAnalysisRows.slice(start, start + domainPageSize)
+  }, [domainAnalysisRows, domainPage, domainPageSize])
+
+  const paginatedSpocRows = useMemo(() => {
+    const start = (spocPage - 1) * spocPageSize
+    return spocAnalysisRows.slice(start, start + spocPageSize)
+  }, [spocAnalysisRows, spocPage, spocPageSize])
+
   // Recharts Data Mapping
   const domainChartData = useMemo(() => {
     return domainAnalysisRows.map(row => ({
@@ -425,18 +462,64 @@ export function ClientDeliveryGapAnalysisPage({
     return Array.from(set)
   }, [rawClientRequirements])
 
+  const handleExportGapCsv = () => {
+    const safeName = clientName.replace(/[^\w.-]+/g, '_').replace(/^_|_$/g, '') || 'client'
+    const rows: Array<Array<string | number | null | undefined>> = [
+      ['Client Delivery Gap Report'],
+      ['Client', clientName],
+      ['SPOC', pocName],
+      ['SPOC Email', pocEmail],
+      ['Lead', teamLead],
+      ['Period', dateRange],
+      ['Health', metrics.healthStatus],
+      ['Requirements', metrics.totalReqs],
+      ['Positions', metrics.totalPositions],
+      ['Submissions', metrics.totalSubmissions],
+      ['Coverage %', metrics.coveragePct],
+      ['Zero Submission Requirements', metrics.zeroSubReqs],
+      [],
+      ['Domain', 'Requirements', 'Positions', 'Submissions', 'Coverage %', 'Zero Submission Reqs'],
+      ...domainAnalysisRows.map(row => [
+        row.domain,
+        row.requirements,
+        row.positions,
+        row.submissions,
+        row.coverage,
+        row.zeroSubReqs,
+      ]),
+      [],
+      ['SPOC', 'Requirements', 'Positions', 'Submissions', 'Coverage %', 'Zero Submission Reqs'],
+      ...spocAnalysisRows.map(row => [
+        row.spoc,
+        row.requirements,
+        row.positions,
+        row.submissions,
+        row.coverage,
+        row.zeroSubReqs,
+      ]),
+      [],
+      ['Requirement ID', 'Title', 'Domain', 'Positions', 'Submissions', 'SPOC', 'Status', 'Created'],
+      ...filteredRequirements.map(req => [
+        req.id,
+        req.title,
+        req.domain,
+        req.positions,
+        req.submissions,
+        req.spoc,
+        req.status,
+        req.createdDate,
+      ]),
+    ]
+    downloadCsvFile(`Delivery_Gap_${safeName}_${new Date().toISOString().slice(0, 10)}.csv`, rows)
+    showToast(`Downloaded gap report for ${clientName}.`)
+  }
+
   return (
     <div className="space-y-6 w-full pb-16 font-sans text-slate-800 animate-in fade-in duration-150">
       {/* 1. TOP HEADER & HEALTH SUMMARY */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-2xs">
         <div className="space-y-3">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer border border-slate-200/90 active:scale-98"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>← Back to Clients List</span>
-          </button>
+          <BackButton label="Back to Clients List" onClick={onBack} />
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-purple-100 text-[#6B3BF6] font-extrabold flex items-center justify-center text-lg border border-purple-200 shrink-0">
@@ -486,7 +569,8 @@ export function ClientDeliveryGapAnalysisPage({
         {role !== 'recruiter' && role !== 'lead' && role !== 'admin' && (
           <div className="flex items-center gap-3">
             <button
-              onClick={() => showToast(`Exporting Delivery Gap Analysis for ${clientName}...`)}
+              type="button"
+              onClick={handleExportGapCsv}
               className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-2xs transition-all flex items-center gap-2 cursor-pointer active:scale-98"
             >
               <Download className="w-4 h-4" />
@@ -542,7 +626,12 @@ export function ClientDeliveryGapAnalysisPage({
               type="text"
               placeholder="Search Title or ID..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => {
+                setSearchQuery(e.target.value)
+                setGapCurrentPage(1)
+                setDomainPage(1)
+                setSpocPage(1)
+              }}
               className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#6B3BF6] text-xs"
             />
           </div>
@@ -551,7 +640,12 @@ export function ClientDeliveryGapAnalysisPage({
           <div>
             <select
               value={selectedDomainFilter}
-              onChange={e => setSelectedDomainFilter(e.target.value)}
+              onChange={e => {
+                setSelectedDomainFilter(e.target.value)
+                setGapCurrentPage(1)
+                setDomainPage(1)
+                setSpocPage(1)
+              }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-[#6B3BF6] cursor-pointer"
             >
               <option value="All Domains">All Domains ({STANDARDIZED_DOMAINS_LIST.length})</option>
@@ -567,7 +661,12 @@ export function ClientDeliveryGapAnalysisPage({
           <div>
             <select
               value={selectedSpocFilter}
-              onChange={e => setSelectedSpocFilter(e.target.value)}
+              onChange={e => {
+                setSelectedSpocFilter(e.target.value)
+                setGapCurrentPage(1)
+                setDomainPage(1)
+                setSpocPage(1)
+              }}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-[#6B3BF6] cursor-pointer"
             >
               <option value="All SPOCs">All SPOCs</option>
@@ -863,7 +962,7 @@ export function ClientDeliveryGapAnalysisPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                  {domainAnalysisRows.map(row => (
+                  {paginatedDomainRows.map(row => (
                     <tr key={row.domain} className="hover:bg-purple-50/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-[#6B3BF6]" />
@@ -911,6 +1010,18 @@ export function ClientDeliveryGapAnalysisPage({
                   ))}
                 </tbody>
               </table>
+              <PaginationFooter
+                currentPage={domainPage}
+                totalPages={Math.max(1, Math.ceil(domainAnalysisRows.length / domainPageSize))}
+                totalItems={domainAnalysisRows.length}
+                pageSize={domainPageSize}
+                onPageChange={setDomainPage}
+                onPageSizeChange={size => {
+                  setDomainPageSize(size)
+                  setDomainPage(1)
+                }}
+                itemLabel="domains"
+              />
             </div>
           )}
         </div>
@@ -1089,56 +1200,76 @@ export function ClientDeliveryGapAnalysisPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                  {spocAnalysisRows.map(sRow => (
-                    <tr key={sRow.spoc} className="hover:bg-purple-50/40 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-purple-100 text-[#6B3BF6] font-bold flex items-center justify-center text-xs">
-                          {sRow.spoc.substring(0, 1)}
-                        </div>
-                        <span>SPOC: {sRow.spoc}</span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center font-extrabold text-slate-800 tabular-nums">
-                        {sRow.requirements}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center font-extrabold text-purple-900 tabular-nums">
-                        {sRow.positions}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center font-extrabold text-[#2563EB] tabular-nums">
-                        {sRow.submissions}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-extrabold border tabular-nums ${
-                            sRow.coverage >= 50
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                              : sRow.coverage >= 25
-                              ? 'bg-amber-100 text-amber-900 border-amber-200'
-                              : 'bg-rose-100 text-rose-800 border-rose-200'
-                          }`}
-                        >
-                          {sRow.coverage}%
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        {sRow.zeroSubReqs > 0 ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-200 tabular-nums">
-                            {sRow.zeroSubReqs} Reqs
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500 tabular-nums">
-                            0
-                          </span>
-                        )}
+                  {paginatedSpocRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
+                        No SPOC rows match the current filters.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    paginatedSpocRows.map(sRow => (
+                      <tr key={sRow.spoc} className="hover:bg-purple-50/40 transition-colors">
+                        <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-purple-100 text-[#6B3BF6] font-bold flex items-center justify-center text-xs">
+                            {sRow.spoc.substring(0, 1)}
+                          </div>
+                          <span>SPOC: {sRow.spoc}</span>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center font-extrabold text-slate-800 tabular-nums">
+                          {sRow.requirements}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center font-extrabold text-purple-900 tabular-nums">
+                          {sRow.positions}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center font-extrabold text-[#2563EB] tabular-nums">
+                          {sRow.submissions}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-extrabold border tabular-nums ${
+                              sRow.coverage >= 50
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : sRow.coverage >= 25
+                                ? 'bg-amber-100 text-amber-900 border-amber-200'
+                                : 'bg-rose-100 text-rose-800 border-rose-200'
+                            }`}
+                          >
+                            {sRow.coverage}%
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-center">
+                          {sRow.zeroSubReqs > 0 ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-100 text-rose-800 border border-rose-200 tabular-nums">
+                              {sRow.zeroSubReqs} Reqs
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500 tabular-nums">
+                              0
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
+              <PaginationFooter
+                currentPage={spocPage}
+                totalPages={Math.max(1, Math.ceil(spocAnalysisRows.length / spocPageSize))}
+                totalItems={spocAnalysisRows.length}
+                pageSize={spocPageSize}
+                onPageChange={setSpocPage}
+                onPageSizeChange={size => {
+                  setSpocPageSize(size)
+                  setSpocPage(1)
+                }}
+                itemLabel="SPOC owners"
+              />
             </div>
           )}
         </div>

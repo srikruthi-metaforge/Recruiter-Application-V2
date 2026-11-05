@@ -1,5 +1,6 @@
 import React from 'react'
 import { Search, ChevronDown, FileText, Filter, UserCheck, Users } from 'lucide-react'
+import { SUBMISSION_STATUS_FILTER_OPTIONS } from '../../../utils/submissionStatusFilter'
 import { SubmissionsVm } from './useSubmissionsPage'
 
 export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
@@ -117,6 +118,7 @@ export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
             {/* Client Filter Dropdown */}
             <div className="relative w-full sm:w-48">
               <select
+                id="submissions-client-filter"
                 value={clientFilter}
                 onChange={e => setClientFilter(e.target.value)}
                 className="w-full appearance-none pl-3.5 pr-8 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] text-slate-700 bg-white font-bold cursor-pointer"
@@ -204,12 +206,11 @@ export function SubmissionsFilters({ vm }: { vm: SubmissionsVm }) {
                 onChange={e => setStatusFilter(e.target.value)}
                 className="w-full appearance-none pl-3.5 pr-8 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6B3BF6]/20 focus:border-[#6B3BF6] text-slate-700 bg-white font-bold cursor-pointer"
               >
-                <option value="All">All Candidate Statuses</option>
-                <option value="Submitted to Client">Submitted to Client</option>
-                <option value="Interview Scheduled">Interview Scheduled</option>
-                <option value="Selected">Selected in Interview</option>
-                <option value="Placed">Placed</option>
-                <option value="Rejected">Rejected</option>
+                {SUBMISSION_STATUS_FILTER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>

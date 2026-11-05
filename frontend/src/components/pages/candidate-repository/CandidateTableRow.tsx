@@ -11,6 +11,7 @@ export function CandidateTableRow({ item, vm }: { item: CandidateRepoItem; vm: C
     selectedIds,
     activeReqId,
     setViewingCandidateDetail,
+    openCandidateDetail,
     toggleSelectCandidate,
     toggleMask,
     handleOpenEdit,
@@ -34,7 +35,7 @@ export function CandidateTableRow({ item, vm }: { item: CandidateRepoItem; vm: C
 
   return (
     <tr
-      onClick={() => setViewingCandidateDetail(item)}
+      onClick={() => (openCandidateDetail ? openCandidateDetail(item) : setViewingCandidateDetail(item))}
       className={`hover:bg-slate-50/80 cursor-pointer transition-colors group ${
         isSelected ? 'bg-indigo-50/40' : ''
       } ${dupCheck.isDuplicate ? 'bg-rose-50/20' : ''}`}

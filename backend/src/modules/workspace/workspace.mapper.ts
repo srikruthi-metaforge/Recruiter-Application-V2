@@ -37,6 +37,7 @@ function formatDateTime(value?: Date | string | null): string {
   return d.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   });
@@ -218,6 +219,7 @@ export function mapInterview(iv: any, extras?: { candidateName?: string; title?:
   const cand = iv.candidateId && typeof iv.candidateId === 'object' ? iv.candidateId : null;
   const req = iv.requirementId && typeof iv.requirementId === 'object' ? iv.requirementId : null;
   const sub = iv.submissionId && typeof iv.submissionId === 'object' ? iv.submissionId : null;
+  const when = iv.dateTime ? new Date(iv.dateTime) : null;
   return {
     id: iv.interviewId || idOf(iv),
     _id: idOf(iv),
@@ -225,7 +227,10 @@ export function mapInterview(iv: any, extras?: { candidateName?: string; title?:
     position: extras?.title || req?.title || '',
     client: extras?.clientName || req?.clientName || '',
     stage: ROUND_MAP[iv.round] || iv.round || 'Screening',
+    round: ROUND_MAP[iv.round] || iv.round || 'Screening',
     date: formatDateTime(iv.dateTime),
+    /** ISO — My Workspace Interview Schedule date filters need a real timestamp. */
+    dateTime: when && !Number.isNaN(when.getTime()) ? when.toISOString() : undefined,
     recruiter: extras?.recruiterName || '',
     recruiterId: extras?.recruiterId || '',
     requirementId: req?._id
@@ -289,8 +294,12 @@ export function mapCandidate(c: any) {
     currentLocation: c.currentLocation || '',
     preferredLocation: c.preferredLocation || '',
     offerInHand: c.offerInHand === 'Yes' || c.offerInHand === 'In Pipeline' ? c.offerInHand : 'No',
-    notes: '',
+    notes: c.notes || '',
     status: c.status === 'Interviewing' ? 'In Review' : c.status || 'New',
+    // UiCandidate shape: resumeName drives Attached Resume in the repository detail modal.
+    resumeName: c.resumeFileName || '',
+    resumeFileName: c.resumeFileName || '',
+    resumeFileId: c.resumeFileId ? String(c.resumeFileId) : '',
     sourcedByRecruiterId: sourced?._id
       ? String(sourced._id)
       : c.sourcedByRecruiterId && typeof c.sourcedByRecruiterId !== 'object'

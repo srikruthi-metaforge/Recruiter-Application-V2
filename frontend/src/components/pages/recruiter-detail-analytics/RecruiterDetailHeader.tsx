@@ -1,7 +1,8 @@
 import React from 'react'
-import { ArrowLeft, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, Cell } from 'recharts'
 import { RecruiterDetailVm } from './useRecruiterDetailAnalytics'
+import { BackButton } from '../../ui/BackButton'
 
 export function RecruiterDetailHeader({ vm }: { vm: RecruiterDetailVm }) {
   const {
@@ -15,13 +16,7 @@ export function RecruiterDetailHeader({ vm }: { vm: RecruiterDetailVm }) {
       {/* 1. TOP NAVIGATION & HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs">
         <div className="space-y-3">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to All Recruiter Reports</span>
-          </button>
+          <BackButton label="Back to All Recruiter Reports" onClick={onBack} />
 
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#6B3BF6]/10 text-[#6B3BF6] font-extrabold flex items-center justify-center text-lg border border-[#6B3BF6]/20 shrink-0">

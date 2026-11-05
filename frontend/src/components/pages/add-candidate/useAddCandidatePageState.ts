@@ -2,23 +2,72 @@ import type { AddCandidatePageProps } from './preamble'
 import { checkDuplicateSubmission, DuplicateCheckResult } from '../../../data/submissionsStore'
 import { getSavedDrafts, SavedDraftItem } from '../../../data/savedDraftsStore'
 import { candidatesService } from '../../../services/workspace.service'
+import {
+  CANDIDATE_FORM_SESSION_KEY,
+  clearSessionDraft,
+  readSessionDraft,
+  writeSessionDraft,
+} from '../../../lib/formSessionDraft'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import React from 'react'
+
+type CandidateFormSessionDraft = {
+  importMode?: 'single' | 'bulk' | 'drafts'
+  parsedFileName?: string | null
+  resumeFileId?: string | null
+  candidateId?: string
+  submissionDate?: string
+  candidateName?: string
+  currentCompany?: string
+  contactNumber?: string
+  email?: string
+  linkedInUrl?: string
+  qualification?: string
+  skills?: string
+  technologies?: string
+  totalExperience?: string
+  relevantExperience?: string
+  currentCtc?: string
+  expectedCtc?: string
+  noticePeriod?: string
+  currentLocation?: string
+  preferredLocation?: string
+  interviewAvailability?: string
+  offerInHand?: 'Select' | 'Yes' | 'No' | 'In Pipeline'
+  reasonForChange?: string
+  notes?: string
+  targetReqId?: string
+}
 
 export function useAddCandidatePageState(props: AddCandidatePageProps) {
   const {
   requirements = [],
   selectedReqId = null,
   showBack = false,
+  backLabel,
+  onBack,
+  pageTitle,
   onOpenRepository,
   onAddCandidate,
 }: AddCandidatePageProps = props as AddCandidatePageProps & Record<string, never>
+  const sessionDraft = useRef(
+    typeof window !== 'undefined'
+      ? readSessionDraft<CandidateFormSessionDraft>(CANDIDATE_FORM_SESSION_KEY)
+      : null,
+  ).current
+
   // Mode selection: 'single' | 'bulk' | 'drafts'
-  const [importMode, setImportMode] = useState<'single' | 'bulk' | 'drafts'>('single')
+  const [importMode, setImportMode] = useState<'single' | 'bulk' | 'drafts'>(
+    () => sessionDraft?.importMode || 'single',
+  )
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isParsing, setIsParsing] = useState(false)
-  const [parsedFileName, setParsedFileName] = useState<string | null>(null)
-  const [resumeFileId, setResumeFileId] = useState<string | null>(null)
+  const [parsedFileName, setParsedFileName] = useState<string | null>(
+    () => sessionDraft?.parsedFileName ?? null,
+  )
+  const [resumeFileId, setResumeFileId] = useState<string | null>(
+    () => sessionDraft?.resumeFileId ?? null,
+  )
   const [showSuccessToast, setShowSuccessToast] = useState(false)
   const [showSaveDraftToast, setShowSaveDraftToast] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
@@ -31,38 +80,121 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
   // Saved Drafts state
   const [draftsList, setDraftsList] = useState<SavedDraftItem[]>(() => getSavedDrafts())
 
-  // Form Fields State (pre-filled with optional defaults matching screenshot)
-  const [candidateId, setCandidateId] = useState('Auto')
-  const [submissionDate, setSubmissionDate] = useState(new Date().toISOString().slice(0, 10))
-  const [candidateName, setCandidateName] = useState('')
-  const [currentCompany, setCurrentCompany] = useState('')
-  const [contactNumber, setContactNumber] = useState('')
-  const [email, setEmail] = useState('')
-  const [linkedInUrl, setLinkedInUrl] = useState('')
-  const [qualification, setQualification] = useState('')
+  // Form Fields State — restore corrected/parsed values after refresh
+  const [candidateId, setCandidateId] = useState(() => sessionDraft?.candidateId || 'Auto')
+  const [submissionDate, setSubmissionDate] = useState(
+    () => sessionDraft?.submissionDate || new Date().toISOString().slice(0, 10),
+  )
+  const [candidateName, setCandidateName] = useState(() => sessionDraft?.candidateName || '')
+  const [currentCompany, setCurrentCompany] = useState(() => sessionDraft?.currentCompany || '')
+  const [contactNumber, setContactNumber] = useState(() => sessionDraft?.contactNumber || '')
+  const [email, setEmail] = useState(() => sessionDraft?.email || '')
+  const [linkedInUrl, setLinkedInUrl] = useState(() => sessionDraft?.linkedInUrl || '')
+  const [qualification, setQualification] = useState(() => sessionDraft?.qualification || '')
 
   // Skills & Technologies
-  const [skills, setSkills] = useState('')
-  const [technologies, setTechnologies] = useState('')
+  const [skills, setSkills] = useState(() => sessionDraft?.skills || '')
+  const [technologies, setTechnologies] = useState(() => sessionDraft?.technologies || '')
 
   // Experience & CTC
-  const [totalExperience, setTotalExperience] = useState('')
-  const [relevantExperience, setRelevantExperience] = useState('')
-  const [currentCtc, setCurrentCtc] = useState('')
-  const [expectedCtc, setExpectedCtc] = useState('')
-  const [noticePeriod, setNoticePeriod] = useState('')
+  const [totalExperience, setTotalExperience] = useState(() => sessionDraft?.totalExperience || '')
+  const [relevantExperience, setRelevantExperience] = useState(
+    () => sessionDraft?.relevantExperience || '',
+  )
+  const [currentCtc, setCurrentCtc] = useState(() => sessionDraft?.currentCtc || '')
+  const [expectedCtc, setExpectedCtc] = useState(() => sessionDraft?.expectedCtc || '')
+  const [noticePeriod, setNoticePeriod] = useState(() => sessionDraft?.noticePeriod || '')
 
   // Location & Availability
-  const [currentLocation, setCurrentLocation] = useState('')
-  const [preferredLocation, setPreferredLocation] = useState('')
-  const [interviewAvailability, setInterviewAvailability] = useState('')
+  const [currentLocation, setCurrentLocation] = useState(() => sessionDraft?.currentLocation || '')
+  const [preferredLocation, setPreferredLocation] = useState(
+    () => sessionDraft?.preferredLocation || '',
+  )
+  const [interviewAvailability, setInterviewAvailability] = useState(
+    () => sessionDraft?.interviewAvailability || '',
+  )
   const [offerInHand, setOfferInHand] = useState<
     'Select' | 'Yes' | 'No' | 'In Pipeline'
-  >('Select')
-  const [reasonForChange, setReasonForChange] = useState('')
-  const [notes, setNotes] = useState('')
+  >(() => sessionDraft?.offerInHand || 'Select')
+  const [reasonForChange, setReasonForChange] = useState(() => sessionDraft?.reasonForChange || '')
+  const [notes, setNotes] = useState(() => sessionDraft?.notes || '')
 
-  const [targetReqId, setTargetReqId] = useState<string>(selectedReqId || '')
+  const [targetReqId, setTargetReqId] = useState<string>(
+    () => sessionDraft?.targetReqId || selectedReqId || '',
+  )
+
+  // Autosave in-progress form so refresh keeps corrected details
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const hasContent = Boolean(
+        candidateName.trim() ||
+          email.trim() ||
+          contactNumber.trim() ||
+          skills.trim() ||
+          notes.trim() ||
+          resumeFileId ||
+          parsedFileName,
+      )
+      if (!hasContent) {
+        clearSessionDraft(CANDIDATE_FORM_SESSION_KEY)
+        return
+      }
+      writeSessionDraft(CANDIDATE_FORM_SESSION_KEY, {
+        importMode,
+        parsedFileName,
+        resumeFileId,
+        candidateId,
+        submissionDate,
+        candidateName,
+        currentCompany,
+        contactNumber,
+        email,
+        linkedInUrl,
+        qualification,
+        skills,
+        technologies,
+        totalExperience,
+        relevantExperience,
+        currentCtc,
+        expectedCtc,
+        noticePeriod,
+        currentLocation,
+        preferredLocation,
+        interviewAvailability,
+        offerInHand,
+        reasonForChange,
+        notes,
+        targetReqId,
+      } satisfies CandidateFormSessionDraft)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [
+    importMode,
+    parsedFileName,
+    resumeFileId,
+    candidateId,
+    submissionDate,
+    candidateName,
+    currentCompany,
+    contactNumber,
+    email,
+    linkedInUrl,
+    qualification,
+    skills,
+    technologies,
+    totalExperience,
+    relevantExperience,
+    currentCtc,
+    expectedCtc,
+    noticePeriod,
+    currentLocation,
+    preferredLocation,
+    interviewAvailability,
+    offerInHand,
+    reasonForChange,
+    notes,
+    targetReqId,
+  ])
 
   // Real-time Database Duplicate Check (Candidate Repository level)
   const [dbDuplicate, setDbDuplicate] = useState<{
@@ -149,6 +281,9 @@ export function useAddCandidatePageState(props: AddCandidatePageProps) {
     requirements,
     selectedReqId,
     showBack,
+    backLabel,
+    onBack,
+    pageTitle,
     onOpenRepository,
     onAddCandidate,
     importMode,

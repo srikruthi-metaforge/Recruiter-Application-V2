@@ -1,7 +1,7 @@
 import React from 'react'
-import { ArrowLeft } from 'lucide-react'
 import { CandidateEditFields } from './CandidateEditFields'
 import { CandidateRepoVm } from './useCandidateRepository'
+import { BackButton } from '../../ui/BackButton'
 
 export function CandidateEditView({ vm }: { vm: CandidateRepoVm }) {
   const { editingCandidate, setEditingCandidate, handleEditSubmit, toastMsg } = vm
@@ -10,13 +10,7 @@ export function CandidateEditView({ vm }: { vm: CandidateRepoVm }) {
     <div className="space-y-6 w-full pb-20 font-sans text-slate-800 animate-in fade-in duration-200">
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setEditingCandidate(null)}
-            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center border border-slate-200"
-            title="Back to Repository"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+          <BackButton label="Back to Repository" onClick={() => setEditingCandidate(null)} />
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Edit Candidate Profile</h1>
             <p className="text-xs text-slate-500 mt-0.5">

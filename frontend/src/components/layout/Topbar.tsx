@@ -1,10 +1,13 @@
-import React, { useState } from 'react'
+import React, { memo, useEffect, useState } from 'react'
 import { Bell } from 'lucide-react'
 import { Role } from '../../types'
 import { brand } from '../../theme'
 import { NotificationPopover } from '../ui/NotificationPopover'
 import { NotificationToast, ToastItem } from '../ui/NotificationToast'
-import { useNotificationSystem, NotificationItem } from '../../hooks/useNotificationSystem'
+import { NotificationItem } from '../../hooks/useNotificationSystem'
+import { useNotifications } from '../../hooks/notificationContext'
+import { getSessionUser } from '../../store/session'
+import { prefetchNotifications } from '../../lib/workspaceRefresh'
 import {
   dispatchNotificationNavigate,
   resolveNotificationNavigation,
@@ -23,9 +26,10 @@ interface TopbarProps {
   onToggleSidebar?: () => void
 }
 
-export function Topbar({
+export const Topbar = memo(function Topbar({
   title,
   subtitle,
+  role,
 }: TopbarProps) {
   const [isNotifOpen, setIsNotifOpen] = useState(false)
 
@@ -38,11 +42,17 @@ export function Topbar({
     toasts,
     dismissToast,
     fetchNotifications,
+    retainFastPoll,
     markFeedAsViewed,
     markAllAsRead,
     markRead,
     removeNotification,
-  } = useNotificationSystem()
+  } = useNotifications()
+
+  useEffect(() => {
+    if (!isNotifOpen) return
+    return retainFastPoll()
+  }, [isNotifOpen, retainFastPoll])
 
   const handleToggleNotif = () => {
     const nextState = !isNotifOpen
@@ -90,6 +100,10 @@ export function Topbar({
           <div className="relative">
             <button
               onClick={handleToggleNotif}
+              onMouseEnter={() => {
+                const id = getSessionUser()?.id
+                if (id) void prefetchNotifications(id)
+              }}
               className="px-3.5 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer border border-indigo-500/40"
               title="Notifications"
             >
@@ -114,10 +128,11 @@ export function Topbar({
               onMarkRead={markRead}
               onDelete={removeNotification}
               onOpenNotification={openNotificationTarget}
+              role={role}
             />
           </div>
         </div>
       </header>
     </>
   )
-}
+})

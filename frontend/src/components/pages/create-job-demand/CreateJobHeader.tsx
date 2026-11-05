@@ -1,6 +1,6 @@
 import React from 'react'
-import { ArrowLeft } from 'lucide-react'
 import { CreateJobDemandVm } from './useCreateJobDemandForm'
+import { BackButton } from '../../ui/BackButton'
 
 export function CreateJobHeader({ vm }: { vm: CreateJobDemandVm }) {
   const {
@@ -12,12 +12,9 @@ export function CreateJobHeader({ vm }: { vm: CreateJobDemandVm }) {
       {/* Top Navigation & Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <button
-            onClick={onCancel}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 mb-3 px-3.5 py-1.5 border border-slate-200 rounded-xl bg-white shadow-2xs cursor-pointer transition-all"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back
-          </button>
+          <div className="mb-3">
+            <BackButton label="Back to Requirements" onClick={onCancel} />
+          </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
             {isEdit ? 'Edit Job Demand' : 'Create Job Demand'}
           </h1>

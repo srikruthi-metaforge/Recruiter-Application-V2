@@ -1,4 +1,5 @@
 import { Requirement, Submission, Interview } from '../../types'
+import { isFinalOrSelectedStage } from '../../utils/submissionStatusFilter'
 
 /** Stable keys used to match a requirement to submissions / interviews. */
 export function requirementMatchKeys(r: Requirement): string[] {
@@ -39,8 +40,19 @@ export function isRequirementInProgress(r: Requirement): boolean {
   return (r.submissions || 0) > 0 || (r.interviews || 0) > 0
 }
 
-export function requirementHasSelections(r: Requirement): boolean {
-  return (r.placed || r.selections || 0) > 0
+export function requirementHasSelections(
+  r: Requirement,
+  submissions: Submission[] = [],
+): boolean {
+  if ((r.placed || r.selections || 0) > 0) return true
+  // V1 SELECTED → Offered; also catch Placed/Offered rows when placedCount lagged.
+  return submissions.some(s => {
+    if (!isFinalOrSelectedStage(s.stage)) return false
+    return entityMatchesRequirement(
+      (s as any).requirementId || s.reqCode || s.req,
+      r,
+    )
+  })
 }
 
 function entityMatchesRequirement(

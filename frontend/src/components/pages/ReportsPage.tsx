@@ -50,11 +50,15 @@ import {
   ClientDetailAnalyticsPage,
   ClientPerformanceData,
 } from './ClientDetailAnalyticsPage'
-import { HistoryPage } from './HistoryPage'
 import { ActivityLogsPage } from './ActivityLogsPage'
 import { SubmissionsPage } from './SubmissionsPage'
+import { RecruiterIndividualAnalyticsPage } from './recruiter-individual-analytics'
 import { InterviewTrackingPage } from './InterviewTrackingPage'
 import { RequirementDetailOverview } from './RequirementDetailOverview'
+import { canonicalizeClientName } from '../../utils/canonicalClientName'
+import { BackButton } from '../ui/BackButton'
+import { useReturnToReports } from '../../utils/useReturnToReports'
+import { clearReturnToReportsAnalytics } from '../../utils/notificationNavigation'
 
 
 interface ClientSubmissionInfo {
@@ -323,13 +327,16 @@ function buildRecruiterPerformance(
   })
 }
 
-/** Per-client performance from the live requirements + submission rows. */
+/** Per-client performance from the live requirements + submission rows (V1-style company rollup). */
 function buildClientPerformance(
   requirements: Requirement[],
   submissions: Submission[] = [],
 ): ClientPerformanceData[] {
   const byClient = new Map<string, Requirement[]>()
-  for (const r of requirements) byClient.set(r.client || '—', [...(byClient.get(r.client || '—') || []), r])
+  for (const r of requirements) {
+    const key = canonicalizeClientName(r.client)
+    byClient.set(key, [...(byClient.get(key) || []), r])
+  }
   return [...byClient.entries()].map(([clientName, reqs], i) => {
     const withCounts = reqs.map(r => ({ r, count: liveSubCount(r, submissions) }))
     const subs = withCounts.reduce((n, x) => n + x.count, 0)
@@ -360,7 +367,8 @@ function buildClientPerformance(
 
 export interface ReportsPageProps {
   role?: Role
-  initialMainTab?: 'performance' | 'history' | 'audit' | 'client_performance'
+  initialMainTab?: 'performance' | 'history' | 'audit' | 'client_performance' | 'individual_analytics'
+  /** `history` / `performance` are legacy aliases → Individual Analytics (History UI removed). */
   initialReportsTab?: 'reports' | 'submissions' | 'interviews'
   requirements?: Requirement[]
   submissions?: Submission[]
@@ -369,6 +377,8 @@ export interface ReportsPageProps {
   candidates?: Candidate[]
   currentUserName?: string
   currentUserEmail?: string
+  /** Candidate Repository count for the logged-in recruiter (from workspace stats). */
+  myCandidatesCount?: number
   onOpenSubmit?: (reqId?: string) => void
   onOpenFeedback?: (iv: Interview) => void
   onUpdateRequirements?: (requirements: Requirement[]) => void
@@ -392,6 +402,8 @@ function ClientPerformanceTabContent({
     client: ClientPerformanceData
     metric: 'reqSent' | 'reqAssigned' | 'submissions' | 'openReqs' | 'closedReqs'
   } | null>(null)
+  const [drillDownPage, setDrillDownPage] = useState(1)
+  const [drillDownPageSize, setDrillDownPageSize] = useState(5)
 
   const filteredClients = useMemo(() => {
     return clientPerformanceList.filter(c =>
@@ -404,6 +416,12 @@ function ClientPerformanceTabContent({
     const start = (currentPage - 1) * pageSize
     return filteredClients.slice(start, start + pageSize)
   }, [filteredClients, currentPage, pageSize])
+
+  const drillDownReqs = drillDownModal?.client.requirementsList || []
+  const paginatedDrillDownReqs = useMemo(() => {
+    const start = (drillDownPage - 1) * drillDownPageSize
+    return drillDownReqs.slice(start, start + drillDownPageSize)
+  }, [drillDownReqs, drillDownPage, drillDownPageSize])
 
   return (
     <div className="space-y-6 font-sans">
@@ -486,7 +504,10 @@ function ClientPerformanceTabContent({
                     {/* REQ SENT */}
                     <td className="py-4 px-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => setDrillDownModal({ client, metric: 'reqSent' })}
+                        onClick={() => {
+                          setDrillDownPage(1)
+                          setDrillDownModal({ client, metric: 'reqSent' })
+                        }}
                         className="px-2.5 py-1 bg-slate-100 hover:bg-purple-50 text-slate-700 hover:text-[#6B3BF6] border border-slate-200 hover:border-purple-200 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer"
                         title="Click to view all sent requirements"
                       >
@@ -497,7 +518,10 @@ function ClientPerformanceTabContent({
                     {/* REQ ASSIGNED */}
                     <td className="py-4 px-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => setDrillDownModal({ client, metric: 'reqAssigned' })}
+                        onClick={() => {
+                          setDrillDownPage(1)
+                          setDrillDownModal({ client, metric: 'reqAssigned' })
+                        }}
                         className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] border border-purple-200 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer"
                         title="Click to view assigned requirements"
                       >
@@ -508,7 +532,10 @@ function ClientPerformanceTabContent({
                     {/* SUBMISSIONS */}
                     <td className="py-4 px-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => setDrillDownModal({ client, metric: 'submissions' })}
+                        onClick={() => {
+                          setDrillDownPage(1)
+                          setDrillDownModal({ client, metric: 'submissions' })
+                        }}
                         className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-[#6B3BF6] border border-purple-200 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer"
                         title="Click to view client candidate submissions"
                       >
@@ -530,7 +557,10 @@ function ClientPerformanceTabContent({
                     {/* OPEN */}
                     <td className="py-4 px-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => setDrillDownModal({ client, metric: 'openReqs' })}
+                        onClick={() => {
+                          setDrillDownPage(1)
+                          setDrillDownModal({ client, metric: 'openReqs' })
+                        }}
                         className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-purple-50 text-[#6B3BF6] border border-purple-200 hover:bg-purple-100 transition-all cursor-pointer"
                         title="Click to view open requirements"
                       >
@@ -541,7 +571,10 @@ function ClientPerformanceTabContent({
                     {/* CLOSED */}
                     <td className="py-4 px-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => setDrillDownModal({ client, metric: 'closedReqs' })}
+                        onClick={() => {
+                          setDrillDownPage(1)
+                          setDrillDownModal({ client, metric: 'closedReqs' })
+                        }}
                         className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-all cursor-pointer"
                         title="Click to view closed requirements"
                       >
@@ -612,48 +645,68 @@ function ClientPerformanceTabContent({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200/60 font-medium text-slate-800">
-                    {drillDownModal.client.requirementsList.map(req => (
-                      <tr key={req.id} className="hover:bg-purple-50/30 transition-colors">
-                        <td className="py-3 px-4">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSelectRequirement?.({
-                                id: req.id,
-                                title: req.title,
-                                client: drillDownModal.client.clientName,
-                                priority: 'Medium',
-                                status: req.status === 'Open' ? 'Open' : 'Active',
-                                submissions: req.submissions || 0,
-                                interviews: 0,
-                                placed: 0,
-                                dueDate: new Date().toISOString().split('T')[0],
-                                openings: 1,
-                                skills: ['Java', 'React'],
-                              })
-                              setDrillDownModal(null)
-                            }}
-                            className="text-left cursor-pointer group"
-                          >
-                            <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#6B3BF6] group-hover:underline">{req.title}</div>
-                            <div className="text-[10px] text-[#6B3BF6] font-mono mt-0.5">{req.id}</div>
-                          </button>
-                        </td>
-                        <td className="py-3 px-4 text-slate-700 font-bold">{req.assignedRecruiter}</td>
-                        <td className="py-3 px-4 text-center font-mono font-bold text-[#6B3BF6]">{req.submissions}</td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                            req.status === 'Open' || req.status === 'In Progress'
-                              ? 'bg-purple-50 text-[#6B3BF6] border border-purple-200'
-                              : 'bg-slate-100 text-slate-700 border border-slate-200'
-                          }`}>
-                            {req.status}
-                          </span>
+                    {paginatedDrillDownReqs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-slate-400 font-medium">
+                          No requirements found for this metric.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      paginatedDrillDownReqs.map(req => (
+                        <tr key={req.id} className="hover:bg-purple-50/30 transition-colors">
+                          <td className="py-3 px-4">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectRequirement?.({
+                                  id: req.id,
+                                  title: req.title,
+                                  client: drillDownModal.client.clientName,
+                                  priority: 'Medium',
+                                  status: req.status === 'Open' ? 'Open' : 'Active',
+                                  submissions: req.submissions || 0,
+                                  interviews: 0,
+                                  placed: 0,
+                                  dueDate: new Date().toISOString().split('T')[0],
+                                  openings: 1,
+                                  skills: ['Java', 'React'],
+                                })
+                                setDrillDownModal(null)
+                              }}
+                              className="text-left cursor-pointer group"
+                            >
+                              <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#6B3BF6] group-hover:underline">{req.title}</div>
+                              <div className="text-[10px] text-[#6B3BF6] font-mono mt-0.5">{req.id}</div>
+                            </button>
+                          </td>
+                          <td className="py-3 px-4 text-slate-700 font-bold">{req.assignedRecruiter}</td>
+                          <td className="py-3 px-4 text-center font-mono font-bold text-[#6B3BF6]">{req.submissions}</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              req.status === 'Open' || req.status === 'In Progress'
+                                ? 'bg-purple-50 text-[#6B3BF6] border border-purple-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}>
+                              {req.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
+                <PaginationFooter
+                  currentPage={drillDownPage}
+                  totalPages={Math.max(1, Math.ceil(drillDownReqs.length / drillDownPageSize))}
+                  totalItems={drillDownReqs.length}
+                  pageSize={drillDownPageSize}
+                  onPageChange={setDrillDownPage}
+                  onPageSizeChange={size => {
+                    setDrillDownPageSize(size)
+                    setDrillDownPage(1)
+                  }}
+                  itemLabel="requirements"
+                />
               </div>
             </div>
 
@@ -696,6 +749,7 @@ export function ReportsPage({
   candidates = [],
   currentUserName,
   currentUserEmail,
+  myCandidatesCount,
   onOpenSubmit,
   onOpenFeedback,
   onUpdateRequirements,
@@ -703,8 +757,9 @@ export function ReportsPage({
   const session = getSessionUser()
   const meName = currentUserName || session?.name || ''
   const meEmail = currentUserEmail || session?.email || ''
-  const meId = session?.id || ''
+  const meId = session?.id || (session as any)?.userId || ''
   const [reportsTopTab, setReportsTopTab] = useState<'reports' | 'submissions' | 'interviews'>(initialReportsTab)
+  const showBackToAnalytics = useReturnToReports()
   const RECRUITER_REQ_SUBMISSION_DASHBOARD_DATA = useMemo(() => buildReqSubmissionDashboard(requirements, submissions, recruiters), [requirements, submissions, recruiters])
   const recruitersPerformanceList = useMemo(
     () => buildRecruiterPerformance(recruiters, requirements, submissions),
@@ -722,7 +777,17 @@ export function ReportsPage({
     }
   }, [initialReportsTab])
 
-  // Apply reports tab when arriving from a notification click
+  const [mainTab, setMainTab] = useState<'audit' | 'client_performance' | 'individual_analytics'>(() => {
+    const raw = initialMainTab || 'individual_analytics'
+    // History / Performance tabs removed — route to Individual Analytics.
+    if (raw === 'history' || raw === 'performance') return 'individual_analytics'
+    if (role === 'recruiter' && raw === 'client_performance') return 'individual_analytics'
+    if (raw === 'audit' || raw === 'client_performance' || raw === 'individual_analytics') return raw
+    return 'individual_analytics'
+  })
+
+  // Apply reports tab when arriving from a notification / analytics KPI click.
+  // Do not clear interview/submissions filter pending keys here — child pages consume those.
   React.useEffect(() => {
     const applyPendingReportsTab = () => {
       try {
@@ -730,9 +795,11 @@ export function ReportsPage({
         if (tab === 'submissions' || tab === 'interviews' || tab === 'reports') {
           setReportsTopTab(tab)
           sessionStorage.removeItem('pending_reports_tab')
+          if (tab === 'reports') {
+            setMainTab('individual_analytics')
+            clearReturnToReportsAnalytics()
+          }
         }
-        sessionStorage.removeItem('pending_open_submission')
-        sessionStorage.removeItem('pending_open_interview')
       } catch {
         // ignore
       }
@@ -742,10 +809,11 @@ export function ReportsPage({
     return () => window.removeEventListener('notification_navigate', applyPendingReportsTab as EventListener)
   }, [])
 
-  const [mainTab, setMainTab] = useState<'performance' | 'history' | 'audit' | 'client_performance'>(() => {
-    if (role === 'recruiter' && initialMainTab === 'client_performance') return 'history'
-    return initialMainTab || 'history'
-  })
+  const backToReportsAnalytics = () => {
+    clearReturnToReportsAnalytics()
+    setReportsTopTab('reports')
+    setMainTab('individual_analytics')
+  }
 
   const [activeReportView, setActiveReportView] = useState<'self' | 'charts' | 'team'>(() => {
     return role === 'recruiter' ? 'self' : 'team'
@@ -807,6 +875,8 @@ export function ReportsPage({
   const [selectedClient, setSelectedClient] = useState<ClientPerformanceData | null>(null)
   const [workedReqsModalRecruiter, setWorkedReqsModalRecruiter] = useState<RecruiterDetailData | null>(null)
   const [modalReqFilter, setModalReqFilter] = useState<'all' | 'worked' | 'non_worked'>('all')
+  const [modalReqsPage, setModalReqsPage] = useState(1)
+  const [modalReqsPageSize, setModalReqsPageSize] = useState(5)
 
   const fullAssignedReqs = useMemo(() => {
     if (!workedReqsModalRecruiter) return []
@@ -823,6 +893,11 @@ export function ReportsPage({
     }
     return fullAssignedReqs
   }, [fullAssignedReqs, modalReqFilter])
+
+  const paginatedModalReqs = useMemo(() => {
+    const start = (modalReqsPage - 1) * modalReqsPageSize
+    return filteredModalReqs.slice(start, start + modalReqsPageSize)
+  }, [filteredModalReqs, modalReqsPage, modalReqsPageSize])
 
   // Reason note modal state for recruiter
   const [reasonModalReq, setReasonModalReq] = useState<{ id: string; title: string; note?: string } | null>(null)
@@ -1535,7 +1610,14 @@ export function ReportsPage({
       {/* PRIMARY CONSOLIDATED TOP NAVIGATION TAB BAR */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          <div className="space-y-2">
+            {showBackToAnalytics && reportsTopTab !== 'reports' && (
+              <BackButton
+                label="Back to Reports & Analytics"
+                onClick={backToReportsAnalytics}
+                title="Return to Individual Performance Analytics"
+              />
+            )}
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
               <BarChart3 className="w-6 h-6 text-[#6B3BF6]" />
               <span>Reports Page</span>
@@ -1593,8 +1675,10 @@ export function ReportsPage({
           role={role}
           currentUserName={meName}
           submissions={submissions}
+          interviews={interviews}
           requirements={requirements}
           includeAllMySubmissions={role === 'recruiter'}
+          preferPropSubmissions
           onOpenSubmitCandidate={onOpenSubmit ? (reqId?: string) => onOpenSubmit(reqId) : undefined}
           onUpdateRequirements={onUpdateRequirements}
         />
@@ -1602,26 +1686,27 @@ export function ReportsPage({
         <InterviewTrackingPage
           role={role}
           interviews={interviews}
+          lockToPropInterviews
           onOpenFeedbackModal={onOpenFeedback}
           requirements={requirements}
           onUpdateRequirements={onUpdateRequirements}
         />
       ) : (
         <>
-          {/* CONSOLIDATED REPORTS SUB TABS */}
+          {/* CONSOLIDATED REPORTS SUB TABS (History removed) */}
           {role !== 'recruiter' && (
             <div className="flex flex-wrap items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 w-fit">
               <button
                 type="button"
-                onClick={() => setMainTab('history')}
+                onClick={() => setMainTab('individual_analytics')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                  mainTab === 'history' || mainTab === 'performance'
+                  mainTab === 'individual_analytics'
                     ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <BarChart3 className="w-4 h-4 text-[#6B3BF6]" />
-                <span>Recruiter Performance & History</span>
+                <FileSpreadsheet className="w-4 h-4 text-[#6B3BF6]" />
+                <span>Individual Performance Analytics</span>
               </button>
 
               <button
@@ -1661,16 +1746,17 @@ export function ReportsPage({
           ) : mainTab === 'audit' && role !== 'recruiter' ? (
             <ActivityLogsPage role={role} />
           ) : (
-            <HistoryPage
+            <RecruiterIndividualAnalyticsPage
               role={role}
-              recruiters={recruiters}
               requirements={requirements}
               submissions={submissions}
-              candidates={candidates}
               interviews={interviews}
+              recruiters={recruiters}
+              candidates={candidates}
               currentUserName={meName}
               currentUserEmail={meEmail}
               currentUserId={meId}
+              onNavigateReportsTab={tab => setReportsTopTab(tab)}
             />
           )}
         </>
@@ -1802,7 +1888,10 @@ export function ReportsPage({
                 <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
                   <button
                     type="button"
-                    onClick={() => setModalReqFilter('all')}
+                    onClick={() => {
+                      setModalReqFilter('all')
+                      setModalReqsPage(1)
+                    }}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       modalReqFilter === 'all'
                         ? 'bg-white text-[#6B3BF6] shadow-2xs'
@@ -1813,7 +1902,10 @@ export function ReportsPage({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModalReqFilter('worked')}
+                    onClick={() => {
+                      setModalReqFilter('worked')
+                      setModalReqsPage(1)
+                    }}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       modalReqFilter === 'worked'
                         ? 'bg-white text-emerald-700 shadow-2xs'
@@ -1824,7 +1916,10 @@ export function ReportsPage({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModalReqFilter('non_worked')}
+                    onClick={() => {
+                      setModalReqFilter('non_worked')
+                      setModalReqsPage(1)
+                    }}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       modalReqFilter === 'non_worked'
                         ? 'bg-white text-amber-700 shadow-2xs'
@@ -1855,7 +1950,7 @@ export function ReportsPage({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                      {filteredModalReqs.map((req, idx) => {
+                      {paginatedModalReqs.map((req, idx) => {
                         const clientList: string[] = req.client
                           ? [req.client]
                           : workedReqsModalRecruiter.primaryClient
@@ -1943,6 +2038,18 @@ export function ReportsPage({
                       })}
                     </tbody>
                   </table>
+                  <PaginationFooter
+                    currentPage={modalReqsPage}
+                    totalPages={Math.max(1, Math.ceil(filteredModalReqs.length / modalReqsPageSize))}
+                    totalItems={filteredModalReqs.length}
+                    pageSize={modalReqsPageSize}
+                    onPageChange={setModalReqsPage}
+                    onPageSizeChange={size => {
+                      setModalReqsPageSize(size)
+                      setModalReqsPage(1)
+                    }}
+                    itemLabel="requirements"
+                  />
                 </div>
               )}
             </div>

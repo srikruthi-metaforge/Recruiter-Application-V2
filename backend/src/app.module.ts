@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { clientIp, isCredentialRequest, sessionTracker } from './common/security/throttle-tracker.util';
 
 import { AppController } from './app.controller';
 import { OrganizationModule } from './modules/organizations/organization.module';
@@ -25,9 +26,12 @@ import { SavedSearchesModule } from './modules/saved-searches/saved-searches.mod
 import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
 import { MailModule } from './modules/mail/mail.module';
 import { RedisModule } from './modules/redis/redis.module';
+import { JobsModule } from './jobs/jobs.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { MongoCommandMonitor } from './common/performance/mongo-command.monitor.service';
+import { RuntimeMetricsService } from './common/performance/runtime-metrics.service';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { ResumeParserModule } from './modules/resume-parser/resume-parser.module';
 import { JdParserModule } from './modules/jd-parser/jd-parser.module';
@@ -181,6 +185,12 @@ import {
       useFactory: (configService: ConfigService) => ({
         uri: configService.get<string>('MONGODB_URI') || 'mongodb://localhost:27017/metaforge_recruiter_v2',
         dbName: configService.get<string>('MONGODB_DB_NAME') || 'metaforge_recruiter_v2',
+        // 20 recruiters each open several queries at once. A pool of 20 stalls logins and lists.
+        maxPoolSize: Number(configService.get<string>('MONGO_MAX_POOL_SIZE') || 100),
+        minPoolSize: Number(configService.get<string>('MONGO_MIN_POOL_SIZE') || 5),
+        maxIdleTimeMS: 60_000,
+        serverSelectionTimeoutMS: 10_000,
+        monitorCommands: true,
       }),
     }),
 
@@ -284,6 +294,7 @@ import {
     ]),
 
     RedisModule,
+    JobsModule,
     ResumeParserModule,
     JdParserModule,
     OrganizationModule,
@@ -308,14 +319,30 @@ import {
     WorkspaceModule,
     SeedModule,
     RecruiterAttendanceModule,
-    // SPA polls notifications + attendance; 100/min was too low and blocked lead actions.
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60000,
-        limit: 400,
-      },
-    ]),
+    // Buckets are per signed-in user (see sessionTracker), not per office IP.
+    // Auth routes add a per-account cap plus a high shared-IP ceiling so a whole
+    // recruiting floor can sign in together without tripping 429.
+    // High-chatter reads (notifications, workspace, candidates, analytics, interviews/offers lists) use @SkipThrottle.
+    ThrottlerModule.forRoot({
+      errorMessage: 'Too many requests. Wait a moment and try again.',
+      getTracker: (req) => sessionTracker(req),
+      throttlers: [
+        {
+          name: 'default',
+          ttl: 60000,
+          // Per user, per route. Comfortable for a recruiter working continuously.
+          limit: 2000,
+        },
+        {
+          name: 'authOffice',
+          ttl: 60000,
+          // Shared NAT / office IP. High enough for 50 people signing in at once, with retries.
+          limit: 600,
+          getTracker: (req) => `ip:${clientIp(req)}`,
+          skipIf: (context) => !isCredentialRequest(context.switchToHttp().getRequest()),
+        },
+      ],
+    }),
   ],
 
   controllers: [AppController],
@@ -323,6 +350,8 @@ import {
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    MongoCommandMonitor,
+    RuntimeMetricsService,
   ],
 })
 export class AppModule {}

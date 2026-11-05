@@ -5,6 +5,7 @@ Central configuration from environment variables (.env supported via load_dotenv
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -135,11 +136,45 @@ CANONICAL_PLACEHOLDERS: frozenset[str] = frozenset({
 })
 
 
+# Column headers from vendor trackers. "/Title" and "Position/Title" are labels, not role names.
+_HEADER_TITLE_LABELS = frozenset({
+    "title",
+    "job title",
+    "position/title",
+    "position title",
+    "role title",
+})
+
+
+def is_header_label_title(val: object) -> bool:
+    """True when a value is only a title-column header, such as '/Title'."""
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    s = re.sub(r"^[\s/\\|:_-]+|[\s/\\|:_-]+$", "", s)
+    s = re.sub(r"[\s_]+", " ", s).strip()
+    compact = s.replace(" ", "").replace("/", "")
+    return s in _HEADER_TITLE_LABELS or compact in {"title", "jobtitle", "positiontitle", "roletitle"}
+
+
+def subject_as_title(subject: object) -> str | None:
+    """Email subject with reply/forward prefixes removed. None when nothing usable remains."""
+    text = re.sub(
+        r"^(?:\s*(?:re|fwd|fw)\s*:\s*)+",
+        "",
+        str(subject or ""),
+        flags=re.IGNORECASE,
+    ).strip()
+    if not text or is_header_label_title(text):
+        return None
+    return text
+
+
 def is_placeholder(val: object) -> bool:
     if val is None:
         return True
     s = str(val).strip().lower()
-    return s in CANONICAL_PLACEHOLDERS or s == ""
+    return s in CANONICAL_PLACEHOLDERS or s == "" or is_header_label_title(val)
 
 
 def is_strict_field_mapping() -> bool:

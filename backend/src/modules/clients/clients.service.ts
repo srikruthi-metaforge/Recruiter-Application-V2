@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 import { Client, ClientDocument } from './schemas/client.schema';
 import { ClientRepository } from './repositories/client.repository';
 import { Requirement, RequirementDocument } from '../requirements/schemas/requirement.schema';
@@ -89,6 +90,8 @@ export class ClientsService {
       status?: string;
       tier?: string;
       domain?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = requireOrgId(currentUser);
@@ -118,13 +121,20 @@ export class ClientsService {
       ];
     }
 
-    const items = await this.clientModel
-      .find(filter)
-      .populate('accountLeadId', 'name email')
-      .sort({ createdAt: -1 })
-      .exec();
+    const window = resolveListWindow(query?.page, query?.limit);
+    const listQuery = () =>
+      this.clientModel
+        .find(filter)
+        .populate('accountLeadId', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(window.skip)
+        .limit(window.limit)
+        .lean();
+    const [items, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.clientModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
 
-    return items.map((item) => this.sanitizeClient(item));
+    return listResult(window, items.map((item) => this.sanitizeClient(item)), total);
   }
 
   /** Load client by Mongo id or business id, scoped to caller org. */

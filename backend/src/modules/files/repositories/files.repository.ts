@@ -29,6 +29,29 @@ export class FilesRepository {
     return { data, total, page, limit, totalPages };
   }
 
+  /**
+   * Match a resume that was stored under its original filename or V1 resume key,
+   * even when the candidate row never received resumeFileId.
+   */
+  async findByResumeNames(
+    orgId: Types.ObjectId,
+    names: string[],
+  ): Promise<FileMetadataDocument | null> {
+    const unique = [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))];
+    if (!unique.length) return null;
+    return this.fileMetadataModel
+      .findOne({
+        orgId,
+        deletedAt: null,
+        $or: [
+          { originalName: { $in: unique } },
+          { legacyPostgresId: { $in: unique.map((name) => `resume:${name}`) } },
+          { 'legacy.v1ResumeUrl': { $in: unique } },
+        ],
+      })
+      .exec();
+  }
+
   async findById(orgId: Types.ObjectId, id: string): Promise<FileMetadataDocument | null> {
     const filter: Record<string, any> = { orgId, deletedAt: null };
     if (Types.ObjectId.isValid(id)) {

@@ -10,7 +10,7 @@ from datetime import date
 from typing import Any
 
 from models import DashboardRequirement24
-from config import is_placeholder, is_strict_field_mapping, lpa_implies_inr
+from config import is_header_label_title, is_placeholder, is_strict_field_mapping, lpa_implies_inr, subject_as_title
 
 
 @dataclass(frozen=True)
@@ -969,12 +969,16 @@ def map_to_metaforge(
             extracted_soft_list = _as_list(fallback_skills)
 
     job_title = str(extracted.get("job_title") or extracted.get("role") or extracted.get("title") or "").strip() or None
+    if is_header_label_title(job_title):
+        job_title = None
     if not job_title and body_text:
         m_jt = re.search(r"(?im)^\s*(?:position\s*/\s*title|position|job\s*title|role)\s*[:\-]\s*(.+)$", body_text)
         if m_jt:
             jt_cand = m_jt.group(1).strip()
-            if jt_cand and not is_placeholder(jt_cand):
+            if jt_cand and not is_placeholder(jt_cand) and not is_header_label_title(jt_cand):
                 job_title = jt_cand
+    if not job_title or is_header_label_title(job_title):
+        job_title = subject_as_title(email_subject)
 
     # Shift hours, clock times, bare role words and the title itself are never skills, whichever
     # extractor produced them.

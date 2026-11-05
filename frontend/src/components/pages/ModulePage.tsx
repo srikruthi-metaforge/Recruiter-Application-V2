@@ -1,7 +1,10 @@
-import React, { useState } from 'react'
+import React, { Suspense, useState } from 'react'
 import { Requirement, Submission, Interview, Recruiter, Candidate, ActivityLogItem } from '../../types'
 import { Role } from '../../types'
 import { renderModulePage } from './ModulePage.routes'
+import { SIDEBAR_NAV_EVENT } from '../../utils/notificationNavigation'
+import { useReturnToReports } from '../../utils/useReturnToReports'
+import { PageLoading } from '../common/PageLoading'
 
 interface ModulePageProps {
   pageKey: string
@@ -14,6 +17,8 @@ interface ModulePageProps {
   activityLogs?: ActivityLogItem[]
   currentUserName?: string
   currentUserEmail?: string
+  /** Workspace Candidate Repository count for the logged-in user. */
+  myCandidatesCount?: number
   initialCandidates?: Candidate[]
   onOpenSubmit?: (reqId?: string) => void
   onOpenFeedback?: (iv: Interview) => void
@@ -37,6 +42,7 @@ export function ModulePage({
   activityLogs = [],
   currentUserName,
   currentUserEmail,
+  myCandidatesCount,
   onOpenSubmit,
   onOpenFeedback,
   onOpenCandidate,
@@ -70,8 +76,23 @@ export function ModulePage({
     }
   }, [candidatesList, onCandidatesChange])
 
-  const [candidateViewMode, setCandidateViewMode] = useState<'add' | 'repository'>('add')
+  const [candidateViewMode, setCandidateViewMode] = useState<'add' | 'repository'>(() => {
+    if (typeof window === 'undefined') return 'add'
+    try {
+      const saved = window.sessionStorage.getItem('mrap_candidate_view_mode_v1')
+      return saved === 'repository' ? 'repository' : 'add'
+    } catch {
+      return 'add'
+    }
+  })
   const [addOpenedFromRepository, setAddOpenedFromRepository] = useState(false)
+  const returnToReports = useReturnToReports()
+
+  React.useEffect(() => {
+    const onSidebar = () => setAddOpenedFromRepository(false)
+    window.addEventListener(SIDEBAR_NAV_EVENT, onSidebar)
+    return () => window.removeEventListener(SIDEBAR_NAV_EVENT, onSidebar)
+  }, [])
 
   const handleCandidateViewModeChange = (mode: 'add' | 'repository') => {
     if (mode === 'add' && candidateViewMode === 'repository') {
@@ -81,12 +102,22 @@ export function ModulePage({
       setAddOpenedFromRepository(false)
     }
     setCandidateViewMode(mode)
+    try {
+      window.sessionStorage.setItem('mrap_candidate_view_mode_v1', mode)
+    } catch {
+      // ignore
+    }
   }
 
   React.useEffect(() => {
     if (selectedReqId) {
       setCandidateViewMode('repository')
       setAddOpenedFromRepository(false)
+      try {
+        window.sessionStorage.setItem('mrap_candidate_view_mode_v1', 'repository')
+      } catch {
+        // ignore
+      }
     }
   }, [selectedReqId, pageKey])
 
@@ -101,25 +132,44 @@ export function ModulePage({
     }
   }, [pageKey, selectedReqId])
 
-  // Open candidate repository when arriving from a notification click
-  React.useEffect(() => {
-    const applyPendingCandidate = () => {
-      try {
-        const pending = sessionStorage.getItem('pending_open_candidate')
-        if (!pending) return
-        setCandidateViewMode('repository')
-        setAddOpenedFromRepository(false)
-        sessionStorage.removeItem('pending_open_candidate')
-      } catch {
-        // ignore
+  // Open candidate repository only when analytics/notification explicitly requested it.
+  const openRepositoryFromPending = React.useCallback((opts?: { clear?: boolean }) => {
+    try {
+      const pendingId = sessionStorage.getItem('pending_open_candidate')
+      const pendingRepo = sessionStorage.getItem('pending_open_candidate_repository')
+      if (!pendingId && pendingRepo !== '1') return false
+      setCandidateViewMode('repository')
+      setAddOpenedFromRepository(false)
+      window.sessionStorage.setItem('mrap_candidate_view_mode_v1', 'repository')
+      if (opts?.clear !== false) {
+        if (pendingId) sessionStorage.removeItem('pending_open_candidate')
+        if (pendingRepo === '1') sessionStorage.removeItem('pending_open_candidate_repository')
       }
+      return true
+    } catch {
+      return false
     }
-    applyPendingCandidate()
-    window.addEventListener('notification_navigate', applyPendingCandidate as EventListener)
-    return () => window.removeEventListener('notification_navigate', applyPendingCandidate as EventListener)
   }, [])
 
-  return renderModulePage({
+  React.useEffect(() => {
+    // Don't clear yet — wait until Candidates page is active so mode can't be lost in a race.
+    openRepositoryFromPending({ clear: false })
+    const onNav = () => {
+      openRepositoryFromPending({ clear: false })
+    }
+    window.addEventListener('notification_navigate', onNav as EventListener)
+    return () => window.removeEventListener('notification_navigate', onNav as EventListener)
+  }, [openRepositoryFromPending])
+
+  // When landing on Candidates after Sourced KPI/graph, force repository (not Add form).
+  React.useEffect(() => {
+    if (pageKey !== 'Candidates' && pageKey !== 'Candidate Search') return
+    openRepositoryFromPending({ clear: true })
+  }, [pageKey, openRepositoryFromPending])
+
+  return (
+    <Suspense fallback={<PageLoading />}>
+      {renderModulePage({
     pageKey,
     role,
     requirements,
@@ -130,6 +180,7 @@ export function ModulePage({
     activityLogs,
     currentUserName,
     currentUserEmail,
+    myCandidatesCount,
     candidatesList,
     candidateViewMode,
     onOpenSubmit,
@@ -143,5 +194,8 @@ export function ModulePage({
     handleCandidateViewModeChange,
     setCandidatesList: updateCandidatesList,
     addOpenedFromRepository,
-  })
+    returnToReports,
+  })}
+    </Suspense>
+  )
 }

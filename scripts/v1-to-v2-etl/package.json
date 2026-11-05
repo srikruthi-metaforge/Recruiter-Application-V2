@@ -1,0 +1,14 @@
+{
+  "name": "v1-to-v2-etl",
+  "private": true,
+  "version": "1.0.0",
+  "description": "V1 PostgreSQL → V2 MongoDB ETL (standalone; does not modify app code)",
+  "main": "etl.js",
+  "scripts": {
+    "dry-run": "node etl.js --dry-run",
+    "apply": "node etl.js --apply"
+  },
+  "dependencies": {
+    "pg": "^8.16.0"
+  }
+}

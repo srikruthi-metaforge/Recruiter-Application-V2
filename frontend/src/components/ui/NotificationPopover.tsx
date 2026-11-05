@@ -17,6 +17,7 @@ import {
   CheckCheck,
 } from 'lucide-react'
 import { NotificationItem } from '../../hooks/useNotificationSystem'
+import { Role } from '../../types'
 
 interface NotificationPopoverProps {
   isOpen: boolean
@@ -30,6 +31,12 @@ interface NotificationPopoverProps {
   onMarkRead: (id: string, read: boolean) => void
   onDelete: (id: string, wasUnread: boolean) => void
   onOpenNotification?: (n: NotificationItem) => void
+  role?: Role
+}
+
+/** Recruiter and lead notification feeds do not include audit / login alerts. */
+export function hidesAuditNotifications(role?: string | null): boolean {
+  return role === 'recruiter' || role === 'lead'
 }
 
 /**
@@ -94,31 +101,38 @@ export function NotificationPopover({
   onMarkRead,
   onDelete,
   onOpenNotification,
+  role,
 }: NotificationPopoverProps) {
+  const showAudit = !hidesAuditNotifications(role)
   // Toggle: 'requirements' | 'audit_logs' | 'all'
   const [activeToggle, setActiveToggle] = useState<'all' | 'requirements' | 'audit_logs'>('all')
 
+  const visibleNotifications = useMemo(
+    () => (showAudit ? notifications : notifications.filter(n => !isAuditLogNotification(n))),
+    [notifications, showAudit]
+  )
+
   // Calculate counts for each toggle
   const reqCount = useMemo(
-    () => notifications.filter(isRequirementNotification).length,
-    [notifications]
+    () => visibleNotifications.filter(isRequirementNotification).length,
+    [visibleNotifications]
   )
   const auditCount = useMemo(
-    () => notifications.filter(isAuditLogNotification).length,
-    [notifications]
+    () => (showAudit ? visibleNotifications.filter(isAuditLogNotification).length : 0),
+    [visibleNotifications, showAudit]
   )
-  const allCount = notifications.length
+  const allCount = visibleNotifications.length
 
   // Filtered list based on active toggle
   const displayedNotifications = useMemo(() => {
     if (activeToggle === 'requirements') {
-      return notifications.filter(isRequirementNotification)
+      return visibleNotifications.filter(isRequirementNotification)
     }
-    if (activeToggle === 'audit_logs') {
-      return notifications.filter(isAuditLogNotification)
+    if (showAudit && activeToggle === 'audit_logs') {
+      return visibleNotifications.filter(isAuditLogNotification)
     }
-    return notifications
-  }, [notifications, activeToggle])
+    return visibleNotifications
+  }, [visibleNotifications, activeToggle, showAudit])
 
   if (!isOpen) return null
 
@@ -151,14 +165,16 @@ export function NotificationPopover({
                 )}
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Real-time activity alerts, requirement updates & audit login tracking
+                {showAudit
+                  ? 'Real-time activity alerts, requirement updates & audit login tracking'
+                  : 'Real-time activity alerts and requirement updates'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
             <button
-              onClick={onRefresh}
+              onClick={() => onRefresh()}
               title="Refresh notifications"
               className="p-2 hover:bg-purple-50 text-slate-400 hover:text-[#6B3BF6] rounded-xl transition-all cursor-pointer"
             >
@@ -221,6 +237,7 @@ export function NotificationPopover({
             </span>
           </button>
 
+          {showAudit && (
           <button
             type="button"
             onClick={() => setActiveToggle('audit_logs')}
@@ -240,6 +257,7 @@ export function NotificationPopover({
               {auditCount}
             </span>
           </button>
+          )}
         </div>
 
         {/* Scrollable Notification List */}

@@ -31,6 +31,7 @@ export interface SidebarProps {
   onLogout?: () => void
   activeNav?: string
   onNavSelect?: (nav: string) => void
+  onPrefetch?: (nav: string) => void
   collapsed?: boolean
   onToggleCollapse?: () => void
 }

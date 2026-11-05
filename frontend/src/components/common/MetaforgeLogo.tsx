@@ -1,4 +1,4 @@
-import React from 'react'
+import Image from 'next/image'
 
 interface MetaforgeLogoProps {
   variant?: 'light' | 'dark' // light = for dark backgrounds (white text), dark = for light backgrounds (navy text)
@@ -21,15 +21,21 @@ export function MetaforgeLogo({
   return (
     <div className={`inline-flex items-center select-none bg-transparent p-0 m-0 ${className}`}>
       {variant === 'light' ? (
-        <img
+        <Image
           src="/metaforge-white-logo.png"
           alt="metaforge logo"
+          width={148}
+          height={32}
+          priority
           className={`${heightMap[size]} w-auto object-contain bg-transparent mix-blend-screen`}
         />
       ) : (
-        <img
+        <Image
           src="/metaforge-logo.png"
           alt="metaforge logo"
+          width={148}
+          height={32}
+          priority
           className={`${heightMap[size]} w-auto object-contain bg-transparent`}
         />
       )}

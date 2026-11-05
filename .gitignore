@@ -17,6 +17,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 backups/
+V1_postgre_backup/
 backend/uploads/
 backend/storage/
 backend/test/raw_email_preview.txt

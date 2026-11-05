@@ -2,6 +2,7 @@ import { Requirement } from '../../../types'
 import type { RequirementsVmState } from './useRequirementsPageState'
 import { workspaceService } from '../../../services/workspace.service'
 import { ApiError } from '../../../lib/api'
+import { requestWorkspaceRefresh } from '../../../lib/workspaceRefresh'
 
 export function useRequirementsPageHandlers2(s: RequirementsVmState) {
   const {
@@ -225,13 +226,9 @@ export function useRequirementsPageHandlers2(s: RequirementsVmState) {
     try {
       await workspaceService.updateRequirement(targetId, { status: targetStatus as any })
 
-      // Reload fresh workspace data from database to ensure persistence & consistency
+      // Reload through the app shell so this does not issue a second GET /workspace.
       try {
-        const payload = await workspaceService.load()
-        if (payload?.requirements) {
-          setLocalRequirements(payload.requirements)
-          onUpdateRequirements?.(payload.requirements)
-        }
+        await requestWorkspaceRefresh({ force: true })
       } catch {
         // Keep optimistic state if load fails
       }

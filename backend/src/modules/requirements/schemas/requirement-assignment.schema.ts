@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type RequirementAssignmentDocument = RequirementAssignment & Document;
@@ -57,4 +58,4 @@ RequirementAssignmentSchema.index({ orgId: 1, requirementId: 1, status: 1, assig
 RequirementAssignmentSchema.index({ orgId: 1, recruiterId: 1, status: 1, assignedOn: -1 });
 applyOrgLegacyPostgresIdIndex(RequirementAssignmentSchema);
 
-RequirementAssignmentSchema.plugin(DataScopePlugin);
+RequirementAssignmentSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

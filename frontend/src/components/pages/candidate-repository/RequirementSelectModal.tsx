@@ -1,9 +1,12 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { X } from 'lucide-react'
 import { CandidateRepoVm } from './useCandidateRepository'
+import { getSessionUser } from '../../../store/session'
+import { canWorkOnRequirement } from '../../../utils/recruiterOwnership'
 
 export function RequirementSelectModal({ vm }: { vm: CandidateRepoVm }) {
   const {
+    role,
     isChangeReqModalOpen,
     pendingCandidateForSubmit,
     setIsChangeReqModalOpen,
@@ -13,6 +16,16 @@ export function RequirementSelectModal({ vm }: { vm: CandidateRepoVm }) {
     setTempModalReqId,
     handleConfirmReqSelection,
   } = vm
+  const session = getSessionUser()
+  const me = {
+    id: session?.id || null,
+    email: session?.email || null,
+    name: session?.name || null,
+  }
+  const workableRequirements = useMemo(
+    () => requirements.filter(req => canWorkOnRequirement(req, me, role)),
+    [requirements, me.id, me.email, me.name, role],
+  )
   return (
     <>
       {isChangeReqModalOpen && (
@@ -23,8 +36,8 @@ export function RequirementSelectModal({ vm }: { vm: CandidateRepoVm }) {
                 <h3 className="text-lg font-bold text-slate-900 tracking-tight">Select Requirement</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {pendingCandidateForSubmit
-                    ? `Please select a requirement to submit candidate "${pendingCandidateForSubmit.name}"`
-                    : 'Choose an active requirement to link with candidate repository'}
+                    ? `Please select a requirement assigned to you to submit candidate "${pendingCandidateForSubmit.name}"`
+                    : 'Choose an active requirement assigned to you'}
                 </p>
               </div>
               <button
@@ -41,7 +54,7 @@ export function RequirementSelectModal({ vm }: { vm: CandidateRepoVm }) {
             <div className="p-6 space-y-4">
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
-                  ACTIVE REQUIREMENTS ({requirements.length})
+                  ASSIGNED REQUIREMENTS ({workableRequirements.length})
                 </label>
                 <select
                   value={tempModalReqId}
@@ -49,12 +62,17 @@ export function RequirementSelectModal({ vm }: { vm: CandidateRepoVm }) {
                   className="w-full h-11 px-3.5 text-xs font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-[#6B3BF6] text-slate-800 shadow-2xs cursor-pointer"
                 >
                   <option value="" disabled>-- Select a requirement --</option>
-                  {requirements.map(req => (
+                  {workableRequirements.map(req => (
                     <option key={req.id} value={req.id}>
                       {req.id} — {req.title} ({req.client})
                     </option>
                   ))}
                 </select>
+                {workableRequirements.length === 0 && (
+                  <p className="text-[11px] text-amber-700 font-medium pt-1">
+                    No requirements are assigned to you. Ask a lead to assign one before submitting candidates.
+                  </p>
+                )}
               </div>
             </div>
 

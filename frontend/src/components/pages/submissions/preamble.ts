@@ -1,10 +1,12 @@
-import { Submission, Requirement, Role } from '../../../types'
+import { Submission, Requirement, Role, Interview } from '../../../types'
 
 export interface SubmissionsPageProps {
   role?: Role
   currentUserName?: string
   submissions?: Submission[]
   requirements?: Requirement[]
+  /** Workspace interviews — used for Went-for-Interview filter without re-listing /interviews. */
+  interviews?: Interview[]
   onOpenSubmitCandidate?: (reqId?: string) => void
   onUpdateRequirements?: (updated: Requirement[]) => void
   /**
@@ -12,6 +14,13 @@ export interface SubmissionsPageProps {
    * Recruiter Reports and My Workspace both use this so counts stay aligned.
    */
   includeAllMySubmissions?: boolean
+  /**
+   * Prefer parent-provided submissions (skip GET /submissions on mount).
+   * Defaults true when submissions prop is non-empty.
+   */
+  preferPropSubmissions?: boolean
+  /** Prefill Candidate Status filter (e.g. "Selected", "Interview Scheduled"). */
+  initialStatusFilter?: string
 }
 
 export interface ScreenshotSubmission {

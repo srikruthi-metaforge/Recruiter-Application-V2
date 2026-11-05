@@ -16,7 +16,7 @@ import { CreateJobToast } from './CreateJobToast'
 export function CreateJobDemandForm(props: CreateJobDemandFormProps) {
   const vm = useCreateJobDemandForm(props)
   return (
-    <div className="w-full space-y-6 pb-24 font-sans text-slate-800">
+    <div className="w-full space-y-6 pb-32 font-sans text-slate-800">
       <CreateJobHeader vm={vm} />
       <form onSubmit={vm.handleSubmit} className="space-y-6">
         <CreateJobExtract vm={vm} />

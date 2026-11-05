@@ -3,6 +3,7 @@ import { CreateJobDemandForm } from '../CreateJobDemandForm'
 import { RequirementsVm } from './useRequirementsPage'
 import { workspaceService } from '../../../services/workspace.service'
 import { apiErrorMessage } from '../../../services/candidatePayload'
+import { clearSessionDraft, jdEditFormSessionKey } from '../../../lib/formSessionDraft'
 
 export function RequirementsEdit({ vm }: { vm: RequirementsVm }) {
   const {
@@ -17,12 +18,19 @@ export function RequirementsEdit({ vm }: { vm: RequirementsVm }) {
     roleLabel,
   } = vm
 
+  const clearEditDraft = () => {
+    if (editingReq?.id) clearSessionDraft(jdEditFormSessionKey(String(editingReq.id)))
+  }
+
   return (
     <CreateJobDemandForm
       userRole={roleLabel}
       mode="edit"
       initialData={editingReq || undefined}
-      onCancel={() => setIsEditingDemand(false)}
+      onCancel={() => {
+        clearEditDraft()
+        setIsEditingDemand(false)
+      }}
       onSubmit={async updatedReq => {
         try {
           await workspaceService.updateRequirement(updatedReq.id, updatedReq)
@@ -32,6 +40,7 @@ export function RequirementsEdit({ vm }: { vm: RequirementsVm }) {
           setLocalRequirements(updatedList)
           onUpdateRequirements?.(updatedList)
           setSelectedReqForDetail(updatedReq)
+          clearSessionDraft(jdEditFormSessionKey(String(updatedReq.id)))
           setIsEditingDemand(false)
           setEditingReq(null)
           showToast('Requirement details updated successfully!')

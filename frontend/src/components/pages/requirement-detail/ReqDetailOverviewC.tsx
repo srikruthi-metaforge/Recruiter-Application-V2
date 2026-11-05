@@ -1,6 +1,7 @@
 import React from 'react'
 import { Pencil, Calendar, Eye, Search } from 'lucide-react'
 import { RequirementDetailVm } from './useRequirementDetailOverview'
+import { PaginationFooter } from '../../ui/PaginationFooter'
 
 export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
   const {
@@ -10,10 +11,13 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
     setHistorySearchQuery,
     historyPage,
     setHistoryPage,
+    historyPageSize,
+    setHistoryPageSize,
     setIsScheduleModalOpen,
     setSchedulingCandidateRow,
     isRecruiter,
     filteredHistoryRows,
+    paginatedHistoryRows,
     historyStatusCounts,
     showToast,
     activeTab,
@@ -40,7 +44,9 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
             <div>
               <h3 className="text-base font-extrabold text-gray-900 tracking-tight">Requirement History</h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                {isRecruiter ? 'Your candidate submissions for this requirement, newest first.' : 'All recruiter submissions for this requirement, newest first.'}
+                {isRecruiter
+                  ? 'All submissions on this requirement (yours are editable; peers are view-only).'
+                  : 'All recruiter submissions for this requirement, newest first.'}
               </p>
             </div>
 
@@ -181,7 +187,13 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium text-gray-800 bg-white">
-                  {filteredHistoryRows.map(row => (
+                  {filteredHistoryRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-slate-400 font-medium">
+                        No submissions match the current filters.
+                      </td>
+                    </tr>
+                  ) : (paginatedHistoryRows || []).map(row => (
                     <tr key={row.subId} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-gray-600">
                         <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px]">
@@ -250,31 +262,18 @@ export function ReqDetailOverviewC({ vm }: { vm: RequirementDetailVm }) {
               </table>
             </div>
 
-            {/* Pagination Controls Footer */}
-            <div className="flex items-center justify-between pt-2 text-xs text-gray-500 font-medium">
-              <span>
-                {filteredHistoryRows.length === 0
-                  ? 'No submissions yet'
-                  : `Showing submissions 1-${filteredHistoryRows.length} on page ${historyPage}`}
-              </span>
-              <div className="flex items-center gap-1.5 font-bold">
-                <button
-                  disabled={historyPage === 1 || filteredHistoryRows.length === 0}
-                  onClick={() => setHistoryPage(1)}
-                  className="px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-                >
-                  &lt; Previous
-                </button>
-                <button
-                  onClick={() => setHistoryPage(1)}
-                  className={`w-7 h-7 rounded-lg border text-xs cursor-pointer ${
-                    historyPage === 1 ? 'border-blue-600 bg-blue-50 text-blue-700 font-extrabold' : 'border-gray-200 text-gray-600'
-                  }`}
-                >
-                  1
-                </button>
-              </div>
-            </div>
+            <PaginationFooter
+              currentPage={historyPage}
+              totalPages={Math.max(1, Math.ceil(filteredHistoryRows.length / (historyPageSize || 5)))}
+              totalItems={filteredHistoryRows.length}
+              pageSize={historyPageSize || 5}
+              onPageChange={setHistoryPage}
+              onPageSizeChange={size => {
+                setHistoryPageSize(size)
+                setHistoryPage(1)
+              }}
+              itemLabel="submissions"
+            />
           </div>
         </>
       )}

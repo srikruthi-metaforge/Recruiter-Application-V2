@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Requirement } from '../../../types'
 import { getSessionUser } from '../../../store/session'
 import { ownsByRecruiter } from '../../../utils/recruiterOwnership'
+import { matchesSubmissionStatusFilter } from '../../../utils/submissionStatusFilter'
 import type { ScreenshotSubmission } from './preamble'
 import type { SubmissionsVmState } from './useSubmissionsPageState'
 
@@ -127,11 +128,11 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
           (activeRecruiterId && leadId && leadId === String(activeRecruiterId)) ||
           (activeRecruiterEmail && leadEmail && leadEmail === activeRecruiterEmail)
 
-        const submittedByMe =
-          (activeRecruiterName && (by === activeRecruiterName || by.includes(activeRecruiterName))) ||
-          (activeRecruiterId &&
-            item.raw?.recruiterId &&
-            String(item.raw.recruiterId) === String(activeRecruiterId))
+        const submittedByMe = ownsByRecruiter(submissionOwnerFields(item), {
+          id: activeRecruiterId,
+          email: activeRecruiterEmail,
+          name: activeRecruiterName,
+        })
 
         const pendingForLead =
           (item.status || '').toLowerCase().includes('submitted to lead') ||
@@ -139,9 +140,10 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
             (item.status || '').toLowerCase().includes('lead'))
 
         if (scopeTab === 'my_submissions') {
-          // Lead review queue: assigned to me, or pending lead review.
+          // Lead review queue + own pipeline rows (e.g. Offered/Placed she submitted as recruiter).
           if (assignedToMe) return true
           if (pendingForLead) return true
+          if (submittedByMe) return true
           return false
         }
         if (scopeTab === 'team_members') {
@@ -205,10 +207,10 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     return counts
   }, [scopeSubmissions])
 
-  // Dynamic filter
-  const filteredData = useMemo(() => {
+  // Base list for KPI cards: apply search/date/client/recruiter, but NOT status.
+  // Status KPI clicks only filter the table — they must not rewrite the summary numbers.
+  const kpiBaseData = useMemo(() => {
     const list = scopeSubmissions.filter(item => {
-      // Search text
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
         const matchCandidate = item.candidateName.toLowerCase().includes(q)
@@ -222,7 +224,6 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
         }
       }
 
-      // Date filter
       if (dateFilter && dateFilter !== 'All') {
         const rawDate = item.submittedOn || ''
         if (!rawDate) return false
@@ -270,25 +271,6 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
         }
       }
 
-      const itemStatus = item.status.toLowerCase().trim()
-      const filterVal = statusFilter.toLowerCase().trim()
-
-      if (filterVal !== 'all') {
-        if (filterVal === 'submitted to client') {
-          if (!itemStatus.includes('client')) return false
-        } else if (filterVal === 'submitted to lead') {
-          if (!itemStatus.includes('lead')) return false
-        } else if (filterVal === 'interview scheduled') {
-          if (!itemStatus.includes('interview')) return false
-        } else if (filterVal === 'selected') {
-          if (!itemStatus.includes('select')) return false
-        } else if (filterVal === 'placed') {
-          if (!itemStatus.includes('place')) return false
-        } else if (filterVal === 'rejected') {
-          if (!itemStatus.includes('reject')) return false
-        }
-      }
-
       return true
     })
 
@@ -305,12 +287,29 @@ export function useSubmissionsPageHandlers1(s: SubmissionsVmState) {
     customStartDate,
     customEndDate,
     clientFilter,
-    statusFilter,
     recruiterFilter,
   ])
 
+  // Table list: same base filters + status filter
+  const filteredData = useMemo(() => {
+    const interviewIds = s.interviewSubmissionIds || new Set<string>()
+    const offerIds = s.offerSubmissionIds || new Set<string>()
+    return kpiBaseData.filter(item => {
+      const idKeys = [
+        String(item.id || ''),
+        String(item.submissionId || ''),
+        String(item.raw?._id || ''),
+        String(item.raw?.id || ''),
+        String(item.raw?.submissionId || ''),
+      ].filter(Boolean)
+      const hasInterview = idKeys.some(k => interviewIds.has(k))
+      const hasOffer = idKeys.some(k => offerIds.has(k))
+      return matchesSubmissionStatusFilter(item.status, statusFilter, { hasInterview, hasOffer })
+    })
+  }, [kpiBaseData, statusFilter, s.interviewSubmissionIds, s.offerSubmissionIds])
+
   return {
     handleScheduleSuccess, handleOpenReqOverview, scopeSubmissions, clientOptions,
-    clientCounts, recruiterOptions, recruiterCounts, filteredData, reasons, setReasons, scopeTab, setScopeTab
+    clientCounts, recruiterOptions, recruiterCounts, kpiBaseData, filteredData, reasons, setReasons, scopeTab, setScopeTab
   }
 }

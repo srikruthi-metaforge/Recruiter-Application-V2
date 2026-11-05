@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 import { Submission, SubmissionDocument } from './schemas/submission.schema';
 import {
   SubmissionHistory,
@@ -29,6 +30,8 @@ import { MailService } from '../mail/mail.service';
 import { displayRequirementId, reqCodeCandidates } from '../../common/requirement-id';
 import {
   assertCanAccessSubmission,
+  assertCanViewSubmission,
+  assertCanWorkOnRequirement,
   callerUserObjectId,
   orgScope,
   requireOrgId,
@@ -156,6 +159,8 @@ export class SubmissionsService {
       requirementId?: string;
       candidateId?: string;
       search?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = requireOrgId(currentUser);
@@ -202,22 +207,16 @@ export class SubmissionsService {
       filter.requirementId = scopedRequirement?._id || new Types.ObjectId();
     }
     const scopedRequirementId = scopedRequirement?._id || null;
-    const isAssignedRecruiter =
-      !!userObjectId &&
-      !!scopedRequirement &&
-      (scopedRequirement.assignedRecruiterIds || []).some(
-        (id: any) => String(id) === String(userObjectId),
-      );
 
     // Role-based access control:
     // SuperAdmin & Admin: see ALL org submissions.
     // Team Lead + requirementId: ALL submissions on that requirement (matches
     // History / metrics UI and workspace live counts). Team scope only for
     // unscoped lead lists.
-    // Recruiter assigned to the requirement + requirementId: ALL submissions on
-    // that requirement (lead cards and recruiter cards stay in sync). Unscoped
-    // recruiter lists stay personal (owned recruiterId only — not leadId rows).
-    if (role === 'recruiter' && userObjectId && !(scopedRequirementId && isAssignedRecruiter)) {
+    // Recruiter + requirementId: ALL submissions on that requirement (view peers;
+    // FE/mutation APIs keep peer rows read-only). Unscoped recruiter lists stay
+    // personal (owned recruiterId only).
+    if (role === 'recruiter' && userObjectId && !scopedRequirementId) {
       filter.recruiterId = userObjectId;
     } else if (isLeadRole && userObjectId && !scopedRequirementId) {
       const teamRecruiterIds: Types.ObjectId[] = [userObjectId];
@@ -274,17 +273,24 @@ export class SubmissionsService {
       filter.submissionId = regex;
     }
 
-    const items = await this.submissionModel
-      .find(filter)
-      .populate('candidateId', 'name email phone skills totalExperienceYears')
-      .populate('requirementId', 'title reqCode clientName status')
-      .populate('clientId', 'clientName domain')
-      .populate('recruiterId', 'name email')
-      .populate('leadId', 'name email')
-      .sort({ updatedAt: -1, submittedAt: -1, createdAt: -1 })
-      .exec();
+    const window = resolveListWindow(query?.page, query?.limit);
+    const listQuery = () =>
+      this.submissionModel
+        .find(filter)
+        .populate('candidateId', 'name email phone skills totalExperienceYears')
+        .populate('requirementId', 'title reqCode clientName status')
+        .populate('clientId', 'clientName domain')
+        .populate('recruiterId', 'name email')
+        .populate('leadId', 'name email')
+        .sort({ updatedAt: -1, submittedAt: -1, createdAt: -1 })
+        .skip(window.skip)
+        .limit(window.limit)
+        .lean();
+    const [items, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.submissionModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
 
-    return items.map((item) => this.sanitizeSubmission(item));
+    return listResult(window, items.map((item) => this.sanitizeSubmission(item)), total);
   }
 
   /** Load submission by Mongo id or business id, scoped to caller org + role. */
@@ -292,6 +298,7 @@ export class SubmissionsService {
     id: string,
     currentUser: any,
     populate = false,
+    mode: 'view' | 'mutate' = 'mutate',
   ): Promise<SubmissionDocument> {
     const scope = orgScope(currentUser);
     const applyPopulate = (q: any) => {
@@ -315,13 +322,14 @@ export class SubmissionsService {
     if (!doc) {
       throw new NotFoundException(`Submission '${id}' not found`);
     }
-    assertCanAccessSubmission(doc, currentUser);
+    if (mode === 'view') assertCanViewSubmission(doc, currentUser);
+    else assertCanAccessSubmission(doc, currentUser);
     return doc;
   }
 
   /** GET /api/v1/submissions/:id */
   async findById(id: string, currentUser: any) {
-    const doc = await this.loadSubmissionForUser(id, currentUser, true);
+    const doc = await this.loadSubmissionForUser(id, currentUser, true, 'view');
 
     const sanitized = this.sanitizeSubmission(doc);
 
@@ -436,6 +444,7 @@ export class SubmissionsService {
     }
 
     const reqDoc = await this.resolveRequirementDoc(orgId, dto);
+    assertCanWorkOnRequirement(reqDoc, currentUser);
     const candidateObjectId = new Types.ObjectId(candidateId);
     const requirementObjectId = reqDoc._id as Types.ObjectId;
 
@@ -453,6 +462,19 @@ export class SubmissionsService {
     // If recruiter is (re)submitting to lead, upgrade stage/leadId and notify so the lead
     // actually receives the review request (previous creates often lacked leadId/stage).
     if (existing) {
+      const roleLowerExisting = String(currentUser?.role || '').toLowerCase();
+      // Peer isolation: never let recruiter A take over recruiter B's submission.
+      if (
+        roleLowerExisting === 'recruiter' &&
+        performedBy &&
+        existing.recruiterId &&
+        String(existing.recruiterId) !== String(performedBy)
+      ) {
+        throw new ConflictException(
+          'This candidate is already submitted on this requirement by another recruiter. You can view their submission but cannot change it.',
+        );
+      }
+
       const wantLead =
         dto.stage === 'Submitted to Lead' ||
         (!dto.stage && dto.leadId && this.isStrictObjectId(dto.leadId));
@@ -482,9 +504,9 @@ export class SubmissionsService {
           nextLeadId &&
           (!existing.leadId || String(existing.leadId) !== String(nextLeadId));
         const needsPending = existing.leadApprovalStatus !== 'Pending';
-        // Recruiter resubmit must re-claim ownership — older rows were often stamped
-        // with the lead's user id, so recruiter requirement cards stayed at 0.
-        const roleLower = String(currentUser?.role || '').toLowerCase();
+        // Recruiter resubmit may reclaim ownership only when the row has no owner
+        // or was incorrectly stamped with the lead — never steal a peer's row.
+        const roleLower = roleLowerExisting;
         const needsRecruiterOwner =
           roleLower === 'recruiter' &&
           performedBy &&
@@ -626,15 +648,24 @@ export class SubmissionsService {
 
     const saved = await newSubmission.save();
 
-    // Keep requirement denormalized counters in sync for Reports / KPI cards.
+    // Count on requirement only when the profile is with the client (or later).
+    // Recruiter → Lead (Pending) does not increment until lead forwards to client.
     try {
-      const stageInc: Record<string, number> = { submissionsCount: 1 };
-      if (initialStage === 'Placed' || initialStage === 'Offered') {
-        stageInc.placedCount = 1;
+      const countsForRequirement =
+        initialStage === 'Submitted to Client' ||
+        initialStage === 'Client Review' ||
+        initialStage === 'Interview Scheduled' ||
+        initialStage === 'Offered' ||
+        initialStage === 'Placed';
+      if (countsForRequirement) {
+        const stageInc: Record<string, number> = { submissionsCount: 1 };
+        if (initialStage === 'Placed' || initialStage === 'Offered') {
+          stageInc.placedCount = 1;
+        }
+        await this.requirementModel
+          .updateOne({ _id: requirementObjectId }, { $inc: stageInc })
+          .exec();
       }
-      await this.requirementModel
-        .updateOne({ _id: requirementObjectId }, { $inc: stageInc })
-        .exec();
     } catch {
       // Non-fatal — workspace live counts still cover reports.
     }
@@ -724,6 +755,14 @@ export class SubmissionsService {
     return created;
   }
 
+  /** Clear rejection fields when a submission leaves Rejected. */
+  private clearRejectionFields(doc: SubmissionDocument) {
+    doc.rejectionReason = null as any;
+    if ((doc as any).rejectedAt !== undefined) (doc as any).rejectedAt = null;
+    if ((doc as any).rejectedBy !== undefined) (doc as any).rejectedBy = null;
+    if ((doc as any).rejectedByName !== undefined) (doc as any).rejectedByName = null;
+  }
+
   /** PUT /api/v1/submissions/:id/stage */
   async updateStage(id: string, dto: UpdateStageDto, currentUser: any) {
     const doc = await this.loadSubmissionForUser(id, currentUser);
@@ -734,6 +773,10 @@ export class SubmissionsService {
       : new Types.ObjectId();
 
     doc.stage = dto.stage;
+
+    if (previousStage === 'Rejected' && dto.stage !== 'Rejected') {
+      this.clearRejectionFields(doc);
+    }
 
     if (dto.stage === 'Submitted to Lead') {
       doc.leadApprovalStatus = 'Pending';
@@ -754,12 +797,35 @@ export class SubmissionsService {
       doc.leadApprovalStatus = 'Approved';
       doc.leadApprovedAt = doc.leadApprovedAt || new Date();
       doc.clientForwardedAt = new Date();
+      this.clearRejectionFields(doc);
+    } else if (dto.stage === 'Rejected') {
+      doc.leadApprovalStatus = 'Rejected';
+      if (dto.notes) doc.rejectionReason = dto.notes;
     } else if (dto.stage === 'Approved') {
       doc.leadApprovalStatus = 'Approved';
       doc.leadApprovedAt = new Date();
     }
 
     const updated = await doc.save();
+
+    if (
+      dto.stage === 'Submitted to Client' &&
+      previousStage !== 'Submitted to Client' &&
+      previousStage !== 'Client Review' &&
+      previousStage !== 'Interview Scheduled' &&
+      previousStage !== 'Offered' &&
+      previousStage !== 'Placed'
+    ) {
+      try {
+        if (updated.requirementId) {
+          await this.requirementModel
+            .updateOne({ _id: updated.requirementId }, { $inc: { submissionsCount: 1 } })
+            .exec();
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
 
     await this.logHistory(
       new Types.ObjectId(doc.orgId.toString()),
@@ -845,6 +911,26 @@ export class SubmissionsService {
 
     const updated = await doc.save();
 
+    // First time reaching client → count as recruiter submission on the requirement.
+    if (
+      (approvalStatus === 'Approved' || approvalStatus === 'Forwarded') &&
+      previousStage !== 'Submitted to Client' &&
+      previousStage !== 'Client Review' &&
+      previousStage !== 'Interview Scheduled' &&
+      previousStage !== 'Offered' &&
+      previousStage !== 'Placed'
+    ) {
+      try {
+        if (updated.requirementId) {
+          await this.requirementModel
+            .updateOne({ _id: updated.requirementId }, { $inc: { submissionsCount: 1 } })
+            .exec();
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+
     await this.logHistory(
       new Types.ObjectId(doc.orgId.toString()),
       new Types.ObjectId(doc._id.toString()),
@@ -892,8 +978,29 @@ export class SubmissionsService {
     doc.leadApprovalStatus = 'Forwarded';
     doc.leadApprovedAt = doc.leadApprovedAt || new Date();
     doc.clientForwardedAt = new Date();
+    if (previousStage === 'Rejected') {
+      this.clearRejectionFields(doc);
+    }
 
     const updated = await doc.save();
+
+    if (
+      previousStage !== 'Submitted to Client' &&
+      previousStage !== 'Client Review' &&
+      previousStage !== 'Interview Scheduled' &&
+      previousStage !== 'Offered' &&
+      previousStage !== 'Placed'
+    ) {
+      try {
+        if (updated.requirementId) {
+          await this.requirementModel
+            .updateOne({ _id: updated.requirementId }, { $inc: { submissionsCount: 1 } })
+            .exec();
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
 
     await this.logHistory(
       new Types.ObjectId(doc.orgId.toString()),
@@ -901,7 +1008,7 @@ export class SubmissionsService {
       previousStage,
       updated.stage,
       performedBy,
-      dto.notes || 'Forwarded to Client',
+      dto.notes || (previousStage === 'Rejected' ? 'Rejection reversed — forwarded to Client' : 'Forwarded to Client'),
     );
 
     const label = await this.submissionNotifyLabel(updated);
@@ -1206,16 +1313,25 @@ export class SubmissionsService {
 
     try {
       if (deleted.requirementId) {
-        const dec: Record<string, number> = { submissionsCount: -1 };
-        if (deleted.stage === 'Placed' || deleted.stage === 'Offered') {
-          dec.placedCount = -1;
+        const stage = String(deleted.stage || '');
+        const counted =
+          stage === 'Submitted to Client' ||
+          stage === 'Client Review' ||
+          stage === 'Interview Scheduled' ||
+          stage === 'Offered' ||
+          stage === 'Placed';
+        if (counted) {
+          const dec: Record<string, number> = { submissionsCount: -1 };
+          if (stage === 'Placed' || stage === 'Offered') {
+            dec.placedCount = -1;
+          }
+          await this.requirementModel
+            .updateOne(
+              { _id: deleted.requirementId, submissionsCount: { $gt: 0 } },
+              { $inc: dec },
+            )
+            .exec();
         }
-        await this.requirementModel
-          .updateOne(
-            { _id: deleted.requirementId, submissionsCount: { $gt: 0 } },
-            { $inc: dec },
-          )
-          .exec();
       }
     } catch {
       // Non-fatal

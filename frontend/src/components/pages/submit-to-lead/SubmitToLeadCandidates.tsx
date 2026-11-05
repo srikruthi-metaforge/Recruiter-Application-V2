@@ -104,7 +104,7 @@ export function SubmitToLeadCandidates({ vm }: { vm: SubmitToLeadVm }) {
         {/* NUMBER OF POSITIONS TO SUBMIT INPUT */}
         <div>
           <label className="block text-slate-700 font-bold text-xs mb-1">
-            Number of Positions to Submit
+            Number of Profiles to Submit
             <span className="text-slate-400 font-normal text-[11px] ml-2">Maximum number of candidates you can attach</span>
           </label>
           <input

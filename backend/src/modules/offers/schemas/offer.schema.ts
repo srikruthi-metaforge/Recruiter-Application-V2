@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 
 export type OfferDocument = Offer & Document;
 
@@ -90,4 +91,4 @@ OfferSchema.index({
   deletedAt: 1,
 });
 
-OfferSchema.plugin(DataScopePlugin);
+OfferSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

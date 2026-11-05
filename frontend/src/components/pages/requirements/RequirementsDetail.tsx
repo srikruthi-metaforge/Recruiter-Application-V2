@@ -2,8 +2,10 @@ import React from 'react'
 import { Search, X } from 'lucide-react'
 import { RequirementDetailOverview } from '../RequirementDetailOverview'
 import { CreateJobDemandForm } from '../CreateJobDemandForm'
-import { PaginationFooter } from '../../ui/PaginationFooter'
 import { RequirementsVm } from './useRequirementsPage'
+import { getSessionUser } from '../../../store/session'
+import { canWorkOnRequirement, requirementAssignedToRecruiter } from '../../../utils/recruiterOwnership'
+import { isRequirementUnassigned } from '../../ui/requirementAssignment'
 
 export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
   const {
@@ -34,10 +36,15 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
   } = vm
   if (!selectedReqForDetail) return null
   const isHold = selectedReqForDetail.status === 'Hold' || selectedReqForDetail.status === 'On Hold'
-  const isUnassigned =
-    selectedReqForDetail.assignmentStatus === 'Unassigned' ||
-    !selectedReqForDetail.owner ||
-    selectedReqForDetail.owner === 'Unassigned'
+  const isUnassigned = isRequirementUnassigned(selectedReqForDetail)
+  const session = getSessionUser()
+  const me = {
+    id: session?.id || null,
+    email: session?.email || null,
+    name: session?.name || currentUserName || null,
+  }
+  const canWork = canWorkOnRequirement(selectedReqForDetail, me, role)
+  const isAssignedToMe = requirementAssignedToRecruiter(selectedReqForDetail, me)
   const isRecruiterSelfOnly = role === 'recruiter' && isUnassigned
   return (
       <>
@@ -46,6 +53,14 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
           role={role}
           onBack={() => setSelectedReqForDetail(null)}
           onAddCandidate={() => {
+            if (!canWork) {
+              showToast(
+                isUnassigned
+                  ? `Cannot add candidate: Requirement ${selectedReqForDetail.id} is not assigned to you`
+                  : `Cannot add candidate: You are not assigned to requirement ${selectedReqForDetail.id}`,
+              )
+              return
+            }
             if (isHold) {
               showToast(`Cannot add candidate: Requirement ${selectedReqForDetail.id} is On Hold`)
               return
@@ -57,6 +72,10 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
             )
           }}
           onEditRequirement={() => {
+            if (!canWork) {
+              showToast(`View only: You are not assigned to requirement ${selectedReqForDetail.id}`)
+              return
+            }
             if (isHold) {
               showToast(`Cannot edit requirement: Requirement ${selectedReqForDetail.id} is On Hold`)
               return
@@ -65,6 +84,10 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
             setIsEditingDemand(true)
           }}
           onOpenAssignModal={() => {
+            if (role === 'recruiter' && !isUnassigned && !isAssignedToMe) {
+              showToast(`You are not assigned to requirement ${selectedReqForDetail.id}`)
+              return
+            }
             if (isHold) {
               showToast(`Cannot assign recruiters: Requirement ${selectedReqForDetail.id} is On Hold`)
               return
@@ -77,6 +100,10 @@ export function RequirementsDetail({ vm }: { vm: RequirementsVm }) {
             setIsAssignModalOpen(true)
           }}
           onRevokeRequirement={() => {
+            if (role === 'recruiter' && !isAssignedToMe) {
+              showToast(`You are not assigned to requirement ${selectedReqForDetail.id}`)
+              return
+            }
             if (isHold && !selectedReqForDetail.revokeRequested) {
               showToast(`Cannot revoke requirement: Requirement ${selectedReqForDetail.id} is On Hold`)
               return

@@ -29,6 +29,16 @@ export class ApiError extends Error {
   }
 }
 
+export type ApiRequestInit = {
+  signal?: AbortSignal
+}
+
+/** True when fetch was aborted by an AbortController (superseded navigation or poll). */
+export function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  return (err as { name?: string }).name === 'AbortError'
+}
+
 /** Read double-submit CSRF cookie set at login (not HttpOnly). */
 function getCsrfToken(): string | null {
   if (typeof document === 'undefined') return null
@@ -102,6 +112,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
       credentials: 'include',
     })
   } catch (err: any) {
+    if (isAbortError(err) || init.signal?.aborted) throw err
     const rawMsg = err instanceof Error ? err.message : String(err)
     if (rawMsg.includes('Failed to fetch') || err?.name === 'TypeError') {
       throw new ApiError('Unable to connect to backend server. Please ensure backend is running on port 3001.', 0)
@@ -161,7 +172,7 @@ async function getBlob(path: string): Promise<Blob> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, init?: ApiRequestInit) => request<T>(path, init),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>

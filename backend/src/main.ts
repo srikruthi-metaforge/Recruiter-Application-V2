@@ -1,8 +1,10 @@
+import './common/runtime/threadpool';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import passport = require('passport');
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import {
   CSRF_COOKIE_NAME,
@@ -22,6 +24,7 @@ import {
   trustProxySetting,
 } from './common/security/transport.util';
 import { isSwaggerRequestPath, setupSwagger } from './common/swagger/swagger.setup';
+import { responseTimeMiddleware } from './common/performance/response-time.middleware';
 
 /**
  * Sanitizes input payloads to block MongoDB operator keys ($where, $gt, etc.)
@@ -44,6 +47,8 @@ async function bootstrap() {
 
   // Behind ALB / nginx / ingress: honor X-Forwarded-Proto for HTTPS detection.
   expressApp.set('trust proxy', trustProxySetting());
+  expressApp.use(responseTimeMiddleware);
+  expressApp.use(compression({ threshold: 1024 }));
 
   // Transport: redirect plain HTTP → HTTPS (production / FORCE_HTTPS).
   if (forceHttps) {
@@ -65,51 +70,51 @@ async function bootstrap() {
       }
     : false;
 
+  const upgrade = forceHttps
+    ? { upgradeInsecureRequests: [] as string[] }
+    : { upgradeInsecureRequests: null };
+  const swaggerHelmet = helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        ...upgrade,
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: hstsOptions,
+  });
+  const apiHelmet = helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'none'"],
+        baseUri: ["'none'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'none'"],
+        scriptSrc: ["'none'"],
+        styleSrc: ["'none'"],
+        imgSrc: ["'none'"],
+        connectSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        ...upgrade,
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: hstsOptions,
+  });
   app.use((req: any, res: any, next: any) => {
     if (isSwaggerRequestPath(String(req.path || req.url || ''))) {
-      return helmet({
-        contentSecurityPolicy: {
-          useDefaults: true,
-          directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            imgSrc: ["'self'", 'data:', 'https:'],
-            connectSrc: ["'self'"],
-            fontSrc: ["'self'", 'data:'],
-            objectSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            ...(forceHttps
-              ? { upgradeInsecureRequests: [] }
-              : { upgradeInsecureRequests: null }),
-          },
-        },
-        crossOriginResourcePolicy: { policy: 'cross-origin' },
-        hsts: hstsOptions,
-      })(req, res, next);
+      return swaggerHelmet(req, res, next);
     }
-
-    return helmet({
-      contentSecurityPolicy: {
-        useDefaults: true,
-        directives: {
-          defaultSrc: ["'none'"],
-          baseUri: ["'none'"],
-          frameAncestors: ["'none'"],
-          formAction: ["'none'"],
-          scriptSrc: ["'none'"],
-          styleSrc: ["'none'"],
-          imgSrc: ["'none'"],
-          connectSrc: ["'none'"],
-          objectSrc: ["'none'"],
-          ...(forceHttps
-            ? { upgradeInsecureRequests: [] }
-            : { upgradeInsecureRequests: null }),
-        },
-      },
-      crossOriginResourcePolicy: { policy: 'cross-origin' },
-      hsts: hstsOptions,
-    })(req, res, next);
+    return apiHelmet(req, res, next);
   });
 
   app.use(json({ limit: '50mb' }));
@@ -223,6 +228,7 @@ async function bootstrap() {
     exclude: [
       { path: 'health', method: RequestMethod.ALL },
       { path: 'health/db', method: RequestMethod.ALL },
+      { path: 'health/metrics', method: RequestMethod.ALL },
     ],
   });
 

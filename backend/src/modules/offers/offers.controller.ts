@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { OffersService } from './offers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateOfferDto } from './dto/create-offer.dto';
@@ -23,8 +24,9 @@ import { UpdateOfferStatusDto } from './dto/update-offer-status.dto';
 export class OffersController {
   constructor(private readonly offersService: OffersService) {}
 
-  /** GET /api/v1/offers */
+  /** GET /api/v1/offers — Reports / onboarding lists; skip global throttle. */
   @Get()
+  @SkipThrottle()
   async findAll(
     @Req() req: any,
     @Query('candidateId') candidateId?: string,
@@ -32,6 +34,8 @@ export class OffersController {
     @Query('requirementId') requirementId?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.offersService.findAll(req.user, {
       candidateId,
@@ -39,6 +43,8 @@ export class OffersController {
       requirementId,
       status,
       search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

@@ -1,41 +1,28 @@
 /**
- * Background worker process for MetaForge Recruiter V2.
- * Consumes Redis lists when REDIS_URL is set; otherwise idles as a health process.
+ * BullMQ worker launcher.
+ * Starts the compiled backend worker when it is present. It does not consume
+ * queues itself, so it cannot take a job away from the API when the bundle
+ * has not been built. Without REDIS_URL the API keeps its in-process timers.
  */
-const Redis = require('ioredis')
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 
-const REDIS_URL = process.env.REDIS_URL || ''
-const QUEUE = process.env.WORKER_QUEUE || 'mrap:jobs'
+const REDIS_URL = process.env.REDIS_URL || '';
 
-async function handleJob(raw) {
-  let job
-  try {
-    job = JSON.parse(raw)
-  } catch {
-    console.warn('Skipping malformed job payload')
-    return
-  }
-  console.log(`Processed job ${job.type || 'unknown'}`, job.id || '')
-}
-
-async function main() {
-  if (!REDIS_URL) {
-    console.log('REDIS_URL not set — worker idle (in-process fallback is used by the API)')
-    setInterval(() => {}, 60_000)
-    return
-  }
-
-  const redis = new Redis(REDIS_URL)
-  console.log(`V2 worker listening on ${QUEUE}`)
-  while (true) {
-    try {
-      const result = await redis.brpop(QUEUE, 15)
-      if (result && result[1]) await handleJob(result[1])
-    } catch (err) {
-      console.error('Worker loop error', err.message)
-      await new Promise((r) => setTimeout(r, 2000))
-    }
+if (!REDIS_URL) {
+  console.log('REDIS_URL not set — worker idle (API keeps in-process schedulers)');
+  setInterval(() => {}, 60_000);
+} else {
+  const backendWorker = path.resolve(__dirname, '../../backend/dist/worker.js');
+  if (!fs.existsSync(backendWorker)) {
+    console.log('Backend worker bundle is not built — not consuming queues. The API executes jobs in-process unless WORKER_IN_API=false.');
+    setInterval(() => {}, 60_000);
+  } else {
+    const child = spawn(process.execPath, [backendWorker], {
+      stdio: 'inherit',
+      env: { ...process.env, PROCESS_ROLE: 'worker' },
+    });
+    child.on('exit', (code) => process.exit(code == null ? 1 : code));
   }
 }
-
-main()

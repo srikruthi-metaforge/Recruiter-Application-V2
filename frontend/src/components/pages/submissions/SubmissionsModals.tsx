@@ -1,11 +1,7 @@
 import React from 'react'
 import { CheckCircle } from 'lucide-react'
-import { PaginationFooter } from '../../ui/PaginationFooter'
-import { PageHeader } from '../../layout/PageHeader'
 import { SubmissionCandidateDetailModal } from '../../modals/SubmissionCandidateDetailModal'
 import { ScheduleInterviewModal } from '../../modals/ScheduleInterviewModal'
-import { RequirementDetailOverview } from '../RequirementDetailOverview'
-import { CreateJobDemandForm } from '../CreateJobDemandForm'
 import { SubmissionsVm } from './useSubmissionsPage'
 
 export function SubmissionsModals({ vm }: { vm: SubmissionsVm }) {
@@ -64,9 +60,25 @@ export function SubmissionsModals({ vm }: { vm: SubmissionsVm }) {
           onSaveRejectionReason={(id, newReason) => {
             setReasons(prev => ({ ...prev, [id]: newReason }))
           }}
-          onUpdateStage={handleUpdateStage}
+          onUpdateStage={async (id, stage, notes) => {
+            await handleUpdateStage(id, stage, notes)
+            if (stage !== 'Rejected') {
+              setReasons(prev => {
+                const next = { ...prev }
+                delete next[id]
+                return next
+              })
+            }
+          }}
           onLeadApproval={handleLeadApproval}
-          onForwardClient={handleForwardClient}
+          onForwardClient={async (id, notes) => {
+            await handleForwardClient(id, notes)
+            setReasons(prev => {
+              const next = { ...prev }
+              delete next[id]
+              return next
+            })
+          }}
           onClose={() => setSelectedSub(null)}
         />
       )}

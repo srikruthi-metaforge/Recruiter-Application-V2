@@ -41,8 +41,9 @@ export function ReqDetailModals({ vm }: { vm: RequirementDetailVm }) {
 
 
       {/* ADD CANDIDATE MODAL (fallback when parent does not open App modal) */}
+      {isAddCandidateModalOpen && (
       <SubmitCandidateModal
-        isOpen={isAddCandidateModalOpen}
+        isOpen
         onClose={() => setIsAddCandidateModalOpen(false)}
         requirements={[requirement]}
         selectedReqId={(requirement as any)._id || requirement.id}
@@ -67,6 +68,7 @@ export function ReqDetailModals({ vm }: { vm: RequirementDetailVm }) {
           }
         }}
       />
+      )}
 
       {/* TOAST NOTIFICATION */}
       {toastMsg && (

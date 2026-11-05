@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { ArrowLeft, Pencil, Briefcase, Calendar, Eye, User, UserPlus, RotateCcw, Mail } from 'lucide-react'
+import { Pencil, Briefcase, Calendar, Eye, User, UserPlus, RotateCcw, Mail } from 'lucide-react'
 import { RequirementDetailVm } from './useRequirementDetailOverview'
 import { OriginalRequirementModal } from '../../modals/OriginalRequirementModal'
+import { BackButton } from '../../ui/BackButton'
 
 export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
   const {
@@ -14,26 +15,27 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
     setIsAddCandidateModalOpen,
     isRecruiter,
     isUnassigned,
+    canWork,
+    isAssignedToMe,
     showToast,
   } = vm
   const [isOriginalOpen, setIsOriginalOpen] = useState(false)
   const isHold = requirement.status === 'Hold' || requirement.status === 'On Hold'
   // A pending revoke request puts the requirement On Hold; revoking must stay possible so it can be completed.
   const revokeBlocked = isHold && !requirement.revokeRequested
+  // Recruiters may self-assign when unassigned, or reassign only when already an assignee.
+  const showAssignAction =
+    Boolean(onOpenAssignModal) && (!isRecruiter || isUnassigned || isAssignedToMe)
+  const showRevokeAction =
+    Boolean(onRevokeRequirement) && !isUnassigned && (!isRecruiter || isAssignedToMe)
   return (
     <>
       {/* 1. TOP BAR WITH BACK BUTTON AND ACTION BUTTONS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 border border-gray-200/90 rounded-xl text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-all shadow-2xs cursor-pointer w-fit"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 text-gray-500" />
-          <span>Back</span>
-        </button>
+        <BackButton label="Back to Requirements" onClick={onBack} />
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {onOpenAssignModal && (
+          {showAssignAction && (
             <button
               disabled={isHold}
               onClick={isHold ? undefined : onOpenAssignModal}
@@ -59,7 +61,7 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
             </button>
           )}
 
-          {onRevokeRequirement && !isUnassigned && (
+          {showRevokeAction && (
             <button
               disabled={revokeBlocked}
               onClick={revokeBlocked ? undefined : onRevokeRequirement}
@@ -75,7 +77,7 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
             </button>
           )}
 
-          {!isUnassigned && (
+          {canWork && (
             <button
               disabled={isHold}
               onClick={() => {
@@ -112,26 +114,28 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
             <span>Original Requirement</span>
           </button>
 
-          <button
-            disabled={isHold}
-            onClick={() => {
-              if (isHold) {
-                showToast('Cannot edit requirement: Requirement is On Hold')
-                return
-              }
-              if (onEditRequirement) onEditRequirement()
-              else vm.setIsInternalEditing(true)
-            }}
-            title={isHold ? 'Requirement is On Hold - editing disabled' : 'Edit Requirement'}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 border rounded-xl text-xs font-semibold transition-all shadow-2xs ${
-              isHold
-                ? 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed opacity-50'
-                : 'border-gray-200/90 text-gray-700 bg-white hover:bg-gray-50 cursor-pointer'
-            }`}
-          >
-            <Pencil className="w-3.5 h-3.5 text-gray-500" />
-            <span>Edit Requirement</span>
-          </button>
+          {canWork && (
+            <button
+              disabled={isHold}
+              onClick={() => {
+                if (isHold) {
+                  showToast('Cannot edit requirement: Requirement is On Hold')
+                  return
+                }
+                if (onEditRequirement) onEditRequirement()
+                else vm.setIsInternalEditing(true)
+              }}
+              title={isHold ? 'Requirement is On Hold - editing disabled' : 'Edit Requirement'}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 border rounded-xl text-xs font-semibold transition-all shadow-2xs ${
+                isHold
+                  ? 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed opacity-50'
+                  : 'border-gray-200/90 text-gray-700 bg-white hover:bg-gray-50 cursor-pointer'
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5 text-gray-500" />
+              <span>Edit Requirement</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -196,13 +200,17 @@ export function ReqDetailTop({ vm }: { vm: RequirementDetailVm }) {
         </div>
       </div>
 
-      {/* 3. VIEW ONLY WARNING BANNER (IF UNASSIGNED) */}
-      {isUnassigned && (
+      {/* 3. VIEW ONLY WARNING BANNER */}
+      {!canWork && (
         <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3.5 text-xs text-amber-900 flex items-center gap-2.5 shadow-2xs">
           <Eye className="w-4 h-4 text-amber-600 shrink-0" />
           <div>
             <strong className="font-bold mr-1.5">View only</strong>
-            <span>This requirement is not assigned. Candidates cannot be added or submitted until it is assigned.</span>
+            <span>
+              {isUnassigned
+                ? 'This requirement is not assigned. Candidates cannot be added or submitted until it is assigned to you.'
+                : 'You are not assigned to this requirement. You can view details and submissions, but cannot add candidates or change work belonging to other recruiters.'}
+            </span>
           </div>
         </div>
       )}

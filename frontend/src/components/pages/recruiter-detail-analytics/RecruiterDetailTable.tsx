@@ -1,7 +1,7 @@
-import React from 'react'
-import { Briefcase, Filter, MessageSquare, Plus, Edit2 } from 'lucide-react'
-import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, Cell } from 'recharts'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Briefcase, MessageSquare, Plus, Edit2 } from 'lucide-react'
 import { RecruiterDetailVm } from './useRecruiterDetailAnalytics'
+import { PaginationFooter } from '../../ui/PaginationFooter'
 
 export function RecruiterDetailTable({ vm }: { vm: RecruiterDetailVm }) {
   const {
@@ -16,6 +16,26 @@ export function RecruiterDetailTable({ vm }: { vm: RecruiterDetailVm }) {
     setEndDate,
     handleOpenReasonModal,
   } = vm
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+
+  const filteredRequirements = useMemo(() => {
+    return recruiter.requirementsList.filter(r => {
+      if (activeTab === 'requirements') return r.status === 'Worked'
+      if (activeTab === 'submissions') return r.status === 'Non-Worked'
+      return true
+    })
+  }, [recruiter.requirementsList, activeTab])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeTab, dateFilter, startDate, endDate, pageSize, filteredRequirements.length])
+
+  const paginatedRequirements = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return filteredRequirements.slice(start, start + pageSize)
+  }, [filteredRequirements, currentPage, pageSize])
+
   return (
     <>
       {/* 3. WORKED VS NON-WORKED REQUIREMENTS FULL LIST TABLE WITH NON-SUBMISSION REASON NOTES */}
@@ -111,13 +131,14 @@ export function RecruiterDetailTable({ vm }: { vm: RecruiterDetailVm }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-              {recruiter.requirementsList
-                .filter(r => {
-                  if (activeTab === 'requirements') return r.status === 'Worked'
-                  if (activeTab === 'submissions') return r.status === 'Non-Worked'
-                  return true
-                })
-                .map(r => (
+              {paginatedRequirements.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-slate-400 font-medium">
+                    No requirements match the current filter.
+                  </td>
+                </tr>
+              ) : (
+                paginatedRequirements.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-3.5 px-4 font-bold text-slate-900">
                       <div>{r.title}</div>
@@ -168,9 +189,22 @@ export function RecruiterDetailTable({ vm }: { vm: RecruiterDetailVm }) {
                       {r.interviews}
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
             </tbody>
           </table>
+          <PaginationFooter
+            currentPage={currentPage}
+            totalPages={Math.max(1, Math.ceil(filteredRequirements.length / pageSize))}
+            totalItems={filteredRequirements.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={size => {
+              setPageSize(size)
+              setCurrentPage(1)
+            }}
+            itemLabel="requirements"
+          />
         </div>
       </div>
 

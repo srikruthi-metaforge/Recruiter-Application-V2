@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { RecruiterAttendanceService } from './recruiter-attendance.service';
+import { BackgroundQueueService } from '../../jobs/background-queue.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -11,9 +13,13 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
   private lastPrecheckDate: string | null = null;
   private lastSentReportDate: string | null = null;
 
-  constructor(private readonly attendanceService: RecruiterAttendanceService) {}
+  constructor(
+    private readonly attendanceService: RecruiterAttendanceService,
+    private readonly queues: BackgroundQueueService,
+    private readonly redis: RedisService,
+  ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     const enabled = process.env.ATTENDANCE_SCHEDULE_ENABLED !== 'false';
     const timezone = process.env.ATTENDANCE_TIMEZONE || 'Asia/Kolkata';
     const precheckTime = process.env.ATTENDANCE_PRECHECK_TIME || '11:55';
@@ -26,7 +32,18 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
 
     if (!enabled) {
       this.logger.log('Recruiter Attendance Scheduler is disabled via ATTENDANCE_SCHEDULE_ENABLED=false');
+      if (this.queues.isEnabled()) await this.queues.removeAttendanceSchedule();
       return;
+    }
+
+    if (this.queues.isEnabled()) {
+      try {
+        await this.queues.registerAttendanceSchedule();
+        this.logger.log('Attendance checks are scheduled on BullMQ');
+        return;
+      } catch (err) {
+        this.logger.error(`BullMQ attendance schedule failed (${(err as Error).message}). Using the in-process timer.`);
+      }
     }
 
     // 1. Startup grace period check: Catch up missed report if server started after 12:00 PM IST on a working day
@@ -67,10 +84,20 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
     this.logger.log('Recruiter Attendance Scheduler stopped.');
   }
 
+  async handleScheduleTick() {
+    const locked = await this.redis.tryLock('attendance-tick', 25);
+    if (this.redis.status === 'connected' && !locked) return;
+    try {
+      await this.runScheduleTick();
+    } finally {
+      if (locked) await this.redis.unlock('attendance-tick');
+    }
+  }
+
   /**
    * Main recurring tick handler (runs every 30s)
    */
-  async handleScheduleTick() {
+  private async runScheduleTick() {
     const now = new Date();
     const tz = process.env.ATTENDANCE_TIMEZONE || 'Asia/Kolkata';
 
@@ -136,12 +163,12 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
 
     // 2. Send email at 12:00 PM IST (Daily Attendance Report for missing logins)
     if (currentTimeStr === reportTargetTime && this.lastSentReportDate !== todayDateStr) {
-      this.lastSentReportDate = todayDateStr;
       this.logger.log(`[Scheduler] 12:00 PM IST Report Triggered for ${todayDateStr}`);
       try {
         const result = await this.attendanceService.generateAndSendDailyReport({
           targetDate: todayDateStr,
         });
+        this.lastSentReportDate = todayDateStr;
         if (result?.skipped) {
           this.logger.log(`[Scheduler] Report dispatch skipped: ${result.reason}`);
         } else {
@@ -149,8 +176,23 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
         }
       } catch (err: any) {
         this.logger.error(`[Scheduler] Error sending 12:00 PM IST attendance report: ${err.message}`, err.stack);
+        throw err;
       }
     }
+  }
+
+  async runSessionCleanup() {
+    const locked = await this.redis.tryLock('attendance-cleanup', 540);
+    if (this.redis.status === 'connected' && !locked) return { skipped: true, reason: 'Already in progress' };
+    try {
+      return await this.attendanceService.expireInactiveSessions();
+    } finally {
+      if (locked) await this.redis.unlock('attendance-cleanup');
+    }
+  }
+
+  runCatchUp() {
+    return this.checkAndCatchUpMissedReport();
   }
 
   /**
@@ -200,6 +242,7 @@ export class RecruiterAttendanceSchedulerService implements OnModuleInit, OnModu
         }
       } catch (err: any) {
         this.logger.error(`Failed to dispatch catchup report: ${err.message}`, err.stack);
+        throw err;
       }
     }
   }

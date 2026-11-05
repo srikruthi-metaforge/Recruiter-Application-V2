@@ -30,12 +30,16 @@ export class ClientsController {
     @Query('status') status?: string,
     @Query('tier') tier?: string,
     @Query('domain') domain?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.clientsService.findAll(req.user, {
       search,
       status,
       tier,
       domain,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

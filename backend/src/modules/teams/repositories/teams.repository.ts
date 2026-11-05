@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { UNPAGED_LIST_CAP } from '../../../common/list-page.util';
 import { Team, TeamDocument } from '../schemas/team.schema';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class TeamsRepository {
       .populate('leadId', 'name email role')
       .populate('recruiterIds', 'name email role')
       .sort({ createdAt: -1 })
+      .limit(UNPAGED_LIST_CAP)
       .exec();
   }
 

@@ -39,4 +39,6 @@ export interface CandidateRepositoryPageProps {
   onSelectCandidate?: (candidate: Candidate) => void
   onSelectRequirement?: (reqId: string | null) => void
   onBackToDashboard?: () => void
+  /** Override default “Back to My Workspace” label when returning from analytics. */
+  backButtonLabel?: string
 }

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 import { Interview, InterviewDocument } from './schemas/interview.schema';
 import {
   InterviewFeedback,
@@ -149,6 +150,8 @@ export class InterviewsService {
       status?: string;
       round?: string;
       search?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const orgId = requireOrgId(currentUser);
@@ -184,15 +187,22 @@ export class InterviewsService {
       ];
     }
 
-    const items = await this.interviewModel
-      .find(filter)
-      .populate('candidateId', 'name fullName email phone')
-      .populate('requirementId', 'title reqCode clientName')
-      .populate('submissionId', 'submissionId stage')
-      .sort({ dateTime: -1 })
-      .exec();
+    const window = resolveListWindow(query?.page, query?.limit);
+    const listQuery = () =>
+      this.interviewModel
+        .find(filter)
+        .populate('candidateId', 'name fullName email phone')
+        .populate('requirementId', 'title reqCode clientName')
+        .populate('submissionId', 'submissionId stage')
+        .sort({ dateTime: -1 })
+        .skip(window.skip)
+        .limit(window.limit)
+        .lean();
+    const [items, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.interviewModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
 
-    return items.map((item) => this.sanitizeInterview(item));
+    return listResult(window, items.map((item) => this.sanitizeInterview(item)), total);
   }
 
   /** Load interview by Mongo id or business id, scoped to caller org + role. */

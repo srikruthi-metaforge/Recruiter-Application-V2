@@ -34,7 +34,7 @@ export class RequirementsController {
   /** GET /api/v1/requirements */
   @Get()
   async findAll(
-    @Query() query: { status?: string; priority?: string; clientId?: string; search?: string },
+    @Query() query: { status?: string; priority?: string; clientId?: string; search?: string; page?: number; limit?: number },
     @Req() req: any,
   ) {
     return this.requirementsService.findAll(req.user, query);
@@ -74,6 +74,49 @@ export class RequirementsController {
   @Get('scheduler-status')
   async getSchedulerStatus() {
     return this.schedulerService.getStatus();
+  }
+
+  /** GET /api/v1/requirements/client-submit-approvals (MUST precede :id) */
+  @Get('client-submit-approvals')
+  async listClientSubmitApprovals(
+    @Query() query: { status?: string; requirementId?: string },
+    @Req() req: any,
+  ) {
+    return this.requirementsService.listClientSubmitApprovals(req.user, query);
+  }
+
+  /** POST /api/v1/requirements/client-submit-approvals/:approvalId/approve */
+  @Post('client-submit-approvals/:approvalId/approve')
+  @Roles('superadmin', 'admin', 'lead', 'devteam')
+  @HttpCode(HttpStatus.OK)
+  async approveClientSubmit(
+    @Param('approvalId') approvalId: string,
+    @Req() req: any,
+  ) {
+    return this.requirementsService.decideClientSubmitApproval(approvalId, 'approved', req.user);
+  }
+
+  /** POST /api/v1/requirements/client-submit-approvals/:approvalId/reject */
+  @Post('client-submit-approvals/:approvalId/reject')
+  @Roles('superadmin', 'admin', 'lead', 'devteam')
+  @HttpCode(HttpStatus.OK)
+  async rejectClientSubmit(
+    @Param('approvalId') approvalId: string,
+    @Req() req: any,
+  ) {
+    return this.requirementsService.decideClientSubmitApproval(approvalId, 'rejected', req.user);
+  }
+
+  /** POST /api/v1/requirements/:id/request-client-submit */
+  @Post(':id/request-client-submit')
+  @Roles('superadmin', 'admin', 'lead', 'devteam', 'recruiter')
+  @HttpCode(HttpStatus.OK)
+  async requestClientSubmit(
+    @Param('id') id: string,
+    @Body() body: { candidateNames?: string[] },
+    @Req() req: any,
+  ) {
+    return this.requirementsService.requestClientSubmitApproval(id, body, req.user);
   }
 
   /** GET /api/v1/requirements/:id/original-email */

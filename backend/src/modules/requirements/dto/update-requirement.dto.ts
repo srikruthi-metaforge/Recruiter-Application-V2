@@ -52,6 +52,10 @@ export class UpdateRequirementDto {
   budget?: string;
 
   @IsOptional()
+  @IsString()
+  budgetText?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   skillsRequired?: string[];

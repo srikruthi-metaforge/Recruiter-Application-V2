@@ -39,7 +39,7 @@ export function LandingGovernance({ vm }: { vm: LandingVm }) {
               </div>
             </div>
 
-            <div className="relative rounded-3xl bg-[#0B1021] border border-slate-800 p-8 shadow-2xl space-y-6">
+            <div className="relative rounded-3xl bg-[#0B1021]/95 border border-slate-800 ring-1 ring-inset ring-white/10 backdrop-blur-2xl p-8 shadow-2xl space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-blue-400" />
@@ -56,7 +56,7 @@ export function LandingGovernance({ vm }: { vm: LandingVm }) {
                   { role: 'Recruiter', access: 'Candidate Sourcing, Resume Uploads & Requirements Execution' },
                   { role: 'Client Portal', access: 'Isolated View of Assigned Requirements & Submissions' },
                 ].map(r => (
-                  <div key={r.role} className="p-3 bg-white/[0.04] border border-white/5 rounded-2xl space-y-1">
+                  <div key={r.role} className="p-3 bg-white/[0.05] backdrop-blur-md border border-white/10 ring-1 ring-inset ring-white/5 rounded-2xl space-y-1">
                     <span className="font-extrabold text-blue-300 text-xs">{r.role}</span>
                     <p className="text-[11px] text-slate-400 font-medium">{r.access}</p>
                   </div>

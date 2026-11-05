@@ -4,7 +4,7 @@
  */
 
 const SENSITIVE_KEY =
-  /^(password|passwd|pwd|passwordhash|password_hash|newpassword|oldpassword|currentpassword|token|accesstoken|refreshtoken|id_token|idtoken|authorization|auth|bearer|api[_-]?key|apikey|secret|client_secret|clientsecret|cookie|set-cookie|csrf|otp|otpcode|resettoken|privatekey|private_key)$/i;
+  /^(password|passwd|pwd|passwordhash|password_hash|newpassword|oldpassword|currentpassword|token|accesstoken|refreshtoken|refresh_token|id_token|idtoken|authorization|auth|bearer|api[_-]?key|apikey|secret|client_secret|clientsecret|cookie|set-cookie|csrf|otp|otpcode|resettoken|privatekey|private_key)$/i;
 
 const SENSITIVE_INLINE =
   /\b(password|passwd|pwd|token|access[_-]?token|refresh[_-]?token|authorization|bearer|api[_-]?key|client_secret|csrf[_-]?token|otp)\b\s*[:=]\s*["']?[^"'&\s,;]+["']?/gi;

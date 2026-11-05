@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { EmailTemplate, EmailTemplateDocument } from '../schemas/email-template.schema';
+import { UNPAGED_LIST_CAP } from '../../../common/list-page.util';
 
 @Injectable()
 export class EmailTemplatesRepository {
@@ -14,6 +15,7 @@ export class EmailTemplatesRepository {
     return this.emailTemplateModel
       .find(filter)
       .sort({ createdAt: -1 })
+      .limit(UNPAGED_LIST_CAP)
       .exec();
   }
 

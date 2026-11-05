@@ -1,5 +1,6 @@
 import { getSessionUser } from '../../../store/session'
 import React from 'react'
+import { CANDIDATE_FORM_SESSION_KEY, clearSessionDraft } from '../../../lib/formSessionDraft'
 import { getSavedDrafts, saveDraftItem } from '../../../data/savedDraftsStore'
 import { apiErrorMessage, createCandidateFromForm } from '../../../services/candidatePayload'
 import { filesService, resumeParserService, uploadedFileId, type ParsedResume } from '../../../services/workspace.service'
@@ -183,6 +184,8 @@ export function useAddCandidatePageHandlers1(s: AddCandidateVmState) {
       }
       setShowSuccessToast(true)
       setTimeout(() => setShowSuccessToast(false), 3000)
+
+      clearSessionDraft(CANDIDATE_FORM_SESSION_KEY)
 
       // Backend assigns the next unique numeric id from Mongo; keep form on Auto.
       setCandidateId('Auto')

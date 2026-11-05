@@ -1,4 +1,4 @@
-import { api } from '../lib/api'
+import { api, type ApiRequestInit } from '../lib/api'
 import type {
   ActivityLogItem,
   Admin,
@@ -47,17 +47,35 @@ export interface WorkspacePayload {
   leads: Lead[]
   admins: Admin[]
   activityLogs: ActivityLogItem[]
+  /** Intentionally empty for large orgs — use candidatesService.listPage. */
   candidates: Candidate[]
   clients: unknown[]
   teams: unknown[]
   users: WorkspaceUser[]
   user?: { id: string; email: string; name: string; role: string }
+  stats?: {
+    totalRequirements?: number
+    activeRequirements?: number
+    totalOpenings?: number
+    totalPlaced?: number
+    totalCandidates?: number
+    myCandidatesCount?: number
+  }
 }
 
 export const workspaceService = {
-  load: () => api.get<WorkspacePayload>('/workspace'),
-  createRequirement: (body: Requirement) =>
-    api.post('/requirements', {
+  load: (init?: ApiRequestInit) => api.get<WorkspacePayload>('/workspace', init),
+  createRequirement: (body: Requirement) => {
+    const incomingStatus = String(body.status || '')
+    const status =
+      incomingStatus === 'Closed'
+        ? 'Closed'
+        : incomingStatus === 'Active' || !incomingStatus
+          ? 'Open'
+          : incomingStatus === 'In Progress' || incomingStatus === 'Assigned' || incomingStatus === 'On Hold' || incomingStatus === 'Hold'
+            ? incomingStatus
+            : 'Open'
+    return api.post('/requirements', {
       title: body.title,
       client: body.client,
       clientName: (body as any).clientName || body.client,
@@ -70,14 +88,7 @@ export const workspaceService = {
       rolesAndResponsibilities: body.rolesAndResponsibilities || (body as any).rolesAndResponsibilities,
       location: body.location,
       // Portal "Active" maps to backend Open so new demands get a real reqCode and appear in the shared list.
-      status:
-        body.status === 'Closed'
-          ? 'Closed'
-          : body.status === 'Active' || !body.status
-            ? 'Open'
-            : body.status === 'In Progress' || body.status === 'Assigned' || body.status === 'On Hold' || body.status === 'Hold'
-              ? body.status
-              : 'Open',
+      status,
       clientEmail: body.clientEmail,
       toEmails: (body as any).toEmails,
       ccEmails: (body as any).ccEmails,
@@ -87,7 +98,8 @@ export const workspaceService = {
       budget: body.budget,
       budgetText: body.budget || (body as any).budgetText,
       budgetRange: (body as any).budgetRange,
-    }),
+    })
+  },
   updateRequirements: (body: Requirement[]) => api.put('/requirements/bulk', body),
   updateRequirement: (id: string, body: Partial<Requirement> & Record<string, any>) => {
     const payload = {
@@ -189,7 +201,91 @@ export const clientsService = {
 }
 
 export const candidatesService = {
-  list: () => api.get<any>('/candidates'),
+  /**
+   * One page of candidates (server-side pagination).
+   * Never walk page=1..N — that caused 429s and froze the candidate repository.
+   */
+  listPage: async (opts?: { page?: number; limit?: number; search?: string; createdBy?: string; signal?: AbortSignal }) => {
+    const page = Math.max(1, Number(opts?.page || 1))
+    const limit = Math.max(1, Math.min(100, Number(opts?.limit || 25)))
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    })
+    const search = String(opts?.search || '').trim()
+    if (search) params.set('search', search)
+    const createdBy = String(opts?.createdBy || '').trim()
+    if (createdBy) params.set('createdBy', createdBy)
+    const res = await api.get<any>(`/candidates?${params.toString()}`, { signal: opts?.signal })
+    if (Array.isArray(res)) {
+      return { items: res, total: res.length, page, limit, totalPages: 1 }
+    }
+    const items = Array.isArray(res?.items) ? res.items : []
+    const total = Number(res?.total ?? items.length)
+    return {
+      items,
+      total,
+      page: Number(res?.page || page),
+      limit: Number(res?.limit || limit),
+      totalPages: Number(res?.totalPages || Math.max(1, Math.ceil(total / limit))),
+    }
+  },
+  /** @deprecated Prefer listPage — full dump is too heavy after V1 import. */
+  list: async () => {
+    const first = await candidatesService.listPage({ page: 1, limit: 100 })
+    return first.items
+  },
+  getById: (id: string) => api.get<any>(`/candidates/${encodeURIComponent(id)}`),
+  /**
+   * Resolve the candidate's stored resume (file id, document link, or filename match)
+   * and start the browser download.
+   */
+  downloadResume: async (id: string) => {
+    const signed = await api.get<{ url: string; expiresAt?: string; fileId?: string; resumeFileName?: string | null }>(
+      `/candidates/${encodeURIComponent(id)}/resume`,
+    )
+    if (typeof window !== 'undefined' && signed?.url) {
+      window.location.assign(signed.url)
+    }
+    return signed
+  },
+  /** Active Candidate Repository counts keyed by sourcedByRecruiterId (user Mongo id). */
+  sourcedCounts: async () => {
+    const res = await api.get<{ counts?: Record<string, number>; total?: number } | Record<string, number>>(
+      '/candidates/sourced-counts',
+    )
+    if (res && typeof res === 'object' && res.counts && typeof res.counts === 'object') {
+      return { counts: res.counts as Record<string, number>, total: Number(res.total || 0) }
+    }
+    return { counts: (res as Record<string, number>) || {}, total: 0 }
+  },
+  /** Paged Candidate Repository rows for one sourcer (always server-filtered). */
+  listSourcedBy: async (
+    recruiterId: string,
+    opts?: { page?: number; limit?: number; from?: string; to?: string; signal?: AbortSignal },
+  ) => {
+    const id = String(recruiterId || '').trim()
+    const page = Math.max(1, Number(opts?.page || 1))
+    const limit = Math.max(1, Math.min(100, Number(opts?.limit || 10)))
+    if (!id) return { items: [] as any[], total: 0, page, limit, totalPages: 0 }
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) })
+    const from = String(opts?.from || '').trim()
+    const to = String(opts?.to || '').trim()
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    const res = await api.get<any>(`/candidates/sourced-by/${encodeURIComponent(id)}?${params.toString()}`, {
+      signal: opts?.signal,
+    })
+    const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []
+    const total = Number(res?.total ?? items.length)
+    return {
+      items,
+      total,
+      page: Number(res?.page || page),
+      limit: Number(res?.limit || limit),
+      totalPages: Number(res?.totalPages || Math.max(1, Math.ceil(total / limit))),
+    }
+  },
   create: (body: unknown) => api.post('/candidates', body),
   update: (id: string, body: unknown) => api.put(`/candidates/${encodeURIComponent(id)}`, body),
   duplicateCheck: (body: unknown) =>
@@ -201,7 +297,7 @@ export const teamsService = {
 }
 
 export const submissionsService = {
-  list: (query = '') => api.get<any[]>(`/submissions${query}`),
+  list: (query = '', init?: ApiRequestInit) => api.get<any[]>(`/submissions${query}`, init),
   getById: (id: string) => api.get<any>(`/submissions/${encodeURIComponent(id)}`),
   create: (body: unknown) => api.post('/submissions', body),
   updateStage: (id: string, body: { stage: string; notes?: string }) =>
@@ -244,7 +340,7 @@ export const interviewsService = {
 
 
 export const notificationsService = {
-  list: (query = '') => api.get<any>(`/notifications${query}`),
+  list: (query = '', init?: ApiRequestInit) => api.get<any>(`/notifications${query}`, init),
   markRead: (id: string) => api.post<any>(`/notifications/${encodeURIComponent(id)}/read`),
   markAllAsRead: () => api.post<any>('/notifications/read-all'),
   remove: (id: string) => api.delete<any>(`/notifications/${encodeURIComponent(id)}`),

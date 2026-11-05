@@ -12,7 +12,7 @@ import { LandingCtaFooter } from './LandingCtaFooter'
 export function LandingPage(props: LandingPageProps) {
   const vm = useLandingPage(props)
   return (
-    <div className="min-h-screen bg-slate-50 font-sans overflow-x-hidden text-slate-800">
+    <div className="min-h-screen bg-slate-50 font-sans overflow-x-clip text-slate-800">
       <LandingNav vm={vm} />
       <LandingHero vm={vm} />
       <LandingAi vm={vm} />

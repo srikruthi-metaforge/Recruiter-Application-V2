@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { RecruiterAnalytics, RecruiterAnalyticsDocument } from '../schemas/recruiter-analytics.schema';
+import { UNPAGED_LIST_CAP } from '../../../common/list-page.util';
 
 @Injectable()
 export class AnalyticsRepository {
@@ -41,6 +42,6 @@ export class AnalyticsRepository {
       if (endDate) filter.date.$lte = endDate;
     }
 
-    return this.recruiterAnalyticsModel.find(filter).sort({ date: -1 }).exec();
+    return this.recruiterAnalyticsModel.find(filter).sort({ date: -1 }).limit(UNPAGED_LIST_CAP).exec();
   }
 }

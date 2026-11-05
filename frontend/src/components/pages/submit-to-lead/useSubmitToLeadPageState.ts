@@ -1,6 +1,10 @@
 import { CLIENT_TRACKER_PRESETS, columnsForClient, resolveClientPreset, submissionIntroduction } from './trackerPresets.data'
 import type { SubmitToLeadPageProps } from './preamble'
-import { getForwardRequestByReq, ForwardRequest } from '../../../data/forwardRequestsStore'
+import type { ForwardRequest } from '../../../data/forwardRequestsStore'
+import {
+  clientSubmitApprovalService,
+  toForwardRequestShape,
+} from '../../../services/clientSubmitApproval.service'
 import { submissionForDuplicateCheck } from '../../../data/submissionsStore'
 import { getSessionUser } from '../../../store/session'
 import { clientsService, submissionsService, usersService } from '../../../services/workspace.service'
@@ -25,24 +29,43 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
   const sessionUser = getSessionUser()
   const currentReqId = requirement?.id || ''
 
-  // Sync forward request from store
-  const [forwardReq, setForwardReq] = useState<ForwardRequest | undefined>(() =>
-    getForwardRequestByReq(currentReqId)
-  )
+  // Sync client-submit approval from API (shared across browsers / roles)
+  const [forwardReq, setForwardReq] = useState<ForwardRequest | undefined>(undefined)
 
   // Destination Checkboxes (Forward to client loop starts unticked)
   const [submitToLeadChecked, setSubmitToLeadChecked] = useState(true)
   const [forwardLoopChecked, setForwardLoopChecked] = useState(false)
 
-  // Sync state with forwardRequestsStore
   useEffect(() => {
-    const handleSync = () => {
-      const updated = getForwardRequestByReq(currentReqId)
-      setForwardReq(updated)
+    let cancelled = false
+    const load = async () => {
+      if (!currentReqId) {
+        setForwardReq(undefined)
+        return
+      }
+      try {
+        const rows = await clientSubmitApprovalService.list({ requirementId: currentReqId })
+        if (cancelled) return
+        const list = Array.isArray(rows) ? rows : []
+        // Prefer pending, else most recent (API sorts by requestedAt desc)
+        const preferred =
+          list.find(r => r.status === 'pending') ||
+          list.find(r => r.status === 'approved') ||
+          list[0]
+        setForwardReq(preferred ? toForwardRequestShape(preferred) : undefined)
+      } catch {
+        if (!cancelled) setForwardReq(undefined)
+      }
     }
-    handleSync()
+    void load()
+    const handleSync = () => {
+      void load()
+    }
     window.addEventListener('forward_requests_updated', handleSync)
-    return () => window.removeEventListener('forward_requests_updated', handleSync)
+    return () => {
+      cancelled = true
+      window.removeEventListener('forward_requests_updated', handleSync)
+    }
   }, [currentReqId])
   const initialPreset = resolveClientPreset(requirement?.client || '')
   const initialLayout = columnsForClient(initialPreset)
@@ -98,6 +121,16 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
 
   const isLeadApproved = forwardReq?.status === 'approved'
   const isApprovalRequested = forwardReq?.status === 'pending'
+  /** Lead/Admin/Super Admin can always submit to client; recruiters need approval. */
+  const canSubmitToClient = isLeadOrAdmin || isLeadApproved
+
+  // Keep client destination disabled until approval (default = lead only).
+  useEffect(() => {
+    if (!canSubmitToClient && forwardLoopChecked) {
+      setForwardLoopChecked(false)
+      setSubmitToLeadChecked(true)
+    }
+  }, [canSubmitToClient, forwardLoopChecked])
 
   const [submissionTick, setSubmissionTick] = useState(0)
   /** Submissions already on THIS requirement only (never other reqs). */
@@ -357,6 +390,7 @@ export function useSubmitToLeadPageState(props: SubmitToLeadPageProps) {
     currentReqId,
     isLeadApproved,
     isApprovalRequested,
+    canSubmitToClient,
     CLIENT_TRACKER_PRESETS,
     defaultPreset,
     isDraggingRef,

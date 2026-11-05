@@ -10,6 +10,7 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
     submissions,
     interviews,
     localRequirements,
+    dashboardRequirements,
     setIsCreatingDemand,
     activeCardFilter,
     setActiveCardFilter,
@@ -24,9 +25,10 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
   const handleSelectCardFilter = (key: typeof activeCardFilter) => {
     setActiveCardFilter(key)
     setGlobalSearch('')
-    // Keep status dropdown in sync so the table matches the KPI card
-    if (key === 'UNASSIGNED') setStatusDropdown('Unassigned')
-    else if (key === 'ASSIGNED') setStatusDropdown('Assigned')
+    // Keep status dropdown aligned with the KPI card so date filters are not
+    // silently ANDed with an unrelated Assigned-only status restriction.
+    if (key === 'ASSIGNED') setStatusDropdown('Assigned')
+    else if (key === 'UNASSIGNED') setStatusDropdown('Unassigned')
     else setStatusDropdown('All')
   }
 
@@ -34,7 +36,7 @@ export function RequirementsCards({ vm }: { vm: RequirementsVm }) {
     <>
       {/* 8 TOP CARDS GRID */}
       <RequirementCardsGrid
-        requirements={localRequirements}
+        requirements={dashboardRequirements || localRequirements}
         submissions={submissions}
         interviews={interviews}
         activeCardFilter={activeCardFilter}

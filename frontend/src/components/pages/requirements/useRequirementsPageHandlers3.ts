@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Requirement } from '../../../types'
 import type { RequirementsVmState } from './useRequirementsPageState'
+import { useDebouncedValue } from '../../../lib/useDebouncedValue'
 import {
   isRequirementUnassigned,
   isRequirementAssigned,
@@ -8,16 +9,45 @@ import {
   requirementHasSelections,
   requirementHasRejection,
 } from '../../ui/requirementAssignment'
+import { requirementAssignedToRecruiter } from '../../../utils/recruiterOwnership'
+
+function requirementInAssigneeScope(r: Requirement, idsRaw?: string, name?: string): boolean {
+  const ids = String(idsRaw || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean)
+  const assigneeName = String(name || '').trim()
+  if (!ids.length && !assigneeName) return true
+  const reqIds = (Array.isArray(r.assignedRecruiterIds) ? r.assignedRecruiterIds : []).map(id => String(id))
+  if (ids.some(id => reqIds.includes(id))) return true
+  if (
+    requirementAssignedToRecruiter(r, {
+      id: ids[0] || '',
+      name: assigneeName,
+    })
+  ) {
+    return true
+  }
+  const label = String(r.assignedRecruiterNames || r.owner || '').toLowerCase()
+  return Boolean(assigneeName) && label.includes(assigneeName.toLowerCase())
+}
 
 /**
- * Safely extracts a canonical Date object representing when a requirement was created/received.
- * Prioritizes ISO timestamps (emailArrivedTimeRaw, firstDetectedAt, createdAt, etc.)
- * and falls back to parsing reqCode/id dates or emailArrivedTime with year correction.
+ * Safely extracts a canonical Date for when a requirement was created/received.
+ * Uses arrival/creation timestamps only — never dueDate, lastSeenAt, or updatedAt,
+ * so date filters (Today / This month) match the Arrived column, not later edits.
  */
 export function getRequirementDate(r: Requirement): Date | null {
   if (!r) return null
 
-  // 1. Prioritize full ISO timestamp strings or Date instances
+  const parseValid = (candidate: unknown): Date | null => {
+    if (!candidate) return null
+    const d = candidate instanceof Date ? candidate : new Date(String(candidate))
+    if (isNaN(d.getTime()) || d.getFullYear() < 2020) return null
+    return d
+  }
+
+  // 1. Prefer full ISO arrival / creation timestamps from the workspace mapper
   const isoCandidates = [
     (r as any).emailArrivedTimeRaw,
     (r as any).firstDetectedAt,
@@ -25,38 +55,30 @@ export function getRequirementDate(r: Requirement): Date | null {
     (r as any).sourceEmailReceivedAt,
     (r as any).source_email_received_at,
     (r as any).createdAt,
-    (r as any).lastSeenAt,
-    (r as any).updatedAt,
-    r.dueDate,
   ]
 
   for (const candidate of isoCandidates) {
-    if (candidate) {
-      const d = candidate instanceof Date ? candidate : new Date(candidate)
-      if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) {
-        return d
-      }
-    }
+    const d = parseValid(candidate)
+    if (d) return d
   }
 
-  // 2. Extract date from reqCode or id (e.g., "2026/05/14-006", "REQ-2026-10-23-011")
+  // 2. Extract calendar day from reqCode / id (e.g. "2026-10-31-001", "2026/05/14-006")
   const code = (r.reqCode || r.id || '').trim()
   const m = code.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/)
   if (m) {
     const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
-    if (!isNaN(d.getTime())) {
-      return d
-    }
+    if (!isNaN(d.getTime())) return d
   }
 
-  // 3. Fallback to emailArrivedTime, fixing year if it defaulted to year 2001
+  // 3. Display string fallback (may omit year → JS defaults to 2001)
   if (r.emailArrivedTime) {
     const d = new Date(r.emailArrivedTime)
     if (!isNaN(d.getTime())) {
       if (d.getFullYear() < 2020) {
-        d.setFullYear(new Date().getFullYear())
+        const codeYear = m ? parseInt(m[1], 10) : new Date().getFullYear()
+        d.setFullYear(codeYear)
       }
-      return d
+      if (d.getFullYear() >= 2020) return d
     }
   }
 
@@ -111,61 +133,60 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
     activeCardFilter, setActiveCardFilter,
     selectedReqIds, setSelectedReqIds,
     sortField = 'reqId', sortOrder = 'desc',
+    assigneeScopeIds = '',
+    assigneeScopeName = '',
+    setAssigneeScopeIds,
+    setAssigneeScopeName,
   } = s
+  const debouncedSearch = useDebouncedValue(globalSearch, 300)
+
+  const dashboardRequirements = useMemo(() => {
+    return localRequirements.filter(r => {
+      if (!requirementInAssigneeScope(r, assigneeScopeIds, assigneeScopeName)) return false
+      if (!dateFilter || dateFilter === 'All') return true
+      const d = getRequirementDate(r)
+      if (!d) return false
+      const now = new Date()
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+      if (dateFilter === 'Today') return d >= startOfToday && d <= endOfToday
+      if (dateFilter === 'Yesterday') {
+        const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0)
+        const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999)
+        return d >= startOfYesterday && d <= endOfYesterday
+      }
+      if (dateFilter === 'This week') {
+        const day = (now.getDay() + 6) % 7
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day, 0, 0, 0, 0)
+        return d >= startOfWeek && d <= endOfToday
+      }
+      if (dateFilter === 'This month') {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+        return d >= startOfMonth && d <= endOfToday
+      }
+      if (dateFilter === 'Custom range') {
+        let start: Date | null = null
+        let end: Date | null = null
+        if (customStartDate) {
+          const [sY, sM, sD] = customStartDate.split('-').map(Number)
+          if (sY && sM && sD) start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+        }
+        if (customEndDate) {
+          const [eY, eM, eD] = customEndDate.split('-').map(Number)
+          if (eY && eM && eD) end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+        }
+        if (start && d < start) return false
+        if (end && d > end) return false
+      }
+      return true
+    })
+  }, [localRequirements, dateFilter, customStartDate, customEndDate, assigneeScopeIds, assigneeScopeName])
 
   const filteredRequirements = useMemo(() => {
-    const list = localRequirements.filter(r => {
-      // Date filter
-      if (dateFilter && dateFilter !== 'All') {
-        const d = getRequirementDate(r)
-        if (!d) return false
-
-        const now = new Date()
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-
-        if (dateFilter === 'Today') {
-          if (d < startOfToday || d > endOfToday) return false
-        } else if (dateFilter === 'Yesterday') {
-          const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0)
-          const endOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59, 999)
-          if (d < startOfYesterday || d > endOfYesterday) return false
-        } else if (dateFilter === 'This week') {
-          const day = (now.getDay() + 6) % 7 // Monday = 0
-          const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day, 0, 0, 0, 0)
-          if (d < startOfWeek || d > endOfToday) return false
-        } else if (dateFilter === 'This month') {
-          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-          if (d < startOfMonth || d > endOfToday) return false
-        } else if (dateFilter === 'Custom range') {
-          if (customStartDate || customEndDate) {
-            let start: Date | null = null
-            let end: Date | null = null
-
-            if (customStartDate) {
-              const [sY, sM, sD] = customStartDate.split('-').map(Number)
-              if (sY && sM && sD) start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
-            }
-            if (customEndDate) {
-              const [eY, eM, eD] = customEndDate.split('-').map(Number)
-              if (eY && eM && eD) end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
-            }
-
-            if (start && end && start > end) {
-              const tmp = start
-              start = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0, 0)
-              end = new Date(tmp.getFullYear(), tmp.getMonth(), tmp.getDate(), 23, 59, 59, 999)
-            }
-
-            if (start && d < start) return false
-            if (end && d > end) return false
-          }
-        }
-      }
-
+    const list = dashboardRequirements.filter(r => {
       // Search query filter (matches Requirement ID, Client Name, Role, Skills, Location, Recruiter, Owner, Emails)
-      if (globalSearch.trim()) {
-        const query = globalSearch.trim().toLowerCase()
+      if (debouncedSearch.trim()) {
+        const query = debouncedSearch.trim().toLowerCase()
 
         const reqId = (r.reqCode || r.id || (r as any)._id || '').toLowerCase()
         const clientReqId = (r.sourceClientJdId || (r as any).clientJdId || '').toLowerCase()
@@ -223,34 +244,20 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
         if (activeCardFilter === 'IN_PROGRESS') return isRequirementInProgress(r)
         if (activeCardFilter === 'SUBMISSIONS') return (r.submissions || 0) > 0
         if (activeCardFilter === 'INTERVIEWS') return (r.interviews || 0) > 0
-        if (activeCardFilter === 'SELECTIONS') return requirementHasSelections(r)
+        if (activeCardFilter === 'SELECTIONS') return requirementHasSelections(r, submissions)
         if (activeCardFilter === 'REJECTIONS') {
           return requirementHasRejection(r, interviews, submissions)
         }
-      } else if (statusDropdown !== 'All') {
-        // Status dropdown filter (Total card / no KPI card active)
-        const isDefaultUnassigned = statusDropdown === 'Unassigned'
-        const hasSearch = Boolean(globalSearch.trim())
-
-        if (!hasSearch || !isDefaultUnassigned) {
-          if (statusDropdown === 'Unassigned') {
-            if (!isRequirementUnassigned(r)) return false
-          } else if (statusDropdown === 'Assigned') {
-            if (!isRequirementAssigned(r)) return false
-          } else if (statusDropdown === 'Submitted' || statusDropdown === 'Submitted to Lead' || statusDropdown === 'Submitted to Client') {
-            if ((r.submissions || 0) === 0) return false
-          } else if (statusDropdown === 'Interview') {
-            if ((r.interviews || 0) === 0) return false
-          } else if (statusDropdown === 'Selected') {
-            if (!requirementHasSelections(r)) return false
-          } else if (statusDropdown === 'Rejected') {
-            if (!requirementHasRejection(r, interviews, submissions)) return false
-          } else if (statusDropdown === 'Closed') {
-            if (r.status !== 'Closed' && r.assignmentStatus !== 'Closed') return false
-          } else if (statusDropdown === 'Custom') {
-            if (r.status === 'Closed' || r.assignmentStatus === 'Closed') return false
-          }
+      } else {
+        // Status dropdown (All | Unassigned | Assigned | Closed) when no KPI card is active
+        if (statusDropdown === 'Unassigned') {
+          if (!isRequirementUnassigned(r)) return false
+        } else if (statusDropdown === 'Assigned') {
+          if (!isRequirementAssigned(r)) return false
+        } else if (statusDropdown === 'Closed') {
+          if (r.status !== 'Closed' && r.assignmentStatus !== 'Closed') return false
         }
+        // 'All' / unknown → no status restriction so date filters can show every match
       }
 
       return true
@@ -281,14 +288,14 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
       }
       return compareRequirementsDescending(a, b) * mult
     })
-  }, [localRequirements, globalSearch, statusDropdown, clientDropdown, dateFilter, customStartDate, customEndDate, activeCardFilter, sortField, sortOrder, submissions, interviews])
+  }, [dashboardRequirements, debouncedSearch, statusDropdown, clientDropdown, activeCardFilter, sortField, sortOrder, submissions, interviews])
 
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [globalSearch, statusDropdown, clientDropdown, dateFilter, customStartDate, customEndDate, activeCardFilter])
+  }, [debouncedSearch, statusDropdown, clientDropdown, dateFilter, customStartDate, customEndDate, activeCardFilter])
 
   const paginatedRequirements = useMemo(() => {
     const start = (currentPage - 1) * pageSize
@@ -324,11 +331,13 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
 
   const handleResetFilters = () => {
     setGlobalSearch('')
-    setStatusDropdown('Unassigned')
+    setStatusDropdown('All')
     setClientDropdown('All')
     setDateFilter('All')
     setCustomStartDate('')
     setCustomEndDate('')
+    setAssigneeScopeIds?.('')
+    setAssigneeScopeName?.('')
     setActiveCardFilter('ALL')
     setCurrentPage(1)
   }
@@ -342,15 +351,53 @@ export function useRequirementsPageHandlers3(s: RequirementsVmState) {
           ? 'Team Lead View'
           : 'Recruiter View'
 
-  const [isEditingDemand, setIsEditingDemand] = useState(false)
+  const [isEditingDemand, setIsEditingDemand] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return Boolean(window.sessionStorage.getItem('mrap_req_editing_demand_id_v1'))
+    } catch {
+      return false
+    }
+  })
   const [editingReq, setEditingReq] = useState<Requirement | null>(null)
+
+  // After refresh, re-open the same requirement edit form once requirements load
+  useEffect(() => {
+    let editingId: string | null = null
+    try {
+      editingId = window.sessionStorage.getItem('mrap_req_editing_demand_id_v1')
+    } catch {
+      editingId = null
+    }
+    if (!editingId) return
+    if (editingReq?.id === editingId) return
+    const found =
+      localRequirements.find(r => String(r.id) === editingId || String((r as any).reqCode || '') === editingId) ||
+      null
+    if (found) {
+      setEditingReq(found)
+      setIsEditingDemand(true)
+    }
+  }, [localRequirements, editingReq?.id])
+
+  useEffect(() => {
+    try {
+      if (isEditingDemand && editingReq?.id) {
+        window.sessionStorage.setItem('mrap_req_editing_demand_id_v1', String(editingReq.id))
+      } else if (!isEditingDemand) {
+        window.sessionStorage.removeItem('mrap_req_editing_demand_id_v1')
+      }
+    } catch {
+      // ignore
+    }
+  }, [isEditingDemand, editingReq?.id])
 
   const pendingRevokeRequests = useMemo(() => {
     return localRequirements.filter(r => r.revokeRequested)
   }, [localRequirements])
 
   return {
-    filteredRequirements, currentPage, setCurrentPage, pageSize, setPageSize,
+    filteredRequirements, dashboardRequirements, currentPage, setCurrentPage, pageSize, setPageSize,
     paginatedRequirements, isAllSelected, toggleSelectAll, toggleSelectRow, handleResetFilters,
     roleLabel, isEditingDemand, setIsEditingDemand, editingReq, setEditingReq, pendingRevokeRequests
   }

@@ -10,11 +10,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { listResult, resolveListWindow } from '../../common/list-page.util';
 
 import { Requirement, RequirementDocument } from './schemas/requirement.schema';
 import { RequirementHistory, RequirementHistoryDocument } from './schemas/requirement-history.schema';
 import { Client, ClientDocument } from '../clients/schemas/client.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import {
+  ClientSubmitApproval,
+  ClientSubmitApprovalDocument,
+} from './schemas/client-submit-approval.schema';
 import { RequirementRepository } from './repositories/requirement.repository';
 import { CreateRequirementDto } from './dto/create-requirement.dto';
 import { UpdateRequirementDto } from './dto/update-requirement.dto';
@@ -23,7 +28,13 @@ import { RevokeRequirementDto } from './dto/revoke-requirement.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { getClientEmailDefaults, sanitizeEmailList } from '../../common/constants/client-email-defaults';
 import { sanitizeEmailHtml } from '../../common/security/html-sanitize.util';
-import { assertCanAccessRequirement, orgScope, requireOrgId } from '../../common/security/resource-access.util';
+import {
+  assertCanAccessRequirement,
+  assertCanWorkOnRequirement,
+  orgScope,
+  requireOrgId,
+  roleOf,
+} from '../../common/security/resource-access.util';
 import { displayRequirementId, reqCodeCandidates } from '../../common/requirement-id';
 
 @Injectable()
@@ -49,6 +60,8 @@ export class RequirementsService {
     private readonly clientModel: Model<ClientDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(ClientSubmitApproval.name)
+    private readonly clientSubmitApprovalModel: Model<ClientSubmitApprovalDocument>,
     private readonly requirementRepository: RequirementRepository,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -310,7 +323,7 @@ export class RequirementsService {
   }
 
   /** GET /api/v1/requirements */
-  async findAll(currentUser: any, query?: { status?: string; priority?: string; clientId?: string; search?: string }) {
+  async findAll(currentUser: any, query?: { status?: string; priority?: string; clientId?: string; search?: string; page?: number; limit?: number }) {
     const orgId = requireOrgId(currentUser);
     const role = (currentUser.role || 'recruiter').toLowerCase();
 
@@ -344,13 +357,14 @@ export class RequirementsService {
       ];
     }
 
-    const items = await this.requirementModel
-      .find(filter)
-      // Newest requirement first by ORIGINAL creation time; updates never move a record.
-      // _id breaks ties deterministically so pages never overlap or reorder.
-      .sort({ firstDetectedAt: -1, _id: -1 })
-      .exec();
-    return items.map(item => this.sanitizeRequirement(item));
+    const window = resolveListWindow(query?.page, query?.limit);
+    const sort = { firstDetectedAt: -1 as const, _id: -1 as const };
+    const listQuery = () =>
+      this.requirementModel.find(filter).sort(sort).skip(window.skip).limit(window.limit).lean();
+    const [items, total] = window.paged
+      ? await Promise.all([listQuery().exec(), this.requirementModel.countDocuments(filter).exec()])
+      : [await listQuery().exec(), 0];
+    return listResult(window, items.map(item => this.sanitizeRequirement(item)), total);
   }
 
   /** Load requirement by Mongo id or reqCode, scoped to caller org. */
@@ -520,6 +534,32 @@ export class RequirementsService {
     const isAttemptingAssignment = dto.assignedLeadId !== undefined || dto.assignedRecruiterIds !== undefined;
     if (wasHold && !isChangingStatusFromHold && isAttemptingAssignment) {
       throw new BadRequestException(`Cannot assign recruiters or lead to requirement '${doc.reqCode || id}' while it is On Hold`);
+    }
+
+    // Recruiters may only edit requirements they are assigned to (view remains open).
+    // Assignment changes go through POST /assign — strip generic PUT assignee writes for recruiters.
+    if (roleOf(currentUser) === 'recruiter') {
+      if (isAttemptingAssignment) {
+        throw new BadRequestException(
+          'Recruiters cannot change assignees via update. Use the Assign action instead.',
+        );
+      }
+      const isContentEdit =
+        dto.title !== undefined ||
+        dto.clientName !== undefined ||
+        dto.client !== undefined ||
+        dto.clientId !== undefined ||
+        dto.openings !== undefined ||
+        dto.skillsRequired !== undefined ||
+        dto.location !== undefined ||
+        dto.description !== undefined ||
+        dto.mandatorySkills !== undefined ||
+        dto.budget !== undefined ||
+        dto.budgetText !== undefined ||
+        dto.budgetRange !== undefined;
+      if (isContentEdit) {
+        assertCanWorkOnRequirement(doc, currentUser);
+      }
     }
 
     if (dto.title !== undefined) doc.title = dto.title.trim();
@@ -912,7 +952,7 @@ export class RequirementsService {
 
   /** GET /api/v1/workspace */
   async getWorkspacePayload(currentUser: any) {
-    const requirements = await this.findAll(currentUser);
+    const requirements = (await this.findAll(currentUser)) as any[];
 
     const mappedRequirements = requirements.map((r: any) => ({
       id: r.displayId || r.id,
@@ -1323,13 +1363,17 @@ export class RequirementsService {
       return this.applyEmailStatusUpdate(payload);
     }
 
-    // A record is never created from a title invented from the email subject.
-    const title = firstText(payload.job_title, payload.title, payload.role);
-    if (!title) {
-      return { data: { ignored: true, reason: 'A job title is required; the email subject is not used as a title' } };
-    }
+    // A column header such as "/Title" is not a role name. Use the email subject,
+    // which carries the original requirement name for these tracker emails.
     const clientName = firstText(payload.requirement_from, payload.client_name, payload.client, payload.clientName);
     const sourceSubject = firstText(payload.subject, payload.email_subject) || '';
+    let title = firstText(payload.job_title, payload.title, payload.role);
+    if (!title || isHeaderLabelTitle(title)) {
+      title = titleFromEmailSubject(sourceSubject);
+    }
+    if (!title || isHeaderLabelTitle(title)) {
+      return { data: { ignored: true, reason: 'A job title is required; the email subject is not used as a title' } };
+    }
 
     // Phase 7: Explicitly reject synthetic, mock, or test fixtures from production ingestion
     if (
@@ -2247,6 +2291,243 @@ export class RequirementsService {
 
     return null;
   }
+
+  private sanitizeClientSubmitApproval(doc: any) {
+    const obj = doc?.toObject ? doc.toObject() : doc;
+    return {
+      id: obj._id?.toString?.() || obj.id,
+      requirementId: obj.requirementId?.toString?.() || null,
+      reqId: obj.reqCode || obj.requirementId?.toString?.() || '',
+      reqCode: obj.reqCode || '',
+      reqTitle: obj.reqTitle || '',
+      clientName: obj.clientName || '',
+      recruiterId: obj.recruiterId?.toString?.() || null,
+      recruiterName: obj.recruiterName || '',
+      recruiterEmail: obj.recruiterEmail || '',
+      candidateNames: Array.isArray(obj.candidateNames) ? obj.candidateNames : [],
+      status: obj.status || 'pending',
+      reviewedBy: obj.reviewedByName || null,
+      reviewedById: obj.reviewedById?.toString?.() || null,
+      reviewedAt: obj.reviewedAt || null,
+      requestedAt: obj.requestedAt || obj.createdAt || null,
+      createdAt: obj.createdAt || null,
+      updatedAt: obj.updatedAt || null,
+    };
+  }
+
+  /** Recruiter requests permission to submit directly to client for a requirement. */
+  async requestClientSubmitApproval(
+    requirementKey: string,
+    body: { candidateNames?: string[] } | undefined,
+    currentUser: any,
+  ) {
+    const orgId = requireOrgId(currentUser);
+    const reqDoc = await this.loadRequirementForUser(requirementKey, currentUser);
+    const recruiterId = currentUser?.id || currentUser?.userId
+      ? new Types.ObjectId(String(currentUser.id || currentUser.userId))
+      : null;
+    if (!recruiterId) {
+      throw new BadRequestException('Authenticated user is required');
+    }
+
+    const existing = await this.clientSubmitApprovalModel
+      .findOne({
+        orgId,
+        requirementId: reqDoc._id,
+        recruiterId,
+        status: 'pending',
+        deletedAt: null,
+      })
+      .exec();
+
+    const candidateNames = Array.isArray(body?.candidateNames)
+      ? body!.candidateNames.map((n) => String(n || '').trim()).filter(Boolean)
+      : [];
+
+    let saved: ClientSubmitApprovalDocument;
+    if (existing) {
+      if (candidateNames.length) existing.candidateNames = candidateNames;
+      existing.requestedAt = new Date();
+      existing.reqTitle = reqDoc.title || existing.reqTitle;
+      existing.clientName = (reqDoc as any).clientName || existing.clientName;
+      existing.reqCode = reqDoc.reqCode || existing.reqCode;
+      saved = await existing.save();
+    } else {
+      saved = await this.clientSubmitApprovalModel.create({
+        orgId,
+        requirementId: reqDoc._id,
+        reqCode: reqDoc.reqCode || null,
+        reqTitle: reqDoc.title || '',
+        clientName: (reqDoc as any).clientName || '',
+        recruiterId,
+        recruiterName: currentUser?.name || '',
+        recruiterEmail: currentUser?.email || '',
+        candidateNames,
+        status: 'pending',
+        requestedAt: new Date(),
+        deletedAt: null,
+      });
+    }
+
+    // Notify Lead / Admin / Super Admin / Dev Team so it shows in Notifications + Requirements.
+    try {
+      const approvers = await this.userModel
+        .find({
+          orgId,
+          deletedAt: null,
+          active: { $ne: false },
+          role: { $in: ['superadmin', 'admin', 'lead', 'devteam'] },
+        })
+        .select('_id')
+        .lean()
+        .exec();
+
+      const label = reqDoc.reqCode || reqDoc.title || requirementKey;
+      const payloads = (approvers || [])
+        .map((u: any) => u?._id)
+        .filter(Boolean)
+        .map((userId: Types.ObjectId) => ({
+          orgId,
+          userId,
+          type: 'client_submit_approval_requested' as const,
+          title: 'Client submit approval requested',
+          message: `${currentUser?.name || 'A recruiter'} requested approval to submit candidates directly to the client for ${label}.`,
+          entityId: new Types.ObjectId(reqDoc._id.toString()),
+          entityType: 'requirement' as const,
+        }));
+      await this.notificationsService.createNotifications(payloads);
+    } catch (e) {
+      this.logger.warn(`Failed to notify approvers for client-submit request: ${(e as Error)?.message || e}`);
+    }
+
+    return this.sanitizeClientSubmitApproval(saved);
+  }
+
+  /** List client-submit approval requests (pending by default for approvers). */
+  async listClientSubmitApprovals(
+    currentUser: any,
+    query?: { status?: string; requirementId?: string },
+  ) {
+    const orgId = requireOrgId(currentUser);
+    const role = String(currentUser?.role || '').toLowerCase();
+    const isApprover = ['superadmin', 'admin', 'lead', 'devteam'].includes(role);
+    const userId = currentUser?.id || currentUser?.userId
+      ? new Types.ObjectId(String(currentUser.id || currentUser.userId))
+      : null;
+
+    const filter: Record<string, any> = { orgId, deletedAt: null };
+    if (query?.status) {
+      filter.status = String(query.status).toLowerCase();
+    } else if (isApprover) {
+      filter.status = 'pending';
+    }
+
+    if (query?.requirementId) {
+      try {
+        const reqDoc = await this.loadRequirementForUser(query.requirementId, currentUser);
+        filter.requirementId = reqDoc._id;
+      } catch {
+        if (Types.ObjectId.isValid(query.requirementId)) {
+          filter.requirementId = new Types.ObjectId(query.requirementId);
+        } else {
+          filter.reqCode = query.requirementId;
+        }
+      }
+    }
+
+    // Recruiters only see their own requests; approvers see org pending/all filtered.
+    if (!isApprover && userId) {
+      filter.recruiterId = userId;
+    }
+
+    const rows = await this.clientSubmitApprovalModel
+      .find(filter)
+      .sort({ requestedAt: -1 })
+      .limit(100)
+      .exec();
+
+    return rows.map((r) => this.sanitizeClientSubmitApproval(r));
+  }
+
+  /** Lead / Admin / Super Admin approve or reject a client-submit request. */
+  async decideClientSubmitApproval(
+    approvalId: string,
+    decision: 'approved' | 'rejected',
+    currentUser: any,
+  ) {
+    const orgId = requireOrgId(currentUser);
+    const role = String(currentUser?.role || '').toLowerCase();
+    if (!['superadmin', 'admin', 'lead', 'devteam'].includes(role)) {
+      throw new ForbiddenException('Only Lead, Admin, or Super Admin can decide client-submit approvals');
+    }
+    if (!Types.ObjectId.isValid(approvalId)) {
+      throw new BadRequestException('Invalid approval request id');
+    }
+
+    const doc = await this.clientSubmitApprovalModel
+      .findOne({ _id: approvalId, orgId, deletedAt: null })
+      .exec();
+    if (!doc) {
+      throw new NotFoundException('Client-submit approval request not found');
+    }
+
+    doc.status = decision;
+    doc.reviewedById = currentUser?.id || currentUser?.userId
+      ? new Types.ObjectId(String(currentUser.id || currentUser.userId))
+      : null;
+    doc.reviewedByName = currentUser?.name || role;
+    doc.reviewedAt = new Date();
+    const saved = await doc.save();
+
+    // Notify the requesting recruiter of the decision.
+    try {
+      if (doc.recruiterId) {
+        await this.notificationsService.createNotification({
+          orgId,
+          userId: new Types.ObjectId(doc.recruiterId.toString()),
+          type: decision === 'approved' ? 'submission_approved' : 'submission_rejected',
+          title:
+            decision === 'approved'
+              ? 'Client submit approved'
+              : 'Client submit rejected',
+          message:
+            decision === 'approved'
+              ? `Your request to submit directly to the client for ${doc.reqCode || doc.reqTitle} was approved by ${doc.reviewedByName}.`
+              : `Your request to submit directly to the client for ${doc.reqCode || doc.reqTitle} was rejected by ${doc.reviewedByName}.`,
+          entityId: new Types.ObjectId(doc.requirementId.toString()),
+          entityType: 'requirement',
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+
+    return this.sanitizeClientSubmitApproval(saved);
+  }
+}
+
+function isHeaderLabelTitle(value: string): boolean {
+  const s = value
+    .trim()
+    .toLowerCase()
+    .replace(/^[\s/\\|:_\-–—]+|[\s/\\|:_\-–—]+$/g, '')
+    .replace(/[\s_]+/g, ' ');
+  const compact = s.replace(/[\s/]+/g, '');
+  return (
+    s === 'title' ||
+    s === 'job title' ||
+    s === 'position/title' ||
+    s === 'position title' ||
+    s === 'role title' ||
+    compact === 'title' ||
+    compact === 'jobtitle' ||
+    compact === 'positiontitle' ||
+    compact === 'roletitle'
+  );
+}
+
+function titleFromEmailSubject(subject: string): string {
+  return subject.replace(/^(?:\s*(?:re|fwd|fw)\s*:\s*)+/i, '').trim();
 }
 
 function firstText(...values: unknown[]): string {

@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 import { applyOrgLegacyPostgresIdIndex } from '../../../database/legacy-v1.util';
 
 export type InterviewDocument = Interview & Document;
@@ -93,4 +94,4 @@ InterviewSchema.index({ orgId: 1, dateTime: 1, status: 1, deletedAt: 1 });
 InterviewSchema.index({ orgId: 1, interviewerEmail: 1, status: 1, dateTime: 1, deletedAt: 1 });
 applyOrgLegacyPostgresIdIndex(InterviewSchema);
 
-InterviewSchema.plugin(DataScopePlugin);
+InterviewSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);

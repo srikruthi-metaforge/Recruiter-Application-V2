@@ -15,6 +15,7 @@ interface AppShellContentProps {
   admins: Admin[]
   activityLogs: ActivityLogItem[]
   candidates?: Candidate[]
+  myCandidatesCount?: number
   currentUser: { name: string; email: string }
   selectedReqIdForSubmit: string | null
   persistRequirements: (next: Requirement[]) => void
@@ -39,6 +40,7 @@ export function AppShellContent(props: AppShellContentProps) {
     admins,
     activityLogs,
     candidates,
+    myCandidatesCount,
     currentUser,
     selectedReqIdForSubmit,
     persistRequirements,
@@ -73,6 +75,7 @@ export function AppShellContent(props: AppShellContentProps) {
         return (
           <RecruiterDashboard
             candidates={candidates}
+            myCandidatesCount={myCandidatesCount}
             submissions={submissions}
             interviews={interviews}
             requirements={requirements}
@@ -109,6 +112,7 @@ export function AppShellContent(props: AppShellContentProps) {
       onNavigateToDashboard={() => setActiveNav('Dashboard')}
       currentUserName={currentUser.name}
       currentUserEmail={currentUser.email}
+      myCandidatesCount={myCandidatesCount}
     />
   )
 }

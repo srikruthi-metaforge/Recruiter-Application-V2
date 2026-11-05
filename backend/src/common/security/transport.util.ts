@@ -1,17 +1,12 @@
 /**
- * Transport security: HTTPS everywhere in production (or when FORCE_HTTPS=true).
+ * HTTP is the default so internal LAN clients can use http://<server-ip>:<port>.
+ * Set FORCE_HTTPS=true to redirect and mark cookies Secure.
  * Relies on reverse-proxy X-Forwarded-Proto when TRUST_PROXY is enabled.
  */
 
-export function isProductionEnv(): boolean {
-  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
-}
-
-/** Enforce HTTPS redirects + Secure cookies. */
+/** Enforce HTTPS redirects + Secure cookies only when explicitly requested. */
 export function httpsRequired(): boolean {
-  if (String(process.env.FORCE_HTTPS || '').toLowerCase() === 'true') return true;
-  if (String(process.env.FORCE_HTTPS || '').toLowerCase() === 'false') return false;
-  return isProductionEnv();
+  return String(process.env.FORCE_HTTPS || '').toLowerCase() === 'true';
 }
 
 /** Cookie Secure flag — always when HTTPS is required, or COOKIE_SECURE=true. */

@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { DataScopePlugin } from '../../../database/plugins/data-scope.plugin';
+import { OrgCachePlugin } from '../../../database/plugins/org-cache.plugin';
 
 export type TeamDocument = Team & Document;
 
@@ -34,4 +35,4 @@ export class Team {
 export const TeamSchema = SchemaFactory.createForClass(Team);
 TeamSchema.index({ orgId: 1, teamId: 1, deletedAt: 1 }, { unique: true });
 TeamSchema.index({ orgId: 1, leadId: 1, deletedAt: 1 });
-TeamSchema.plugin(DataScopePlugin);
+TeamSchema.plugin(DataScopePlugin).plugin(OrgCachePlugin);
