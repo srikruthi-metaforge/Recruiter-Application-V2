@@ -18,13 +18,13 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  AreaChart,
-  Area,
 } from 'recharts'
 import { getSessionUser } from '../../../store/session'
 import { candidatesService, offersService } from '../../../services/workspace.service'
@@ -33,12 +33,39 @@ import { nameMatches, normIdentity } from '../../../utils/recruiterOwnership'
 import {
   buildRecruiterOptions,
   computeIndividualPerformance,
+  requirementsAssignedTo,
   requirementsForFilters,
   resolveDateRange,
   uniqueClients,
 } from './computePerformance'
 import { exportRecruiterPerformanceExcel } from './exportExcel'
-import type { DatePreset, OfferLike, RecruiterIndividualAnalyticsProps, SourcedRow } from './types'
+import { RequirementTimelineSection } from './RequirementTimelineSection'
+import {
+  ALL_RECRUITERS_ID,
+  type DatePreset,
+  type OfferLike,
+  type RecruiterIndividualAnalyticsProps,
+  type SourcedRow,
+} from './types'
+
+/** Sum repository day counts that fall inside one chart week (local calendar days). */
+function sourcedInWeek(days: Record<string, number>, weekStart?: string, weekEnd?: string): number {
+  if (!weekStart || !weekEnd) return 0
+  const start = new Date(weekStart)
+  const end = new Date(weekEnd)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0
+  const cursor = new Date(start)
+  cursor.setHours(12, 0, 0, 0)
+  const last = new Date(end)
+  last.setHours(12, 0, 0, 0)
+  let total = 0
+  while (cursor <= last) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
+    total += days[key] || 0
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return total
+}
 
 function datePresetLabel(preset: DatePreset, start?: string, end?: string): string {
   if (preset === 'custom') return `Custom_${start || 'start'}_${end || 'end'}`
@@ -121,7 +148,10 @@ export function RecruiterIndividualAnalyticsPage({
   const [customEnd, setCustomEnd] = useState('')
   const [offers, setOffers] = useState<OfferLike[]>([])
   const [sourcedCountByUserId, setSourcedCountByUserId] = useState<Record<string, number>>({})
+  const [sourcedGrandTotal, setSourcedGrandTotal] = useState<number | null>(null)
   const [liveSourcedTotal, setLiveSourcedTotal] = useState<number | null>(null)
+  /** Day -> sourced profile count for the chart. Null until the repository responds. */
+  const [sourcedByDay, setSourcedByDay] = useState<Record<string, number> | null>(null)
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -154,32 +184,39 @@ export function RecruiterIndividualAnalyticsPage({
       .then(res => {
         if (!active) return
         setSourcedCountByUserId(res.counts || {})
+        const total = Number(res.total || 0)
+        setSourcedGrandTotal(Number.isFinite(total) && total >= 0 ? total : null)
       })
       .catch(() => {
-        if (active) setSourcedCountByUserId({})
+        if (active) {
+          setSourcedCountByUserId({})
+          setSourcedGrandTotal(null)
+        }
       })
     return () => {
       active = false
     }
   }, [])
 
-  const clients = useMemo(() => uniqueClients(requirements, submissions), [requirements, submissions])
-  const requirementOptions = useMemo(
-    () => requirementsForFilters(requirements, clientFilter),
-    [requirements, clientFilter],
+  const canViewAllRecruiters = ['superadmin', 'admin', 'devteam'].includes(
+    String(role || '').toLowerCase(),
   )
+  const isAllRecruiters = canViewAllRecruiters && recruiterId === ALL_RECRUITERS_ID
 
   const selectedRecruiter = useMemo(() => {
+    if (isAllRecruiters) {
+      return { id: ALL_RECRUITERS_ID, name: 'All Recruiters', allRecruiters: true as const }
+    }
     return (
       recruiterOptions.find(r => r.id === recruiterId || r.name === recruiterId) ||
       recruiterOptions[0] ||
       null
     )
-  }, [recruiterOptions, recruiterId])
+  }, [recruiterOptions, recruiterId, isAllRecruiters])
 
   /** Resolve Mongo user id so sourced-counts / sourced-by keys match History. */
   const selectedRecruiterUserId = useMemo(() => {
-    if (!selectedRecruiter) return ''
+    if (isAllRecruiters || !selectedRecruiter) return ''
     const direct = String(selectedRecruiter.id || '').trim()
     if (direct && typeof sourcedCountByUserId[direct] === 'number') return direct
 
@@ -191,7 +228,50 @@ export function RecruiterIndividualAnalyticsPage({
     )
     const mongoId = String(match?._id || match?.id || direct || me.id || '').trim()
     return mongoId
-  }, [selectedRecruiter, recruiters, sourcedCountByUserId, me.id])
+  }, [selectedRecruiter, recruiters, sourcedCountByUserId, me.id, isAllRecruiters])
+
+  const lockRecruiter = String(role || '').toLowerCase() === 'recruiter'
+
+  const scopedRecruiter = useMemo(() => {
+    if (!selectedRecruiter) return null
+    if (selectedRecruiter.allRecruiters) return selectedRecruiter
+    return {
+      ...selectedRecruiter,
+      id: selectedRecruiterUserId || selectedRecruiter.id,
+      ids: [
+        selectedRecruiter.id,
+        selectedRecruiterUserId,
+        ...((recruiters || [])
+          .filter(
+            r =>
+              String(r._id || '') === selectedRecruiterUserId ||
+              String(r.id || '') === selectedRecruiterUserId ||
+              String(r._id || '') === selectedRecruiter.id ||
+              String(r.id || '') === selectedRecruiter.id ||
+              (selectedRecruiter.email &&
+                normIdentity(r.email) === normIdentity(selectedRecruiter.email)) ||
+              nameMatches(r.name, selectedRecruiter.name),
+          )
+          .flatMap(r => [String(r._id || ''), String(r.id || '')])),
+      ].filter(Boolean),
+    }
+  }, [selectedRecruiter, selectedRecruiterUserId, recruiters])
+
+  /** Recruiter portal sees only requirements assigned to that user. */
+  const pageRequirements = useMemo(() => {
+    if (!lockRecruiter) return requirements
+    if (!scopedRecruiter || scopedRecruiter.allRecruiters) return []
+    return requirementsAssignedTo(requirements, scopedRecruiter)
+  }, [lockRecruiter, requirements, scopedRecruiter])
+
+  const clients = useMemo(
+    () => uniqueClients(pageRequirements, lockRecruiter ? [] : submissions),
+    [pageRequirements, lockRecruiter, submissions],
+  )
+  const requirementOptions = useMemo(
+    () => requirementsForFilters(pageRequirements, clientFilter),
+    [pageRequirements, clientFilter],
+  )
 
   // Live per-recruiter sourced total for the selected date period (createdAt from/to).
   useEffect(() => {
@@ -287,12 +367,63 @@ export function RecruiterIndividualAnalyticsPage({
     }
   }, [selectedRecruiterUserId, datePreset, customStart, customEnd, sourcedCountByUserId])
 
+  // Green line uses Candidate Repository createdAt, same source as the Sourced KPI.
+  // The workspace candidate list is only a first page, so it cannot draw this series.
+  useEffect(() => {
+    if (!isAllRecruiters && !selectedRecruiterUserId) {
+      setSourcedByDay(null)
+      return
+    }
+    const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
+    const windowStart = new Date()
+    windowStart.setHours(0, 0, 0, 0)
+    windowStart.setDate(windowStart.getDate() - 41)
+    const windowEnd = new Date()
+    windowEnd.setHours(23, 59, 59, 999)
+    const from = start && start > windowStart ? start : windowStart
+    const to = end && end < windowEnd ? end : windowEnd
+    if (to < from) {
+      setSourcedByDay({})
+      return
+    }
+    let active = true
+    setSourcedByDay(null)
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+    candidatesService
+      .sourcedTrend({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        recruiterId: isAllRecruiters ? undefined : selectedRecruiterUserId,
+        timezone,
+      })
+      .then(days => {
+        if (!active) return
+        const map: Record<string, number> = {}
+        for (const row of days) {
+          const date = String(row?.date || '').trim()
+          if (date) map[date] = Number(row.count) || 0
+        }
+        setSourcedByDay(map)
+      })
+      .catch(() => {
+        if (active) setSourcedByDay(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [isAllRecruiters, selectedRecruiterUserId, datePreset, customStart, customEnd])
+
   const periodHasDateBounds = useMemo(() => {
     const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
     return Boolean(start || end)
   }, [datePreset, customStart, customEnd])
 
   const authoritativeSourcedCount = useMemo(() => {
+    // All Recruiters + All Time uses the company sourced total. A date period stays on in-memory rows.
+    if (isAllRecruiters) {
+      if (!periodHasDateBounds && typeof sourcedGrandTotal === 'number') return sourcedGrandTotal
+      return null
+    }
     // Period-scoped API total (including 0 for empty Today / 7d / 30d).
     if (typeof liveSourcedTotal === 'number') return liveSourcedTotal
     // All-time map only when All Time is selected and live total not ready yet.
@@ -306,34 +437,15 @@ export function RecruiterIndividualAnalyticsPage({
     sourcedCountByUserId,
     liveSourcedTotal,
     periodHasDateBounds,
+    isAllRecruiters,
+    sourcedGrandTotal,
   ])
 
   const baseReport = useMemo(
     () =>
       computeIndividualPerformance({
-        recruiter: selectedRecruiter
-          ? {
-              ...selectedRecruiter,
-              id: selectedRecruiterUserId || selectedRecruiter.id,
-              ids: [
-                selectedRecruiter.id,
-                selectedRecruiterUserId,
-                ...((recruiters || [])
-                  .filter(
-                    r =>
-                      String(r._id || '') === selectedRecruiterUserId ||
-                      String(r.id || '') === selectedRecruiterUserId ||
-                      String(r._id || '') === selectedRecruiter.id ||
-                      String(r.id || '') === selectedRecruiter.id ||
-                      (selectedRecruiter.email &&
-                        normIdentity(r.email) === normIdentity(selectedRecruiter.email)) ||
-                      nameMatches(r.name, selectedRecruiter.name),
-                  )
-                  .flatMap(r => [String(r._id || ''), String(r.id || '')])),
-              ].filter(Boolean),
-            }
-          : null,
-        requirements,
+        recruiter: scopedRecruiter,
+        requirements: pageRequirements,
         submissions,
         interviews,
         candidates,
@@ -345,10 +457,8 @@ export function RecruiterIndividualAnalyticsPage({
         customEnd,
       }),
     [
-      selectedRecruiter,
-      selectedRecruiterUserId,
-      recruiters,
-      requirements,
+      scopedRecruiter,
+      pageRequirements,
       submissions,
       interviews,
       candidates,
@@ -366,9 +476,11 @@ export function RecruiterIndividualAnalyticsPage({
     const sourcedTotal =
       typeof authoritativeSourcedCount === 'number'
         ? authoritativeSourcedCount
-        : periodHasDateBounds
-          ? 0 // loading a bounded period — never flash all-time 883
-          : baseReport.kpis.sourcedProfiles
+        : isAllRecruiters
+          ? baseReport.kpis.sourcedProfiles
+          : periodHasDateBounds
+            ? 0 // loading a bounded period — never flash all-time 883
+            : baseReport.kpis.sourcedProfiles
     return {
       ...baseReport,
       kpis: {
@@ -379,9 +491,7 @@ export function RecruiterIndividualAnalyticsPage({
         row.name === 'Sourced' ? { ...row, value: sourcedTotal } : row,
       ),
     }
-  }, [baseReport, authoritativeSourcedCount, periodHasDateBounds])
-
-  const lockRecruiter = String(role || '').toLowerCase() === 'recruiter'
+  }, [baseReport, authoritativeSourcedCount, periodHasDateBounds, isAllRecruiters])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -420,7 +530,7 @@ export function RecruiterIndividualAnalyticsPage({
       const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
       dispatchNotificationNavigate({
         navKey: 'Candidates',
-        sourcedByUserId: selectedRecruiterUserId || undefined,
+        sourcedByUserId: isAllRecruiters ? undefined : selectedRecruiterUserId || undefined,
         sourcedFrom: start ? start.toISOString() : undefined,
         sourcedTo: end ? end.toISOString() : undefined,
         returnToReportsAnalytics: true,
@@ -432,7 +542,7 @@ export function RecruiterIndividualAnalyticsPage({
     if (n.includes('onboard') || n.includes('offer') || (n.includes('joined') && !n.includes('not'))) {
       goReportsTab('submissions', {
         submissionsStatus: 'Selected',
-        submissionsRecruiter: recruiterNameForFilter || undefined,
+        submissionsRecruiter: isAllRecruiters ? undefined : recruiterNameForFilter || undefined,
       })
       return
     }
@@ -457,7 +567,7 @@ export function RecruiterIndividualAnalyticsPage({
 
     if (n.includes('submitted') || n.includes('submission')) {
       goReportsTab('submissions', {
-        submissionsRecruiter: recruiterNameForFilter || undefined,
+        submissionsRecruiter: isAllRecruiters ? undefined : recruiterNameForFilter || undefined,
       })
       return
     }
@@ -469,6 +579,15 @@ export function RecruiterIndividualAnalyticsPage({
 
     if (n.includes('assigned')) {
       const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
+      if (isAllRecruiters) {
+        dispatchNotificationNavigate({
+          navKey: 'Requirements',
+          requirementsFrom: start ? start.toISOString() : undefined,
+          requirementsTo: end ? end.toISOString() : undefined,
+          returnToReportsAnalytics: true,
+        })
+        return
+      }
       const assigneeIds = [
         selectedRecruiterUserId,
         selectedRecruiter?.id,
@@ -502,39 +621,6 @@ export function RecruiterIndividualAnalyticsPage({
 
   const handleInterviewChartClick = () => {
     navigateFromMetric('Interviews')
-  }
-
-  /** Prefer the series under the cursor (Sourced vs Submitted), not always payload[0]. */
-  const handleTrendClick = (state: any) => {
-    const payloads: any[] = Array.isArray(state?.activePayload) ? state.activePayload : []
-    const seriesKeys = payloads
-      .map(p => String(p?.dataKey || p?.name || '').toLowerCase())
-      .filter(Boolean)
-    if (seriesKeys.some(k => k.includes('sourced')) && !seriesKeys.some(k => k.includes('submitted'))) {
-      navigateFromMetric('Sourced')
-      return
-    }
-    if (seriesKeys.some(k => k.includes('submitted')) && !seriesKeys.some(k => k.includes('sourced'))) {
-      navigateFromMetric('Submitted')
-      return
-    }
-    // Both series in tooltip (overlapping areas): use the first matching dataKey, prefer sourced when values exist.
-    const sourcedPt = payloads.find(p => String(p?.dataKey || p?.name || '').toLowerCase().includes('sourced'))
-    const submittedPt = payloads.find(p => String(p?.dataKey || p?.name || '').toLowerCase().includes('submitted'))
-    const sourcedVal = Number(sourcedPt?.value ?? sourcedPt?.payload?.sourced ?? NaN)
-    const submittedVal = Number(submittedPt?.value ?? submittedPt?.payload?.submitted ?? NaN)
-    if (Number.isFinite(sourcedVal) && sourcedVal > 0 && !(Number.isFinite(submittedVal) && submittedVal > sourcedVal)) {
-      navigateFromMetric('Sourced')
-      return
-    }
-    if (seriesKeys.some(k => k.includes('sourced'))) {
-      navigateFromMetric('Sourced')
-      return
-    }
-    if (seriesKeys.some(k => k.includes('submitted'))) {
-      navigateFromMetric('Submitted')
-      return
-    }
   }
 
   const mapApiCandidateToSourcedRow = (raw: any): SourcedRow => {
@@ -644,6 +730,20 @@ export function RecruiterIndividualAnalyticsPage({
   }
 
   const k = report.kpis
+  const sourcedTrend = useMemo(
+    () =>
+      sourcedByDay
+        ? report.chartWeekly.map(week => ({
+            ...week,
+            sourced: sourcedInWeek(sourcedByDay, week.weekStart, week.weekEnd),
+          }))
+        : report.chartWeekly,
+    [report.chartWeekly, sourcedByDay],
+  )
+  const trendMax = Math.max(
+    1,
+    ...sourcedTrend.map(week => Math.max(Number(week.sourced) || 0, Number(week.submitted) || 0)),
+  )
 
   return (
     <div className="space-y-6 font-sans">
@@ -681,6 +781,9 @@ export function RecruiterIndividualAnalyticsPage({
               onChange={e => setRecruiterId(e.target.value)}
               className="w-full appearance-none px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-700 focus:outline-none focus:border-[#6B3BF6] disabled:bg-slate-50"
             >
+              {canViewAllRecruiters && (
+                <option value={ALL_RECRUITERS_ID}>All Recruiters</option>
+              )}
               {recruiterOptions.map(r => (
                 <option key={r.id || r.name} value={r.id || r.name}>
                   {r.name}
@@ -751,7 +854,13 @@ export function RecruiterIndividualAnalyticsPage({
             <div className="w-full px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-[11px] font-bold text-[#6B3BF6] flex items-center gap-2">
               <Filter className="w-3.5 h-3.5" />
               <span>
-                Showing data for <strong>{selectedRecruiter?.name || '—'}</strong> only
+                {isAllRecruiters ? (
+                  <>Showing data for <strong>all recruiters</strong></>
+                ) : (
+                  <>
+                    Showing data for <strong>{selectedRecruiter?.name || '—'}</strong> only
+                  </>
+                )}
               </span>
             </div>
           </div>
@@ -889,70 +998,57 @@ export function RecruiterIndividualAnalyticsPage({
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs xl:col-span-2">
-          <h3 className="text-sm font-extrabold text-slate-900 mb-1">Sourced vs Submitted Trend</h3>
+          <h3 className="text-sm font-extrabold text-slate-900 mb-1">Sourced vs Submitted</h3>
           <p className="text-[11px] text-slate-500 mb-3">
-            Click Sourced → Candidate Repository · Click Submitted → Total Submissions.
+            Green line is profiles sourced. Red line is profiles submitted. Click a line to open that page.
           </p>
-          <div className="h-64 cursor-pointer">
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={report.chartWeekly} onClick={handleTrendClick}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Legend
-                  wrapperStyle={{ cursor: 'pointer' }}
-                  onClick={(e: any) => {
-                    const key = String(e?.dataKey || e?.value || '').toLowerCase()
-                    if (key.includes('sourced')) navigateFromMetric('Sourced')
-                    else if (key.includes('submitted')) navigateFromMetric('Submitted')
-                  }}
+              <LineChart data={sourcedTrend}>
+                <CartesianGrid stroke="#e5e7eb" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#111827' }} tickLine={false} />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={{ stroke: '#111827' }}
+                  tickLine={false}
+                  domain={[0, trendMax]}
                 />
-                <Area
+                <Tooltip />
+                <Legend />
+                <Line
                   type="monotone"
                   dataKey="sourced"
-                  stroke="#6B3BF6"
-                  fill="#6B3BF633"
                   name="Sourced"
-                  style={{ cursor: 'pointer' }}
-                  activeDot={{
-                    r: 5,
-                    cursor: 'pointer',
-                    onClick: (e: any) => {
-                      e?.event?.stopPropagation?.()
-                      navigateFromMetric('Sourced')
-                    },
-                  }}
-                  onClick={(_d: any, e: any) => {
-                    e?.stopPropagation?.()
-                    navigateFromMetric('Sourced')
-                  }}
+                  stroke="#16a34a"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: '#9ca3af', stroke: '#9ca3af' }}
+                  activeDot={{ r: 6, fill: '#16a34a', stroke: '#16a34a' }}
+                  cursor="pointer"
+                  onClick={() => navigateFromMetric('Sourced')}
                 />
-                <Area
+                <Line
                   type="monotone"
                   dataKey="submitted"
-                  stroke="#2563eb"
-                  fill="#2563eb33"
                   name="Submitted"
-                  style={{ cursor: 'pointer' }}
-                  activeDot={{
-                    r: 5,
-                    cursor: 'pointer',
-                    onClick: (e: any) => {
-                      e?.event?.stopPropagation?.()
-                      navigateFromMetric('Submitted')
-                    },
-                  }}
-                  onClick={(_d: any, e: any) => {
-                    e?.stopPropagation?.()
-                    navigateFromMetric('Submitted')
-                  }}
+                  stroke="#e11d48"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: '#9ca3af', stroke: '#9ca3af' }}
+                  activeDot={{ r: 6, fill: '#e11d48', stroke: '#e11d48' }}
+                  cursor="pointer"
+                  onClick={() => navigateFromMetric('Submitted')}
                 />
-              </AreaChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
+
+      <RequirementTimelineSection
+        requirements={pageRequirements}
+        submissions={submissions}
+        recruiter={lockRecruiter ? scopedRecruiter : null}
+      />
 
       <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl px-4 py-3 text-[11px] text-slate-500 font-medium">
         Full row-level details (requirements, sourced, submitted, non-submitted, interviews, offers) are included in the Excel download only — not shown on this page.

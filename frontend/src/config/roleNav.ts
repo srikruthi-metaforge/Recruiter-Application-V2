@@ -26,7 +26,8 @@ export const ROLE_NAV: Record<Role, NavSection[]> = {
       title: 'Intelligence & System',
       items: [
         { key: 'Reports', label: 'Reports' },
-        { key: 'Analytics', label: 'Analytics' },
+        // Company Analytics page is hidden for now. Restore with:
+        // { key: 'Analytics', label: 'Analytics' },
         { key: 'Audit Logs', label: 'Audit Logs' },
       ],
     },

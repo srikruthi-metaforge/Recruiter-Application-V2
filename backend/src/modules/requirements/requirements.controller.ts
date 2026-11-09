@@ -76,6 +76,12 @@ export class RequirementsController {
     return this.schedulerService.getStatus();
   }
 
+  /** GET /api/v1/requirements/assignment-times (MUST precede :id) */
+  @Get('assignment-times')
+  async assignmentTimes(@Req() req: any) {
+    return this.requirementsService.firstAssignmentTimes(req.user);
+  }
+
   /** GET /api/v1/requirements/client-submit-approvals (MUST precede :id) */
   @Get('client-submit-approvals')
   async listClientSubmitApprovals(

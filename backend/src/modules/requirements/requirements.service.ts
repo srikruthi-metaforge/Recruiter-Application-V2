@@ -14,6 +14,10 @@ import { listResult, resolveListWindow } from '../../common/list-page.util';
 
 import { Requirement, RequirementDocument } from './schemas/requirement.schema';
 import { RequirementHistory, RequirementHistoryDocument } from './schemas/requirement-history.schema';
+import {
+  RequirementAssignment,
+  RequirementAssignmentDocument,
+} from './schemas/requirement-assignment.schema';
 import { Client, ClientDocument } from '../clients/schemas/client.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
@@ -56,6 +60,8 @@ export class RequirementsService {
     private readonly requirementModel: Model<RequirementDocument>,
     @InjectModel(RequirementHistory.name)
     private readonly historyModel: Model<RequirementHistoryDocument>,
+    @InjectModel(RequirementAssignment.name)
+    private readonly assignmentModel: Model<RequirementAssignmentDocument>,
     @InjectModel(Client.name)
     private readonly clientModel: Model<ClientDocument>,
     @InjectModel(User.name)
@@ -320,6 +326,46 @@ export class RequirementsService {
     } catch (e) {
       // Ignore non-fatal audit log failures
     }
+  }
+
+  /**
+   * Earliest assignment time per requirement.
+   * Live assigns are logged on requirement_histories (action ASSIGN).
+   * Migrated assigns live on requirement_assignments.assignedOn.
+   */
+  async firstAssignmentTimes(currentUser: any): Promise<{ items: { requirementId: string; assignedOn: string }[] }> {
+    const orgId = requireOrgId(currentUser);
+    const [fromHistory, fromLedger] = await Promise.all([
+      this.historyModel.aggregate<{ _id: Types.ObjectId; assignedOn: Date }>([
+        { $match: { orgId, action: { $in: ['ASSIGN', 'Assign', 'assigned', 'ASSIGNED'] } } },
+        { $group: { _id: '$requirementId', assignedOn: { $min: '$createdAt' } } },
+      ]),
+      this.assignmentModel.aggregate<{ _id: Types.ObjectId; assignedOn: Date }>([
+        { $match: { orgId, deletedAt: null } },
+        {
+          $group: {
+            _id: '$requirementId',
+            assignedOn: { $min: { $ifNull: ['$assignedOn', '$createdAt'] } },
+          },
+        },
+      ]),
+    ]);
+
+    const earliest = new Map<string, number>();
+    for (const row of [...fromHistory, ...fromLedger]) {
+      const id = row?._id ? String(row._id) : '';
+      const time = row?.assignedOn ? new Date(row.assignedOn).getTime() : NaN;
+      if (!id || !Number.isFinite(time)) continue;
+      const prev = earliest.get(id);
+      if (prev == null || time < prev) earliest.set(id, time);
+    }
+
+    return {
+      items: [...earliest.entries()].map(([requirementId, time]) => ({
+        requirementId,
+        assignedOn: new Date(time).toISOString(),
+      })),
+    };
   }
 
   /** GET /api/v1/requirements */

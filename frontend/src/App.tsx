@@ -23,6 +23,11 @@ import { navKeyFromPathname, resetBrowserPathToRoot, syncBrowserPath } from './c
 
 const screenLoading = () => <PageLoading label="Loading…" />
 
+/** Company Analytics page is hidden for now. Open Reports instead. */
+function withoutHiddenAnalytics(nav: string): string {
+  return nav === 'Analytics' ? 'Reports' : nav
+}
+
 const RecruiterDashboard = dynamic(
   () => import('./components/dashboards/RecruiterDashboard').then(m => m.RecruiterDashboard),
   { loading: screenLoading },
@@ -200,7 +205,7 @@ export default function App() {
         const saved = getSavedNav()
         const normalizedSaved = (saved === 'Submissions' || saved === 'Interviews' || saved === 'Submission to Client') ? 'Reports' : saved
         const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-        const targetNav = fromUrl || normalizedSaved || defaultNav
+        const targetNav = withoutHiddenAnalytics(fromUrl || normalizedSaved || defaultNav)
         setActiveNav(targetNav)
         saveNav(targetNav)
         syncBrowserPath(targetNav, 'replace')
@@ -223,10 +228,12 @@ export default function App() {
   // Browser back/forward → update active nav from the URL
   useEffect(() => {
     const onPopState = () => {
-      const key = navKeyFromPathname(window.location.pathname)
-      if (!key) return
+      const rawKey = navKeyFromPathname(window.location.pathname)
+      if (!rawKey) return
+      const key = withoutHiddenAnalytics(rawKey)
       setActiveNav(key)
       saveNav(key)
+      if (key !== rawKey) syncBrowserPath(key, 'replace')
       if (key === 'Requirements') {
         void loadWorkspace().catch(() => undefined)
       }
@@ -259,7 +266,7 @@ export default function App() {
     const saved = getSavedNav()
     const normalizedSaved = (saved === 'Submissions' || saved === 'Interviews' || saved === 'Submission to Client') ? 'Reports' : saved
     const defaultNav = (r === 'superadmin' || r === 'devteam' || r === 'admin' || r === 'lead') ? 'Requirements' : 'Dashboard'
-    const targetNav = fromUrl || normalizedSaved || defaultNav
+    const targetNav = withoutHiddenAnalytics(fromUrl || normalizedSaved || defaultNav)
     setActiveNav(targetNav)
     saveNav(targetNav)
     syncBrowserPath(targetNav, 'replace')
@@ -268,12 +275,13 @@ export default function App() {
   }
 
   const handleNavSelect = useCallback((nav: string) => {
-    if (nav !== 'Candidates' && nav !== 'Candidate Search') {
+    const next = withoutHiddenAnalytics(nav)
+    if (next !== 'Candidates' && next !== 'Candidate Search') {
       setSelectedReqIdForSubmit(null)
     }
-    setActiveNav(nav)
-    saveNav(nav)
-    syncBrowserPath(nav, 'push')
+    setActiveNav(next)
+    saveNav(next)
+    syncBrowserPath(next, 'push')
     if (nav === 'Requirements') {
       void loadWorkspace().catch(() => undefined)
     }

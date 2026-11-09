@@ -379,6 +379,57 @@ export class CandidatesService {
     return { counts, total: Number(total) || 0 };
   }
 
+  /**
+   * GET /api/v1/candidates/sourced-trend
+   * Daily Candidate Repository counts (createdAt) for the chart window.
+   * Omit recruiterId for the whole organization.
+   */
+  async sourcedTrend(
+    currentUser: any,
+    query?: { from?: string; to?: string; recruiterId?: string; timezone?: string },
+  ) {
+    const orgId = requireOrgId(currentUser);
+    const filter: Record<string, any> = { orgId, deletedAt: null };
+    const recruiterId = String(query?.recruiterId || '').trim();
+    if (recruiterId) {
+      const resolved = await this.resolveCreatedByRecruiterId(orgId, recruiterId);
+      if (!resolved) return { days: [] as { date: string; count: number }[] };
+      filter.sourcedByRecruiterId = resolved;
+    }
+    const createdAt: Record<string, Date> = {};
+    if (query?.from) {
+      const start = new Date(query.from);
+      if (!Number.isNaN(start.getTime())) createdAt.$gte = start;
+    }
+    if (query?.to) {
+      const end = new Date(query.to);
+      if (!Number.isNaN(end.getTime())) createdAt.$lte = end;
+    }
+    if (Object.keys(createdAt).length > 0) filter.createdAt = createdAt;
+
+    const requestedTz = String(query?.timezone || '').trim();
+    const timezone = /^[A-Za-z0-9_+\-/]{1,64}$/.test(requestedTz) ? requestedTz : 'Asia/Kolkata';
+    const rows = await this.candidateModel
+      .aggregate<{ _id: string; count: number }>([
+        { $match: filter },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])
+      .exec();
+    return {
+      days: rows
+        .filter((row) => row?._id)
+        .map((row) => ({ date: String(row._id), count: Number(row.count) || 0 })),
+    };
+  }
+
   /** Load candidate by Mongo id or business id, scoped to caller org. */
   private async loadCandidateForUser(id: string, currentUser: any): Promise<CandidateDocument> {
     const scope = orgScope(currentUser);
