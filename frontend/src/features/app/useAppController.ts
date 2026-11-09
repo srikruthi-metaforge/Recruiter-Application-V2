@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AuthScreen, Interview, InterviewStatus, Recruiter, Role, Submission, Requirement, ActivityLogItem, Candidate, Lead, Admin } from '../../types'
 import { workspaceService, type WorkspacePayload } from '../../services/workspace.service'
-import { bindWorkspaceLoader, fetchWorkspace, resetWorkspaceRefresh } from '../../lib/workspaceRefresh'
+import { bindWorkspaceLoader, fetchWorkspace, isWorkspaceFresh, resetWorkspaceRefresh } from '../../lib/workspaceRefresh'
 import { restoreSession } from '../../data/authService'
 import { getSessionUser } from '../../store/session'
 import { titleForRole } from '../../data/roleMeta'
@@ -122,9 +122,11 @@ export function useAppController() {
         syncBrowserPath('Reports', 'replace')
         return
       }
-      // Only refresh workspace for dashboard/requirements — Reports reuses in-memory data
-      // (full reload on every Candidates→Reports switch was causing heavy re-fetch storms).
+      // Only refresh workspace for dashboard/requirements when the cache is stale.
+      // Reports always reuses in-memory data.
       if (key === 'Requirements' || key === 'Dashboard') {
+        const id = getSessionUser()?.id
+        if (id && isWorkspaceFresh(id)) return
         void applyWorkspace().catch(() => undefined)
       }
     }
@@ -185,6 +187,8 @@ export function useAppController() {
     // already receive requirements/submissions/interviews from memory. Mutations still
     // refresh via workspace_refresh / submissions_updated listeners above.
     if (key === 'Requirements' || key === 'Dashboard') {
+      const id = getSessionUser()?.id
+      if (id && isWorkspaceFresh(id)) return
       void applyWorkspace().catch(() => undefined)
     }
   }

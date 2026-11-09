@@ -21,7 +21,8 @@ export const queryKeys = {
   ) => ['candidates', userId, params] as const,
 }
 
-export const WORKSPACE_STALE_MS = 15_000
+/** Nav switches reuse this cache so Requirements↔Reports does not refetch every time. Mutations still force-refresh. */
+export const WORKSPACE_STALE_MS = 60_000
 export const WORKSPACE_GC_MS = 30 * 60 * 1000
 export const NOTIFICATION_FAST_MS = 8_000
 export const NOTIFICATION_IDLE_MS = 30_000

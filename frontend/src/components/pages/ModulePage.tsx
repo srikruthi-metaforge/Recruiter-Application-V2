@@ -1,10 +1,19 @@
-import React, { Suspense, useState } from 'react'
+import React, { Suspense, useRef, useState } from 'react'
 import { Requirement, Submission, Interview, Recruiter, Candidate, ActivityLogItem } from '../../types'
 import { Role } from '../../types'
 import { renderModulePage } from './ModulePage.routes'
 import { SIDEBAR_NAV_EVENT } from '../../utils/notificationNavigation'
 import { useReturnToReports } from '../../utils/useReturnToReports'
 import { PageLoading } from '../common/PageLoading'
+
+/** Heavy pages kept mounted after first visit so Reports↔Requirements switches stay fast. */
+type KeepAlivePage = 'Requirements' | 'Reports'
+
+function keepAliveKey(pageKey: string): KeepAlivePage | null {
+  if (pageKey === 'Requirements') return 'Requirements'
+  if (pageKey === 'Reports' || pageKey === 'Reports & Analytics') return 'Reports'
+  return null
+}
 
 interface ModulePageProps {
   pageKey: string
@@ -167,9 +176,7 @@ export function ModulePage({
     openRepositoryFromPending({ clear: true })
   }, [pageKey, openRepositoryFromPending])
 
-  return (
-    <Suspense fallback={<PageLoading />}>
-      {renderModulePage({
+  const routeProps = {
     pageKey,
     role,
     requirements,
@@ -195,7 +202,32 @@ export function ModulePage({
     setCandidatesList: updateCandidatesList,
     addOpenedFromRepository,
     returnToReports,
-  })}
+  }
+
+  const activeKeepAlive = keepAliveKey(pageKey)
+  const keptPagesRef = useRef(new Set<KeepAlivePage>())
+  if (activeKeepAlive) keptPagesRef.current.add(activeKeepAlive)
+  const keptPages = keptPagesRef.current
+
+  return (
+    <Suspense fallback={<PageLoading />}>
+      {keptPages.has('Requirements') && (
+        <div
+          hidden={activeKeepAlive !== 'Requirements'}
+          className={activeKeepAlive === 'Requirements' ? undefined : 'hidden'}
+        >
+          {renderModulePage({ ...routeProps, pageKey: 'Requirements' })}
+        </div>
+      )}
+      {keptPages.has('Reports') && (
+        <div
+          hidden={activeKeepAlive !== 'Reports'}
+          className={activeKeepAlive === 'Reports' ? undefined : 'hidden'}
+        >
+          {renderModulePage({ ...routeProps, pageKey: 'Reports' })}
+        </div>
+      )}
+      {!activeKeepAlive && renderModulePage(routeProps)}
     </Suspense>
   )
 }

@@ -639,6 +639,10 @@ export interface RequirementTimelineRow {
   assignedTo: string
   assignedLabel: string
   firstSubmissionLabel: string
+  /** Who submitted the earliest profile for this requirement. */
+  firstSubmissionBy: string
+  /** Total submissions linked to this requirement. */
+  submissionCount: number
   assignGap: string
   submissionGap: string
   state: 'waiting_assignment' | 'waiting_submission' | 'submitted'
@@ -674,36 +678,81 @@ function stripReqKey(value?: string | null): string {
     .toLowerCase()
 }
 
-/** Earliest submission time keyed by requirement id / code, built once per search. */
-function indexFirstSubmission(submissions: Submission[]): Map<string, number> {
-  const byKey = new Map<string, number>()
+interface IndexedSubmission {
+  id: string
+  time: number
+  by: string
+}
+
+function submissionOwnerLabel(sub: Submission): string {
+  return (
+    String(sub.recruiter || '').trim() ||
+    String((sub as any).submittedBy || '').trim() ||
+    String((sub as any).recruiterName || '').trim() ||
+    String(sub.recruiterEmail || '').trim() ||
+    '—'
+  )
+}
+
+function submissionKeys(sub: Submission): string[] {
+  return [
+    String(sub.requirementId || '').trim().toLowerCase(),
+    stripReqKey(sub.reqCode),
+    stripReqKey(sub.req),
+  ].filter(Boolean)
+}
+
+function requirementKeys(req: Requirement): string[] {
+  return [
+    String((req as any)._id || '').trim().toLowerCase(),
+    stripReqKey((req as any).reqCode || req.id),
+    stripReqKey(req.id),
+  ].filter(Boolean)
+}
+
+/** Submissions keyed by requirement id / code for timeline count + first submitter. */
+function indexRequirementSubmissions(
+  submissions: Submission[],
+): Map<string, IndexedSubmission[]> {
+  const byKey = new Map<string, IndexedSubmission[]>()
   for (const sub of submissions || []) {
     const time = new Date(sub.submittedAt || sub.createdAt || sub.date).getTime()
     if (!Number.isFinite(time)) continue
-    const keys = [String(sub.requirementId || '').trim().toLowerCase(), stripReqKey(sub.reqCode), stripReqKey(sub.req)]
-    for (const key of keys) {
-      if (!key) continue
-      const prev = byKey.get(key)
-      if (prev == null || time < prev) byKey.set(key, time)
+    const entry: IndexedSubmission = {
+      id: String(sub.id || (sub as any)._id || `${time}-${sub.candidate || ''}`),
+      time,
+      by: submissionOwnerLabel(sub),
+    }
+    for (const key of submissionKeys(sub)) {
+      const list = byKey.get(key)
+      if (list) list.push(entry)
+      else byKey.set(key, [entry])
     }
   }
   return byKey
 }
 
-function firstSubmissionMs(req: Requirement, index: Map<string, number>): number | undefined {
-  const keys = [
-    String((req as any)._id || '').trim().toLowerCase(),
-    stripReqKey((req as any).reqCode || req.id),
-    stripReqKey(req.id),
-  ]
-  let best: number | undefined
-  for (const key of keys) {
-    if (!key) continue
-    const time = index.get(key)
-    if (time == null) continue
-    if (best == null || time < best) best = time
+function requirementSubmissionStats(
+  req: Requirement,
+  index: Map<string, IndexedSubmission[]>,
+): { firstMs: number; firstBy: string; count: number } | null {
+  const seen = new Set<string>()
+  let firstMs: number | undefined
+  let firstBy = '—'
+  for (const key of requirementKeys(req)) {
+    const list = index.get(key)
+    if (!list) continue
+    for (const item of list) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      if (firstMs == null || item.time < firstMs) {
+        firstMs = item.time
+        firstBy = item.by
+      }
+    }
   }
-  return best
+  if (seen.size === 0 || firstMs == null) return null
+  return { firstMs, firstBy, count: seen.size }
 }
 
 /** One row per requirement: arrived, assigned, first submission. */
@@ -730,7 +779,7 @@ export function buildRequirementTimeline(args: {
     assignedOnByRequirementId,
   } = args
   const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
-  const firstByRequirement = indexFirstSubmission(submissions)
+  const submissionIndex = indexRequirementSubmissions(submissions)
 
   const rows: { row: RequirementTimelineRow; arrivedMs: number }[] = []
   for (const req of requirements || []) {
@@ -753,8 +802,10 @@ export function buildRequirementTimeline(args: {
     const mongoId = String((req as any)._id || '').trim()
     const assignedOn = mongoId ? assignedOnByRequirementId[mongoId] : undefined
 
-    const firstMs = firstSubmissionMs(req, firstByRequirement)
-    const firstSub = firstMs != null ? new Date(firstMs) : undefined
+    const stats = requirementSubmissionStats(req, submissionIndex)
+    const firstSub = stats ? new Date(stats.firstMs) : undefined
+    const submissionCount = stats?.count || 0
+    const firstSubmissionBy = stats?.firstBy || '—'
 
     const state: RequirementTimelineRow['state'] = firstSub
       ? 'submitted'
@@ -774,6 +825,8 @@ export function buildRequirementTimeline(args: {
         assignedTo: hasAssignee ? names || 'Assigned' : 'Waiting for assignment',
         assignedLabel: hasAssignee ? stampLabel(assignedOn) : '—',
         firstSubmissionLabel: stampLabel(firstSub),
+        firstSubmissionBy: firstSub ? firstSubmissionBy : '—',
+        submissionCount,
         assignGap: hasAssignee ? gapLabel(arrived, assignedOn) : '—',
         submissionGap: firstSub ? gapLabel(assignedOn || arrived, firstSub) : '—',
         state,

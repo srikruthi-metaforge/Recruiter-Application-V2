@@ -1048,6 +1048,7 @@ export function RecruiterIndividualAnalyticsPage({
         requirements={pageRequirements}
         submissions={submissions}
         recruiter={lockRecruiter ? scopedRecruiter : null}
+        assigneeOptions={lockRecruiter ? [] : recruiterOptions}
       />
 
       <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl px-4 py-3 text-[11px] text-slate-500 font-medium">

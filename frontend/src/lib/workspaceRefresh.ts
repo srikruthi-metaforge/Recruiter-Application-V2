@@ -19,6 +19,18 @@ type WorkspaceListener = (payload: WorkspacePayload) => void
 
 let listener: WorkspaceListener | null = null
 
+/** True when the signed-in user's workspace was loaded recently enough to skip a nav refetch. */
+export function isWorkspaceFresh(
+  userId?: string | null,
+  client: QueryClient = getQueryClient(),
+): boolean {
+  const id = userId || getSessionUser()?.id
+  if (!id) return false
+  const state = client.getQueryState(queryKeys.workspace(id))
+  if (!state?.dataUpdatedAt || state.status !== 'success') return false
+  return Date.now() - state.dataUpdatedAt < WORKSPACE_STALE_MS
+}
+
 export function emptyWorkspace(): WorkspacePayload {
   return {
     requirements: [],

@@ -28,7 +28,6 @@ import {
   ArrowUpRight,
   PieChart,
   User,
-  ShieldCheck,
   Zap,
   Sparkles,
   AlertCircle,
@@ -50,7 +49,6 @@ import {
   ClientDetailAnalyticsPage,
   ClientPerformanceData,
 } from './ClientDetailAnalyticsPage'
-import { ActivityLogsPage } from './ActivityLogsPage'
 import { SubmissionsPage } from './SubmissionsPage'
 import { RecruiterIndividualAnalyticsPage } from './recruiter-individual-analytics'
 import { InterviewTrackingPage } from './InterviewTrackingPage'
@@ -777,12 +775,12 @@ export function ReportsPage({
     }
   }, [initialReportsTab])
 
-  const [mainTab, setMainTab] = useState<'audit' | 'client_performance' | 'individual_analytics'>(() => {
+  const [mainTab, setMainTab] = useState<'client_performance' | 'individual_analytics'>(() => {
     const raw = initialMainTab || 'individual_analytics'
-    // History / Performance tabs removed — route to Individual Analytics.
-    if (raw === 'history' || raw === 'performance') return 'individual_analytics'
+    // History / Performance / Audit tabs removed from Reports — Audit lives under Dashboard nav.
+    if (raw === 'history' || raw === 'performance' || raw === 'audit') return 'individual_analytics'
     if (role === 'recruiter' && raw === 'client_performance') return 'individual_analytics'
-    if (raw === 'audit' || raw === 'client_performance' || raw === 'individual_analytics') return raw
+    if (raw === 'client_performance' || raw === 'individual_analytics') return raw
     return 'individual_analytics'
   })
 
@@ -1721,19 +1719,6 @@ export function ReportsPage({
                 <Building2 className="w-4 h-4 text-[#6B3BF6]" />
                 <span>Client Performance</span>
               </button>
-
-              <button
-                type="button"
-                onClick={() => setMainTab('audit')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                  mainTab === 'audit'
-                    ? 'bg-white text-[#6B3BF6] shadow-sm border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4 text-[#6B3BF6]" />
-                <span>Entry of Audit Logs</span>
-              </button>
             </div>
           )}
 
@@ -1743,8 +1728,6 @@ export function ReportsPage({
               onSelectClient={cli => setSelectedClient(cli)}
               onSelectRequirement={target => setSelectedReqForDetail(target)}
             />
-          ) : mainTab === 'audit' && role !== 'recruiter' ? (
-            <ActivityLogsPage role={role} />
           ) : (
             <RecruiterIndividualAnalyticsPage
               role={role}

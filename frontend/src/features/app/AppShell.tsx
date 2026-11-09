@@ -69,7 +69,8 @@ export function AppShell(props: AppShellProps) {
       >
         <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full min-w-0 px-4 py-5 lg:px-6 xl:px-8 app-main-content">
           <PageContainer>
-            <AnimatedPage animationKey={`${props.role}:${props.activeNav}`}>
+            {/* Keep role-only key so Requirements↔Reports does not remount the whole shell. */}
+            <AnimatedPage animationKey={props.role}>
               <AppShellContent {...props} />
             </AnimatedPage>
           </PageContainer>
