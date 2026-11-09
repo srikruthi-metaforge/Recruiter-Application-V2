@@ -85,6 +85,23 @@ export class CandidatesController {
   }
 
   /**
+   * GET /api/v1/candidates/sourced-trend
+   * Daily sourced-profile counts for the Sourced vs Submitted chart.
+   * Must be registered before :id.
+   */
+  @Get('sourced-trend')
+  @SkipThrottle()
+  async sourcedTrend(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('recruiterId') recruiterId?: string,
+    @Query('timezone') timezone?: string,
+  ) {
+    return this.candidatesService.sourcedTrend(req.user, { from, to, recruiterId, timezone });
+  }
+
+  /**
    * GET /api/v1/candidates/sourced-by/:recruiterId
    * Must be registered before :id.
    */

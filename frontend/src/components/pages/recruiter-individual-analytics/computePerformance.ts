@@ -101,6 +101,15 @@ function recruiterIdentity(opt: RecruiterOption) {
 
 /** Assigned to this recruiter by id, name, or email (same idea as History). */
 function requirementAssignedToOption(req: Requirement, recruiter: RecruiterOption): boolean {
+  if (recruiter.allRecruiters) {
+    if (req.assignmentStatus === 'Unassigned') return false
+    const ids = (Array.isArray(req.assignedRecruiterIds) ? req.assignedRecruiterIds : [])
+      .map(id => String(id || '').trim())
+      .filter(Boolean)
+    const names = String(req.assignedRecruiterNames || req.owner || '').trim()
+    if (ids.length > 0) return true
+    return Boolean(names) && !names.toLowerCase().includes('unassigned')
+  }
   if (req.assignmentStatus === 'Unassigned') return false
   const ids = new Set(
     (Array.isArray(req.assignedRecruiterIds) ? req.assignedRecruiterIds : [])
@@ -124,7 +133,17 @@ function requirementAssignedToOption(req: Requirement, recruiter: RecruiterOptio
   return requirementAssignedToRecruiter(req, recruiterIdentity(recruiter))
 }
 
+/** Requirements currently assigned to one recruiter. All Recruiters keeps the full list. */
+export function requirementsAssignedTo(
+  requirements: Requirement[],
+  recruiter: RecruiterOption | null,
+): Requirement[] {
+  if (!recruiter || recruiter.allRecruiters) return requirements || []
+  return (requirements || []).filter(req => requirementAssignedToOption(req, recruiter))
+}
+
 function submissionOwnedBy(sub: Submission, recruiter: RecruiterOption): boolean {
+  if (recruiter.allRecruiters) return true
   return ownsByRecruiter(
     {
       id: sub.recruiterId || (sub as any).recruiterUserId,
@@ -136,6 +155,7 @@ function submissionOwnedBy(sub: Submission, recruiter: RecruiterOption): boolean
 }
 
 function candidateOwnedBy(c: Candidate, recruiter: RecruiterOption): boolean {
+  if (recruiter.allRecruiters) return true
   const byId = ownsByRecruiter(
     { id: c.sourcedByRecruiterId, name: c.createdByName, email: undefined },
     recruiterIdentity(recruiter),
@@ -169,6 +189,7 @@ function interviewOwnedBy(
   recruiter: RecruiterOption,
   submissionsById: Map<string, Submission>,
 ): boolean {
+  if (recruiter.allRecruiters) return true
   if (
     ownsByRecruiter(
       { id: iv.recruiterId, email: iv.recruiterEmail, name: iv.recruiter },
@@ -555,13 +576,14 @@ export function computeIndividualPerformance(args: {
     }
   })
 
-  // Last 6 weeks trend within selected data
-  const chartWeekly: { name: string; sourced: number; submitted: number }[] = []
-  const weekStart = start || (() => {
-    const d = new Date()
-    d.setDate(d.getDate() - 7 * 5)
-    return startOfDay(d)
-  })()
+  // Always 6 weeks so Sourced and Submitted share the same axis.
+  const chartWeekly: {
+    name: string
+    sourced: number
+    submitted: number
+    weekStart?: string
+    weekEnd?: string
+  }[] = []
   for (let i = 5; i >= 0; i--) {
     const wEnd = new Date()
     wEnd.setDate(wEnd.getDate() - i * 7)
@@ -569,18 +591,25 @@ export function computeIndividualPerformance(args: {
     wStart.setDate(wStart.getDate() - 6)
     const ws = startOfDay(wStart)
     const we = endOfDay(wEnd)
-    if (start && we < start) continue
-    if (end && ws > end) continue
+    const weekOverlapsPeriod = (!start || we >= start) && (!end || ws <= end)
+    const from = start && start > ws ? start : ws
+    const to = end && end < we ? end : we
     chartWeekly.push({
       name: ws.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-      sourced: (candidates || []).filter(
-        c =>
-          candidateOwnedBy(c, recruiter) &&
-          inRange(c.submissionDate || (c as any).createdAt, ws, we),
-      ).length,
-      submitted: mySubsAll.filter(
-        s => inRange(s.submittedAt || s.createdAt || s.date, ws, we) && clientMatch(s.client),
-      ).length,
+      weekStart: weekOverlapsPeriod ? from.toISOString() : undefined,
+      weekEnd: weekOverlapsPeriod ? to.toISOString() : undefined,
+      sourced: weekOverlapsPeriod
+        ? (candidates || []).filter(
+            c =>
+              candidateOwnedBy(c, recruiter) &&
+              inRange(c.submissionDate || (c as any).createdAt, from, to),
+          ).length
+        : 0,
+      submitted: weekOverlapsPeriod
+        ? mySubsAll.filter(
+            s => inRange(s.submittedAt || s.createdAt || s.date, from, to) && clientMatch(s.client),
+          ).length
+        : 0,
     })
   }
 
@@ -597,6 +626,163 @@ export function computeIndividualPerformance(args: {
     chartInterviews,
     chartWeekly,
   }
+}
+
+export interface RequirementTimelineRow {
+  id: string
+  code: string
+  title: string
+  client: string
+  /** Lowercase requirement id + client, used by the timeline search. */
+  searchText: string
+  arrivedLabel: string
+  assignedTo: string
+  assignedLabel: string
+  firstSubmissionLabel: string
+  assignGap: string
+  submissionGap: string
+  state: 'waiting_assignment' | 'waiting_submission' | 'submitted'
+}
+
+function stampLabel(raw?: string | Date | null): string {
+  if (!raw) return '—'
+  const d = raw instanceof Date ? raw : new Date(raw)
+  if (Number.isNaN(d.getTime())) return '—'
+  const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  return `${date}, ${time}`
+}
+
+function gapLabel(from?: string | Date | null, to?: string | Date | null): string {
+  if (!from || !to) return '—'
+  const a = from instanceof Date ? from.getTime() : new Date(from).getTime()
+  const b = to instanceof Date ? to.getTime() : new Date(to).getTime()
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return '—'
+  const mins = Math.round((b - a) / 60000)
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 48) return `${hrs}h ${mins % 60}m`
+  const days = Math.floor(hrs / 24)
+  const rem = hrs % 24
+  return rem ? `${days}d ${rem}h` : `${days}d`
+}
+
+function stripReqKey(value?: string | null): string {
+  return String(value || '')
+    .replace(/\s*\([^()]*\)\s*$/, '')
+    .trim()
+    .toLowerCase()
+}
+
+/** Earliest submission time keyed by requirement id / code, built once per search. */
+function indexFirstSubmission(submissions: Submission[]): Map<string, number> {
+  const byKey = new Map<string, number>()
+  for (const sub of submissions || []) {
+    const time = new Date(sub.submittedAt || sub.createdAt || sub.date).getTime()
+    if (!Number.isFinite(time)) continue
+    const keys = [String(sub.requirementId || '').trim().toLowerCase(), stripReqKey(sub.reqCode), stripReqKey(sub.req)]
+    for (const key of keys) {
+      if (!key) continue
+      const prev = byKey.get(key)
+      if (prev == null || time < prev) byKey.set(key, time)
+    }
+  }
+  return byKey
+}
+
+function firstSubmissionMs(req: Requirement, index: Map<string, number>): number | undefined {
+  const keys = [
+    String((req as any)._id || '').trim().toLowerCase(),
+    stripReqKey((req as any).reqCode || req.id),
+    stripReqKey(req.id),
+  ]
+  let best: number | undefined
+  for (const key of keys) {
+    if (!key) continue
+    const time = index.get(key)
+    if (time == null) continue
+    if (best == null || time < best) best = time
+  }
+  return best
+}
+
+/** One row per requirement: arrived, assigned, first submission. */
+export function buildRequirementTimeline(args: {
+  requirements: Requirement[]
+  submissions: Submission[]
+  recruiter: RecruiterOption | null
+  clientFilter: string
+  requirementFilter: string
+  datePreset: DatePreset
+  customStart?: string
+  customEnd?: string
+  assignedOnByRequirementId: Record<string, string>
+}): RequirementTimelineRow[] {
+  const {
+    requirements,
+    submissions,
+    recruiter,
+    clientFilter,
+    requirementFilter,
+    datePreset,
+    customStart,
+    customEnd,
+    assignedOnByRequirementId,
+  } = args
+  const { start, end } = resolveDateRange(datePreset, customStart, customEnd)
+  const firstByRequirement = indexFirstSubmission(submissions)
+
+  const rows: { row: RequirementTimelineRow; arrivedMs: number }[] = []
+  for (const req of requirements || []) {
+    if (clientFilter && clientFilter !== 'All') {
+      if (String(req.client || '').trim().toLowerCase() !== clientFilter.trim().toLowerCase()) continue
+    }
+    if (requirementFilter && requirementFilter !== 'All') {
+      const keys = [req.id, (req as any)._id, req.reqCode].map(k => String(k || ''))
+      if (!keys.includes(requirementFilter)) continue
+    }
+    const arrived = getRequirementDate(req)
+    if ((start || end) && !inRange(arrived ? arrived.toISOString() : '', start, end)) continue
+    if (recruiter && !recruiter.allRecruiters && !requirementAssignedToOption(req, recruiter)) continue
+
+    const names = String(req.assignedRecruiterNames || req.owner || '').trim()
+    const hasAssignee =
+      req.assignmentStatus !== 'Unassigned' &&
+      ((Array.isArray(req.assignedRecruiterIds) && req.assignedRecruiterIds.length > 0) ||
+        (Boolean(names) && !names.toLowerCase().includes('unassigned')))
+    const mongoId = String((req as any)._id || '').trim()
+    const assignedOn = mongoId ? assignedOnByRequirementId[mongoId] : undefined
+
+    const firstMs = firstSubmissionMs(req, firstByRequirement)
+    const firstSub = firstMs != null ? new Date(firstMs) : undefined
+
+    const state: RequirementTimelineRow['state'] = firstSub
+      ? 'submitted'
+      : hasAssignee
+        ? 'waiting_submission'
+        : 'waiting_assignment'
+
+    rows.push({
+      arrivedMs: arrived ? arrived.getTime() : 0,
+      row: {
+        id: String((req as any)._id || req.id),
+        code: String(req.reqCode || req.id || '—'),
+        title: req.title || '—',
+        client: req.client || '—',
+        searchText: `${req.reqCode || ''} ${req.id || ''} ${(req as any)._id || ''} ${req.client || ''}`.toLowerCase(),
+        arrivedLabel: stampLabel(arrived),
+        assignedTo: hasAssignee ? names || 'Assigned' : 'Waiting for assignment',
+        assignedLabel: hasAssignee ? stampLabel(assignedOn) : '—',
+        firstSubmissionLabel: stampLabel(firstSub),
+        assignGap: hasAssignee ? gapLabel(arrived, assignedOn) : '—',
+        submissionGap: firstSub ? gapLabel(assignedOn || arrived, firstSub) : '—',
+        state,
+      },
+    })
+  }
+
+  rows.sort((a, b) => b.arrivedMs - a.arrivedMs)
+  return rows.map(item => item.row)
 }
 
 export function uniqueClients(requirements: Requirement[], submissions: Submission[]): string[] {

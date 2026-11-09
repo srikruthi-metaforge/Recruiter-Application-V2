@@ -116,6 +116,8 @@ export const workspaceService = {
     api.post(`/requirements/${encodeURIComponent(id)}/revoke`, body),
   getOriginalEmail: (id: string) =>
     api.get<OriginalRequirementEmail>(`/requirements/${encodeURIComponent(id)}/original-email`),
+  assignmentTimes: () =>
+    api.get<{ items: { requirementId: string; assignedOn: string }[] }>('/requirements/assignment-times'),
   createSubmission: (body: Submission & Record<string, any>) => {
     const rawReq = String(body.reqCode || body.req || '').trim()
     const reqCode = rawReq.replace(/\s*\([^()]*\)\s*$/, '').trim() || rawReq
@@ -248,6 +250,32 @@ export const candidatesService = {
       window.location.assign(signed.url)
     }
     return signed
+  },
+  /**
+   * Daily sourced-profile counts for the chart window.
+   * Omit recruiterId to count every recruiter in the organization.
+   */
+  sourcedTrend: async (opts?: {
+    from?: string
+    to?: string
+    recruiterId?: string
+    timezone?: string
+    signal?: AbortSignal
+  }) => {
+    const params = new URLSearchParams()
+    const from = String(opts?.from || '').trim()
+    const to = String(opts?.to || '').trim()
+    const recruiterId = String(opts?.recruiterId || '').trim()
+    const timezone = String(opts?.timezone || '').trim()
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (recruiterId) params.set('recruiterId', recruiterId)
+    if (timezone) params.set('timezone', timezone)
+    const res = await api.get<{ days?: { date: string; count: number }[] }>(
+      `/candidates/sourced-trend?${params.toString()}`,
+      { signal: opts?.signal },
+    )
+    return Array.isArray(res?.days) ? res.days : []
   },
   /** Active Candidate Repository counts keyed by sourcedByRecruiterId (user Mongo id). */
   sourcedCounts: async () => {

@@ -40,7 +40,12 @@ export interface RecruiterOption {
   lead?: string
   /** All known user ids (_id and id) so requirement assignment matches either. */
   ids?: string[]
+  /** Super Admin / Admin rollup: every recruiter in the loaded workspace. */
+  allRecruiters?: boolean
 }
+
+/** Dropdown value for the combined recruiter performance view. */
+export const ALL_RECRUITERS_ID = '__all_recruiters__'
 
 export type InterviewBucket = 'L1' | 'L2' | 'Final' | 'Other'
 
@@ -136,5 +141,12 @@ export interface PerformanceReport {
   onboarding: OnboardingRow[]
   chartFunnel: { name: string; value: number }[]
   chartInterviews: { name: string; selected: number; rejected: number; pending: number }[]
-  chartWeekly: { name: string; sourced: number; submitted: number }[]
+  chartWeekly: {
+    name: string
+    sourced: number
+    submitted: number
+    /** Inclusive local window for this point, omitted when the week is outside the selected period. */
+    weekStart?: string
+    weekEnd?: string
+  }[]
 }
