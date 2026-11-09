@@ -27,19 +27,15 @@ export function ClientSubmitApprovalPanel({
     normalized === 'devteam'
 
   const [pending, setPending] = useState<ForwardRequest[]>([])
-  const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     if (!canApprove) return
-    setLoading(true)
     try {
       const rows = await clientSubmitApprovalService.list({ status: 'pending' })
       setPending((Array.isArray(rows) ? rows : []).map(toForwardRequestShape))
     } catch {
       setPending([])
-    } finally {
-      setLoading(false)
     }
   }, [canApprove])
 
@@ -56,8 +52,8 @@ export function ClientSubmitApprovalPanel({
     }
   }, [refresh])
 
-  if (!canApprove) return null
-  if (!loading && pending.length === 0) return null
+  // Hide until a recruiter actually requests client-submit approval.
+  if (!canApprove || pending.length === 0) return null
 
   return (
     <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 space-y-3">
@@ -70,10 +66,7 @@ export function ClientSubmitApprovalPanel({
       <p className="text-[11px] text-amber-900/80 font-medium">
         Recruiters requested permission to submit candidate profiles directly to the client. Approve or reject below.
       </p>
-      {loading && pending.length === 0 ? (
-        <p className="text-[11px] text-amber-800/70 font-medium">Loading requests…</p>
-      ) : (
-        <div className="space-y-2">
+      <div className="space-y-2">
           {pending.map(req => (
             <div
               key={req.id}
@@ -141,8 +134,7 @@ export function ClientSubmitApprovalPanel({
               </div>
             </div>
           ))}
-        </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -19,11 +19,14 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
   requirements,
   submissions,
   recruiter = null,
+  assigneeOptions = [],
 }: {
   requirements: Requirement[]
   submissions: Submission[]
   /** When set, the table is only that recruiter's assigned requirements. */
   recruiter?: RecruiterOption | null
+  /** Admin/lead: users shown in the Assigned to filter. Hidden when `recruiter` locks the view. */
+  assigneeOptions?: RecruiterOption[]
 }) {
   const [assignedOnByRequirementId, setAssignedOnByRequirementId] = useState<Record<string, string>>({})
   const [page, setPage] = useState(1)
@@ -33,6 +36,18 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
   const [period, setPeriod] = useState<DatePreset>('all')
   const [periodStart, setPeriodStart] = useState('')
   const [periodEnd, setPeriodEnd] = useState('')
+  const [assignedToId, setAssignedToId] = useState('all')
+
+  const showAssigneeFilter = !recruiter && assigneeOptions.length > 0
+
+  const assigneeFilter = useMemo(() => {
+    if (!showAssigneeFilter || assignedToId === 'all') return null
+    return (
+      assigneeOptions.find(opt => opt.id === assignedToId || opt.name === assignedToId) || null
+    )
+  }, [showAssigneeFilter, assignedToId, assigneeOptions])
+
+  const effectiveRecruiter = recruiter || assigneeFilter
 
   useEffect(() => {
     let active = true
@@ -60,8 +75,8 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
       buildRequirementTimeline({
         requirements,
         submissions,
-        // Recruiters only see requirements assigned to them. Other roles keep the full list.
-        recruiter,
+        // Locked recruiter portal, or admin/lead Assigned to filter.
+        recruiter: effectiveRecruiter,
         clientFilter: 'All',
         requirementFilter: 'All',
         datePreset: period,
@@ -72,7 +87,7 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
     [
       requirements,
       submissions,
-      recruiter,
+      effectiveRecruiter,
       period,
       periodStart,
       periodEnd,
@@ -86,7 +101,7 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
     return builtRows.filter(row => row.searchText.includes(q))
   }, [builtRows, deferredSearch])
 
-  const filterKey = `${period}|${periodStart}|${periodEnd}|${deferredSearch}|${pageSize}`
+  const filterKey = `${period}|${periodStart}|${periodEnd}|${deferredSearch}|${pageSize}|${assignedToId}`
   const [appliedFilterKey, setAppliedFilterKey] = useState(filterKey)
   if (appliedFilterKey !== filterKey) {
     setAppliedFilterKey(filterKey)
@@ -112,7 +127,7 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
         </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-end gap-3">
         <div className="flex-1">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
             Search
@@ -128,7 +143,27 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
             />
           </div>
         </div>
-        <div className="sm:w-48">
+        {showAssigneeFilter && (
+          <div className="lg:w-56">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+              Assigned to
+            </label>
+            <select
+              value={assignedToId}
+              onChange={e => setAssignedToId(e.target.value)}
+              className="w-full appearance-none px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white font-bold text-slate-700 focus:outline-none focus:border-[#6B3BF6]"
+            >
+              <option value="all">All users</option>
+              {assigneeOptions.map(opt => (
+                <option key={opt.id || opt.name} value={opt.id || opt.name}>
+                  {opt.name}
+                  {opt.email ? ` (${opt.email})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="lg:w-48">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
             Time period
           </label>
@@ -165,7 +200,7 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
       )}
 
       <div className={`overflow-x-auto border border-slate-200/80 rounded-2xl ${searchPending ? 'opacity-70' : ''}`}>
-        <table className="w-full text-left border-collapse text-xs min-w-[880px]">
+        <table className="w-full text-left border-collapse text-xs min-w-[1080px]">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
               <th className="py-3 px-3">Requirement</th>
@@ -173,6 +208,8 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
               <th className="py-3 px-3">Assigned to</th>
               <th className="py-3 px-3">Assigned on</th>
               <th className="py-3 px-3">First submission</th>
+              <th className="py-3 px-3">First submitted by</th>
+              <th className="py-3 px-3 text-center">Submissions</th>
               <th className="py-3 px-3 text-center">To assign</th>
               <th className="py-3 px-3 text-center">To first submission</th>
             </tr>
@@ -180,12 +217,14 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
           <tbody className="divide-y divide-slate-100">
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-slate-400 font-semibold">
+                <td colSpan={9} className="py-8 text-center text-slate-400 font-semibold">
                   {search.trim()
                     ? 'No requirements match that ID or client name in this time period.'
                     : recruiter
                       ? 'No requirements assigned to you arrived in this time period.'
-                      : 'No requirements arrived in this time period.'}
+                      : assigneeFilter
+                        ? `No requirements assigned to ${assigneeFilter.name} arrived in this time period.`
+                        : 'No requirements arrived in this time period.'}
                 </td>
               </tr>
             ) : (
@@ -217,6 +256,16 @@ export const RequirementTimelineSection = memo(function RequirementTimelineSecti
                         {row.state === 'waiting_assignment' ? '—' : 'No submission yet'}
                       </span>
                     )}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap">
+                    {row.state === 'submitted' ? (
+                      <span className="font-bold text-slate-800">{row.firstSubmissionBy}</span>
+                    ) : (
+                      <span className="text-slate-400 font-semibold">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                    {row.submissionCount}
                   </td>
                   <td className="py-3 px-3 text-center font-mono font-bold text-[#5B51D8]">{row.assignGap}</td>
                   <td className="py-3 px-3 text-center font-mono font-bold text-emerald-800">{row.submissionGap}</td>

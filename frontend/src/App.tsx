@@ -11,7 +11,7 @@ import { markSidebarNavigation } from './utils/notificationNavigation'
 import { titleForRole } from './data/roleMeta'
 import { workspaceService } from './services/workspace.service'
 import { saveSubmissionsStore } from './data/submissionsStore'
-import { fetchWorkspace, patchWorkspace, prefetchCandidateFirstPage, prefetchNotifications, prefetchWorkspace, resetWorkspaceRefresh } from './lib/workspaceRefresh'
+import { fetchWorkspace, isWorkspaceFresh, patchWorkspace, prefetchCandidateFirstPage, prefetchNotifications, prefetchWorkspace, resetWorkspaceRefresh } from './lib/workspaceRefresh'
 import { queryKeys } from './lib/queryKeys'
 import { NotificationProvider } from './hooks/notificationContext'
 
@@ -176,6 +176,14 @@ export default function App() {
     return fetchWorkspace(id, opts).then(() => undefined)
   }, [])
 
+  /** Requirements nav: only hit /workspace when the in-memory cache is stale. */
+  const refreshWorkspaceIfStale = useCallback(() => {
+    const id = getSessionUser()?.id
+    if (!id) return
+    if (isWorkspaceFresh(id)) return
+    void loadWorkspace().catch(() => undefined)
+  }, [loadWorkspace])
+
   useEffect(() => {
     const onRefresh = () => {
       void loadWorkspace({ force: true }).catch(() => undefined)
@@ -235,12 +243,12 @@ export default function App() {
       saveNav(key)
       if (key !== rawKey) syncBrowserPath(key, 'replace')
       if (key === 'Requirements') {
-        void loadWorkspace().catch(() => undefined)
+        refreshWorkspaceIfStale()
       }
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  }, [refreshWorkspaceIfStale])
 
   const handleLogout = useCallback(() => {
     void logoutRemote()
@@ -283,9 +291,9 @@ export default function App() {
     saveNav(next)
     syncBrowserPath(next, 'push')
     if (nav === 'Requirements') {
-      void loadWorkspace().catch(() => undefined)
+      refreshWorkspaceIfStale()
     }
-  }, [loadWorkspace])
+  }, [refreshWorkspaceIfStale])
 
   const handleSidebarNav = useCallback((nav: string) => {
     setSelectedReqIdForSubmit(null)
